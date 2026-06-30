@@ -1,0 +1,14 @@
+services:
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.61.1-jammy
+    container_name: ddev-${DDEV_SITENAME}-playwright
+    working_dir: /var/www/html/playwright-worker
+    command: >
+      ./start.sh
+    volumes:
+      - ../:/var/www/html
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production

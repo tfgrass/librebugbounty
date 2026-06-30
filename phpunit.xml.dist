@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true"
+>
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="APP_DEBUG" value="0"/>
+        <env name="KERNEL_CLASS" value="App\Kernel"/>
+        <env name="DATABASE_URL" value="sqlite:///%kernel.project_dir%/var/test/test.sqlite"/>
+        <env name="PLAYWRIGHT_WORKER_URL" value="http://playwright:3000"/>
+        <env name="RETEST_DEFAULT_TIMEOUT_MS" value="10000"/>
+        <env name="EVIDENCE_STORAGE_DIR" value="%kernel.project_dir%/var/test/evidence"/>
+    </php>
+    <testsuites>
+        <testsuite name="Application Test Suite">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

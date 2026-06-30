@@ -1,0 +1,20 @@
+name: librebugbounty
+type: php
+docroot: public
+php_version: "8.3"
+webserver_type: nginx-fpm
+use_dns_when_possible: true
+composer_version: "2"
+additional_hostnames: []
+additional_fqdns: []
+project_tz: Europe/Berlin
+mkcert_caroot: /home/tomka/.local/share/mkcert
+web_environment:
+  - APP_ENV=dev
+  - APP_DEBUG=1
+  - PLAYWRIGHT_WORKER_URL=http://playwright:3000
+  - RETEST_DEFAULT_TIMEOUT_MS=10000
+hooks:
+  post-start:
+    - exec: "mkdir -p storage/database storage/artifacts storage/test/database storage/test/artifacts"
+    - exec: "php bin/console app:db:init"

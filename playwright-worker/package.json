@@ -1,0 +1,13 @@
+{
+  "name": "playwright-worker",
+  "private": true,
+  "type": "commonjs",
+  "version": "0.1.0",
+  "description": "Small HTTP API for browser retests inside the DDEV Playwright sidecar.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}

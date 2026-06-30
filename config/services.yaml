@@ -1,0 +1,28 @@
+parameters:
+  app.evidence_storage_dir: '%env(resolve:EVIDENCE_STORAGE_DIR)%'
+  app.playwright_worker_url: '%env(PLAYWRIGHT_WORKER_URL)%'
+  app.retest_default_timeout_ms: '%env(int:RETEST_DEFAULT_TIMEOUT_MS)%'
+
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  App\:
+    resource: '../src/'
+    exclude:
+      - '../src/DependencyInjection/'
+      - '../src/Entity/'
+      - '../src/Kernel.php'
+
+  App\Service\BrowserRetestClientInterface: '@App\Service\PlaywrightBrowserRetestClient'
+  App\Service\EvidenceStorageInterface: '@App\Service\LocalEvidenceStorage'
+
+  App\Service\LocalEvidenceStorage:
+    arguments:
+      $evidenceDir: '%app.evidence_storage_dir%'
+
+  App\Service\PlaywrightBrowserRetestClient:
+    arguments:
+      $workerUrl: '%app.playwright_worker_url%'

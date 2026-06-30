@@ -1,0 +1,130 @@
+#!/bin/sh
+set -eu
+
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+PROJECT_NAME=$(awk '/^name:/ { print $2; exit }' "$ROOT_DIR/.ddev/config.yaml")
+BASE_URL="${BASE_URL:-https://${PROJECT_NAME}.ddev.site}"
+CONTAINER="ddev-${PROJECT_NAME}-playwright"
+OUTPUT_DIR="/var/www/html/docs/screenshots"
+
+ddev exec php bin/console app:screenshot:missing --limit 1 --browser chromium
+
+docker exec -i -w /var/www/html/playwright-worker "$CONTAINER" env \
+  BASE_URL="$BASE_URL" \
+  OUTPUT_DIR="$OUTPUT_DIR" \
+  node - <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const { chromium } = require('playwright');
+
+const baseUrl = process.env.BASE_URL || 'https://librebugbounty.ddev.site';
+const outputDir = process.env.OUTPUT_DIR || '/var/www/html/docs/screenshots';
+const overviewPath = path.join(outputDir, 'overview-redacted.png');
+const detailPath = path.join(outputDir, 'detail-redacted.png');
+
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+async function redact(page) {
+  await page.addStyleTag({
+    content: `
+      html, body { background: #f8f4ec !important; }
+      .row-link code,
+      .detail-list dd,
+      .shot-card img,
+      .shot-card figcaption code,
+      table tbody td code {
+        filter: blur(8px) !important;
+        color: transparent !important;
+        text-shadow: 0 0 12px rgba(31, 26, 22, 0.7) !important;
+        user-select: none !important;
+      }
+      .shot-card {
+        position: relative !important;
+        overflow: hidden !important;
+      }
+      .shot-card img {
+        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 10%, black 10%, black 100%) !important;
+        mask-image: linear-gradient(to bottom, transparent 0%, transparent 10%, black 10%, black 100%) !important;
+      }
+      .panel { box-shadow: none !important; }
+    `,
+  });
+}
+
+(async () => {
+  ensureDir(outputDir);
+
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1440, height: 900 },
+  });
+  const page = await context.newPage();
+
+  await page.goto(baseUrl, { waitUntil: 'networkidle' });
+  await redact(page);
+  await page.screenshot({ path: overviewPath, fullPage: false });
+
+  const findingRows = await page.$$eval('table tbody tr', (rows) => rows.map((row) => {
+    const link = row.querySelector('a.row-link[href^="/findings/"]');
+    const badge = row.querySelector('.badge');
+
+    return {
+      href: link ? link.getAttribute('href') : null,
+      status: badge ? badge.textContent.trim().toLowerCase() : '',
+    };
+  }));
+
+  const openStatuses = new Set(['new', 'verified', 'reported', 'manual checking']);
+  const preferredRows = findingRows.filter((row) => typeof row.href === 'string' && row.href.length > 0 && openStatuses.has(row.status));
+  const fallbackRows = findingRows.filter((row) => typeof row.href === 'string' && row.href.length > 0);
+
+  if (fallbackRows.length === 0) {
+    throw new Error('No findings found. Seed the database or run app:review:scan first.');
+  }
+
+  let chosenHref = null;
+  const candidates = preferredRows.length > 0 ? preferredRows : fallbackRows;
+  const maxCandidates = Math.min(candidates.length, 25);
+  for (let index = 0; index < maxCandidates; index += 1) {
+    const href = candidates[index].href;
+    await page.goto(new URL(href, baseUrl).toString(), { waitUntil: 'networkidle' });
+    await redact(page);
+    if ((await page.locator('.shot-card').count()) > 0) {
+      chosenHref = href;
+      break;
+    }
+  }
+
+  if (!chosenHref && preferredRows.length > 0) {
+    const fallbackCandidates = fallbackRows;
+    const fallbackLimit = Math.min(fallbackCandidates.length, 25);
+    for (let index = 0; index < fallbackLimit; index += 1) {
+      const href = fallbackCandidates[index].href;
+      await page.goto(new URL(href, baseUrl).toString(), { waitUntil: 'networkidle' });
+      await redact(page);
+      if ((await page.locator('.shot-card').count()) > 0) {
+        chosenHref = href;
+        break;
+      }
+    }
+  }
+
+  if (!chosenHref) {
+    throw new Error('Could not determine a finding with screenshots to capture.');
+  }
+
+  await page.goto(new URL(chosenHref, baseUrl).toString(), { waitUntil: 'networkidle' });
+  await redact(page);
+  await page.screenshot({ path: detailPath, fullPage: true });
+
+  await browser.close();
+  console.log(`Wrote ${overviewPath}`);
+  console.log(`Wrote ${detailPath}`);
+})().catch((error) => {
+  console.error(error.stack || error.message || String(error));
+  process.exit(1);
+});
+NODE

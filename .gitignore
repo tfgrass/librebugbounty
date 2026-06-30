@@ -1,0 +1,19 @@
+/vendor/
+/var/
+/storage/
+/playwright-worker/node_modules/
+/playwright-worker/package-lock.json
+/.phpunit.result.cache
+/.phpunit.cache/
+/.idea/
+/.DS_Store
+/.vscode/
+/.env
+/.env.test
+
+# DDEV generated files, keep the project config itself in git.
+/.ddev/.dbimageBuild/
+/.ddev/.webimageBuild/
+/.ddev/.ddev-docker-compose*.yaml
+/.ddev/traefik/certs/*
+/.ddev/traefik/config/*.yaml
