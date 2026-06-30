@@ -123,11 +123,24 @@ final class ReviewScanCommand extends Command
         };
 
         $finishWorker = static function (array $worker) use (&$failed): int {
-            $stdout = stream_get_contents($worker['stdout']);
-            $stderr = stream_get_contents($worker['stderr']);
-            fclose($worker['stdout']);
-            fclose($worker['stderr']);
-            $exitCode = proc_close($worker['process']);
+            $stdout = '';
+            $stderr = '';
+            if (\is_resource($worker['stdout'])) {
+                $stdout = (string) stream_get_contents($worker['stdout']);
+                fclose($worker['stdout']);
+            }
+            if (\is_resource($worker['stderr'])) {
+                $stderr = (string) stream_get_contents($worker['stderr']);
+                fclose($worker['stderr']);
+            }
+
+            try {
+                $exitCode = \is_resource($worker['process']) ? proc_close($worker['process']) : 0;
+            } catch (\Throwable $exception) {
+                $exitCode = 1;
+                $stderr = trim($stderr."\n".$exception->getMessage());
+            }
+
             if ($exitCode !== 0) {
                 $failed[] = [
                     'finding' => $worker['finding'],
@@ -148,15 +161,35 @@ final class ReviewScanCommand extends Command
                 $running[] = $startWorker($finding);
             }
 
+            $finishedIndexes = [];
             foreach ($running as $index => $worker) {
-                $status = proc_get_status($worker['process']);
-                if ($status['running'] === true) {
+                if (!\is_resource($worker['process'])) {
+                    $finishedIndexes[] = $index;
                     continue;
                 }
 
-                $exitCode = $finishWorker($worker);
-                unset($running[$index]);
-                $running = array_values($running);
+                try {
+                    $status = proc_get_status($worker['process']);
+                } catch (\Throwable) {
+                    $status = ['running' => false];
+                }
+
+                if (($status['running'] ?? false) === true) {
+                    continue;
+                }
+
+                try {
+                    $exitCode = $finishWorker($worker);
+                } catch (\Throwable $exception) {
+                    $exitCode = 1;
+                    $io->warning(sprintf(
+                        'Worker crashed for %s (%s): %s',
+                        substr($worker['finding']->getId(), 0, 8),
+                        $worker['finding']->getDomain()->getHostname(),
+                        $exception->getMessage(),
+                    ));
+                }
+                $finishedIndexes[] = $index;
                 $processed++;
                 $progressBar->setMessage(sprintf('%s %s', substr($worker['finding']->getId(), 0, 8), $worker['finding']->getDomain()->getHostname()));
                 $progressBar->advance();
@@ -168,6 +201,13 @@ final class ReviewScanCommand extends Command
                         $worker['finding']->getDomain()->getHostname(),
                     ));
                 }
+            }
+
+            if ($finishedIndexes !== []) {
+                foreach (array_reverse($finishedIndexes) as $index) {
+                    unset($running[$index]);
+                }
+                $running = array_values($running);
             }
 
             if ($queue !== [] || $running !== []) {

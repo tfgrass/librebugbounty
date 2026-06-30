@@ -320,17 +320,16 @@ final class WebController
             .($statusFilter !== '' ? '<input type="hidden" name="status" value="'.$this->escape($statusFilter).'">' : '')
             .($bucketFilter !== '' ? '<input type="hidden" name="bucket" value="'.$this->escape($bucketFilter).'">' : '')
             .'<input type="hidden" name="page" value="1">'
-            .'<label>Per page'
-            .'<select name="pageSize" onchange="this.form.submit()">'
+            .'<label class="sr-only" for="page-size-select">Rows per page</label>'
+            .'<select id="page-size-select" name="pageSize" onchange="this.form.submit()">'
             .'<option value="10"'.($selectedPageSize === '10' ? ' selected' : '').'>10</option>'
             .'<option value="25"'.($selectedPageSize === '25' ? ' selected' : '').'>25</option>'
             .'<option value="50"'.($selectedPageSize === '50' ? ' selected' : '').'>50</option>'
             .'<option value="all"'.($selectedPageSize === 'all' ? ' selected' : '').'>All</option>'
             .'</select>'
-            .'</label>'
             .'</form>';
         $showingLine = sprintf(
-            '<div class="pagination-summary"><span class="hint">Showing</span>%s<span class="hint">of %d findings</span></div>',
+            '<div class="pagination-summary">Showing %s of %d findings</div>',
             $pageSizeForm,
             $totalFiltered,
         );
@@ -338,7 +337,6 @@ final class WebController
             $pagination = '<div class="pagination">'
                 .'<div class="pagination-actions">'
                 .($totalPages > 1 ? '<a href="'.$this->escape($currentPage > 1 ? $buildPageUrl($currentPage - 1) : '#').'#findings"'.$prevDisabled.'>Previous</a>' : '')
-                .sprintf('<span class="hint">Page %d of %d</span>', $currentPage, $totalPages)
                 .($totalPages > 1 ? '<a href="'.$this->escape($currentPage < $totalPages ? $buildPageUrl($currentPage + 1) : '#').'#findings"'.$nextDisabled.'>Next</a>' : '')
                 .'</div>'
                 .'</div>';
@@ -364,9 +362,26 @@ final class WebController
   <form method="post" action="/findings">
     <label>URL <input name="url" placeholder="https://example.com/search?q=%3Csvg%20onload=alert(1)%3E" required></label>
     <label>Payload <input name="payload" placeholder="OPENBUGBOUNTY" value="OPENBUGBOUNTY"></label>
-    <p class="hint">Your XSS must display <code>OPENBUGBOUNTY</code> in a JS popup, for example: <code>&lt;script&gt;alert('OPENBUGBOUNTY')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/OPENBUGBOUNTY/)&gt;</code></p>
+    <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token>OPENBUGBOUNTY</code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token>OPENBUGBOUNTY</span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token>OPENBUGBOUNTY</span>/)&gt;</code></p>
     <label>Notes <textarea name="annotate" placeholder="Optional note."></textarea></label>
     <button type="submit">Save and Verify</button>
+    <script>
+(() => {
+  const payloadInput = document.querySelector('input[name="payload"]');
+  const tokens = document.querySelectorAll('[data-payload-token]');
+  const fallback = 'OPENBUGBOUNTY';
+  const update = () => {
+    const value = (payloadInput && payloadInput.value ? payloadInput.value.trim() : '') || fallback;
+    tokens.forEach((token) => {
+      token.textContent = value;
+    });
+  };
+  if (payloadInput) {
+    payloadInput.addEventListener('input', update);
+  }
+  update();
+})();
+    </script>
   </form>
 </section>
 
@@ -395,28 +410,23 @@ final class WebController
           </optgroup>
         </select>
       </label>
-      <label>Per page
-        <select name="pageSize">
-          <?php foreach ([10, 25, 50, 100] as $value): ?>
-            <option value="<?= $this->escape((string) $value) ?>"<?= $selectedPageSize === $value ? ' selected' : '' ?>><?= $this->escape((string) $value) ?></option>
-          <?php endforeach; ?>
-        </select>
-      </label>
     </div>
+    <input type="hidden" name="pageSize" value="<?= $this->escape($selectedPageSize) ?>">
     <div class="filter-actions">
       <button type="submit">Search</button>
       <a class="button ghost" href="/">Reset</a>
     </div>
   </form>
-  <?= $showingLine ?>
-  <?= $pagination ?>
   <div class="table-wrap">
     <table>
       <thead><tr><th>ID</th><th>Domain</th><th>Status</th><th>Submitted</th><th>Last Recheck</th></tr></thead>
       <tbody><?= $findingTableRows ?></tbody>
     </table>
   </div>
-  <?= $pagination ?>
+  <div class="pagination-footer">
+    <?= $showingLine ?>
+    <?= $pagination ?>
+  </div>
 </section>
 <?php
         return $this->renderLayout(
@@ -446,7 +456,7 @@ final class WebController
             .'button,.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;border:0;border-radius:999px;padding:10px 16px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}'
             .'button.secondary,.button.secondary{background:var(--accent-2)}button.ghost,.button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(15,109,72,.22)}'
             .'button.danger,.button.danger{background:#b91c1c;color:#fff}'
-            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 6px}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form label{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 14px}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}'
+            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}'
             .'.notice{padding:12px 14px;border-radius:14px;margin-bottom:16px;border:1px solid transparent}.notice.success{background:rgba(15,109,72,.10);color:#0b4d34;border-color:rgba(15,109,72,.16)}.notice.error{background:rgba(185,28,28,.10);color:#7f1d1d;border-color:rgba(185,28,28,.16)}'
             .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}'
             .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'
