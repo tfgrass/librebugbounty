@@ -55,7 +55,7 @@ final class ReviewService
 
     private function shouldReview(Finding $finding): bool
     {
-        if ($finding->getReviewState() === ReviewState::CONFIRMED_FIXED) {
+        if (\in_array($finding->getReviewState(), [ReviewState::MANUAL_CHECKING, ReviewState::CONFIRMED_FIXED], true)) {
             return false;
         }
 
@@ -73,13 +73,13 @@ final class ReviewService
         };
     }
 
-    public function reviewFinding(Finding $finding): void
+    public function reviewFinding(Finding $finding, int $timeoutMs = 45000): void
     {
         $wasManualCheck = $finding->getReviewState() === ReviewState::MANUAL_CHECKING;
         $noStatusUpdate = $wasManualCheck;
 
-        $chromium = $this->retestService->retest($finding, true, noStatusUpdate: $noStatusUpdate, browser: 'chromium');
-        $firefox = $this->retestService->retest($finding, true, noStatusUpdate: $noStatusUpdate, browser: 'firefox');
+        $chromium = $this->retestService->retest($finding, true, $timeoutMs, false, $noStatusUpdate, 'chromium');
+        $firefox = $this->retestService->retest($finding, true, $timeoutMs, false, $noStatusUpdate, 'firefox');
 
         if ($wasManualCheck) {
             $finding->setReviewState(ReviewState::MANUAL_CHECKING);

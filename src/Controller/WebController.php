@@ -34,14 +34,27 @@ final class WebController
     public function home(Request $request): Response
     {
         $domainQuery = trim($request->query->getString('domain'));
-        $statusFilter = trim($request->query->getString('status'));
+        $statusSelection = trim($request->query->getString('status'));
+        $bucketFilter = trim($request->query->getString('bucket'));
         $page = max(1, $request->query->getInt('page', 1));
-        $pageSize = 50;
+        $pageSizeSelection = strtolower(trim($request->query->getString('pageSize', '10')));
+        if (!in_array($pageSizeSelection, ['10', '25', '50', '100', 'all'], true)) {
+            $pageSizeSelection = '10';
+        }
+
+        if ($bucketFilter === '' && in_array($statusSelection, ['open', 'manual_review', 'unchecked'], true)) {
+            $bucketFilter = $statusSelection;
+            $statusSelection = '';
+        }
+
+        $statusFilter = in_array($statusSelection, ['new', 'verified', 'fixed'], true) ? $statusSelection : '';
 
         $totalFiltered = $this->findings->countByDomainAndStatus(
             $domainQuery !== '' ? $domainQuery : null,
             $statusFilter !== '' ? $statusFilter : null,
+            $bucketFilter !== '' ? $bucketFilter : null,
         );
+        $pageSize = $pageSizeSelection === 'all' ? max(1, $totalFiltered) : (int) $pageSizeSelection;
         $totalPages = max(1, (int) ceil($totalFiltered / $pageSize));
         $page = min($page, $totalPages);
         $offset = ($page - 1) * $pageSize;
@@ -49,13 +62,16 @@ final class WebController
         $findings = $this->findings->findPageByDomainAndStatus(
             $domainQuery !== '' ? $domainQuery : null,
             $statusFilter !== '' ? $statusFilter : null,
+            $bucketFilter !== '' ? $bucketFilter : null,
             $pageSize,
             $offset,
         );
         $stats = [
             'total' => $this->findings->countAllFindings(),
-            'fixed' => $this->findings->countByStatuses([FindingStatus::FIXED]),
-            'vulnerable' => $this->findings->countByStatuses(FindingStatus::openValues()),
+            'open' => $this->findings->countByBucket('open'),
+            'fixed' => $this->findings->countByBucket('fixed'),
+            'manual_review' => $this->findings->countByBucket('manual_review'),
+            'unchecked' => $this->findings->countByBucket('unchecked'),
         ];
 
         return new Response($this->renderHomePage(
@@ -64,8 +80,10 @@ final class WebController
             filters: [
                 'domain' => $domainQuery,
                 'status' => $statusFilter,
+                'bucket' => $bucketFilter,
+                'selection' => $bucketFilter !== '' ? $bucketFilter : $statusFilter,
                 'page' => $page,
-                'pageSize' => $pageSize,
+                'pageSize' => $pageSizeSelection,
                 'totalFiltered' => $totalFiltered,
                 'totalPages' => $totalPages,
             ],
@@ -244,16 +262,29 @@ final class WebController
         $totalPages = max(1, (int) ($filters['totalPages'] ?? 1));
         $domainFilter = (string) ($filters['domain'] ?? '');
         $statusFilter = (string) ($filters['status'] ?? '');
+        $bucketFilter = (string) ($filters['bucket'] ?? '');
+        $selectedFilter = (string) ($filters['selection'] ?? '');
+        $selectedPageSize = (string) ($filters['pageSize'] ?? '10');
+        if (!in_array($selectedPageSize, ['10', '25', '50', '100', 'all'], true)) {
+            $selectedPageSize = '10';
+        }
         $firstItem = $totalFiltered === 0 ? 0 : (($currentPage - 1) * $pageSize) + 1;
         $lastItem = min($totalFiltered, $currentPage * $pageSize);
 
-        $buildPageUrl = function (int $page) use ($domainFilter, $statusFilter): string {
+        $buildPageUrl = function (int $page, ?string $bucketOverride = null) use ($domainFilter, $statusFilter, $bucketFilter, $selectedPageSize): string {
             $query = ['page' => $page];
             if ($domainFilter !== '') {
                 $query['domain'] = $domainFilter;
             }
             if ($statusFilter !== '') {
                 $query['status'] = $statusFilter;
+            }
+            $effectiveBucket = $bucketOverride ?? $bucketFilter;
+            if ($effectiveBucket !== '') {
+                $query['bucket'] = $effectiveBucket;
+            }
+            if (in_array($selectedPageSize, ['10', '25', '50', '100', 'all'], true)) {
+                $query['pageSize'] = $selectedPageSize;
             }
 
             return '/?'.http_build_query($query);
@@ -282,19 +313,34 @@ final class WebController
 
         $findingTableRows = $this->rowsOrEmpty($findingRows, 5, 'No findings yet');
         $pagination = '';
-        if ($totalPages > 1) {
-            $prevDisabled = $currentPage <= 1 ? ' aria-disabled="true" class="button ghost"' : '';
-            $nextDisabled = $currentPage >= $totalPages ? ' aria-disabled="true" class="button ghost"' : '';
+        $prevDisabled = $currentPage <= 1 ? ' aria-disabled="true" class="button ghost"' : '';
+        $nextDisabled = $currentPage >= $totalPages ? ' aria-disabled="true" class="button ghost"' : '';
+        $pageSizeForm = '<form method="get" action="/" class="per-page-form">'
+            .($domainFilter !== '' ? '<input type="hidden" name="domain" value="'.$this->escape($domainFilter).'">' : '')
+            .($statusFilter !== '' ? '<input type="hidden" name="status" value="'.$this->escape($statusFilter).'">' : '')
+            .($bucketFilter !== '' ? '<input type="hidden" name="bucket" value="'.$this->escape($bucketFilter).'">' : '')
+            .'<input type="hidden" name="page" value="1">'
+            .'<label>Per page'
+            .'<select name="pageSize" onchange="this.form.submit()">'
+            .'<option value="10"'.($selectedPageSize === '10' ? ' selected' : '').'>10</option>'
+            .'<option value="25"'.($selectedPageSize === '25' ? ' selected' : '').'>25</option>'
+            .'<option value="50"'.($selectedPageSize === '50' ? ' selected' : '').'>50</option>'
+            .'<option value="all"'.($selectedPageSize === 'all' ? ' selected' : '').'>All</option>'
+            .'</select>'
+            .'</label>'
+            .'</form>';
+        $showingLine = sprintf(
+            '<div class="pagination-summary"><span class="hint">Showing</span>%s<span class="hint">of %d findings</span></div>',
+            $pageSizeForm,
+            $totalFiltered,
+        );
+        if ($selectedPageSize !== 'all' && $totalPages > 1) {
             $pagination = '<div class="pagination">'
-                .sprintf('<span class="hint">Showing %d-%d of %d findings</span>', $firstItem, $lastItem, $totalFiltered)
-                .sprintf('<div class="pagination-actions"><a href="%s"%s>Previous</a><span class="hint">Page %d of %d</span><a href="%s"%s>Next</a></div>',
-                    $currentPage > 1 ? $this->escape($buildPageUrl($currentPage - 1)) : '#',
-                    $prevDisabled,
-                    $currentPage,
-                    $totalPages,
-                    $currentPage < $totalPages ? $this->escape($buildPageUrl($currentPage + 1)) : '#',
-                    $nextDisabled,
-                )
+                .'<div class="pagination-actions">'
+                .($totalPages > 1 ? '<a href="'.$this->escape($currentPage > 1 ? $buildPageUrl($currentPage - 1) : '#').'#findings"'.$prevDisabled.'>Previous</a>' : '')
+                .sprintf('<span class="hint">Page %d of %d</span>', $currentPage, $totalPages)
+                .($totalPages > 1 ? '<a href="'.$this->escape($currentPage < $totalPages ? $buildPageUrl($currentPage + 1) : '#').'#findings"'.$nextDisabled.'>Next</a>' : '')
+                .'</div>'
                 .'</div>';
         }
 
@@ -304,9 +350,11 @@ final class WebController
   <?= $messageBox ?>
   <?= $errorBox ?>
   <div class="stats">
-    <div class="stat"><span>Total</span><strong><?= $this->escape($stats['total']) ?></strong></div>
-    <div class="stat"><span>Fixed</span><strong><?= $this->escape($stats['fixed']) ?></strong></div>
-    <div class="stat"><span>Vulnerable</span><strong><?= $this->escape($stats['vulnerable']) ?></strong></div>
+    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, '')) ?>"><span>Total</span><strong><?= $this->escape($stats['total']) ?></strong></a>
+    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'open')) ?>"><span>Open</span><strong><?= $this->escape($stats['open']) ?></strong></a>
+    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'fixed')) ?>"><span>Fixed</span><strong><?= $this->escape($stats['fixed']) ?></strong></a>
+    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'manual_review')) ?>"><span>Manual Review</span><strong><?= $this->escape($stats['manual_review']) ?></strong></a>
+    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'unchecked')) ?>"><span>Unchecked</span><strong><?= $this->escape($stats['unchecked']) ?></strong></a>
   </div>
   <div class="section-head">
     <div>
@@ -322,7 +370,7 @@ final class WebController
   </form>
 </section>
 
-<section class="panel wide">
+<section class="panel wide" id="findings">
   <div class="section-head">
     <div>
       <h2>Findings</h2>
@@ -332,11 +380,25 @@ final class WebController
   <form method="get" action="/" class="filters">
     <div class="split">
       <label>Domain <input name="domain" value="<?= $this->escape($domainFilter) ?>" placeholder="example.com"></label>
-      <label>Status
+      <label>Status / Bucket
         <select name="status">
           <option value="">Any status</option>
-          <?php foreach (['new', 'verified', 'reported', 'fixed', 'false_positive', 'wontfix', 'duplicate'] as $status): ?>
-            <option value="<?= $this->escape($status) ?>"<?= $statusFilter === $status ? ' selected' : '' ?>><?= $this->escape(ucfirst(str_replace('_', ' ', $status))) ?></option>
+          <optgroup label="Buckets">
+            <?php foreach (['open' => 'Open', 'manual_review' => 'Manual Review', 'unchecked' => 'Unchecked'] as $value => $label): ?>
+              <option value="<?= $this->escape($value) ?>"<?= $selectedFilter === $value ? ' selected' : '' ?>><?= $this->escape($label) ?></option>
+            <?php endforeach; ?>
+          </optgroup>
+          <optgroup label="Statuses">
+            <?php foreach (['new' => 'New', 'verified' => 'Verified', 'fixed' => 'Fixed'] as $value => $label): ?>
+              <option value="<?= $this->escape($value) ?>"<?= $selectedFilter === $value ? ' selected' : '' ?>><?= $this->escape($label) ?></option>
+            <?php endforeach; ?>
+          </optgroup>
+        </select>
+      </label>
+      <label>Per page
+        <select name="pageSize">
+          <?php foreach ([10, 25, 50, 100] as $value): ?>
+            <option value="<?= $this->escape((string) $value) ?>"<?= $selectedPageSize === $value ? ' selected' : '' ?>><?= $this->escape((string) $value) ?></option>
           <?php endforeach; ?>
         </select>
       </label>
@@ -346,6 +408,7 @@ final class WebController
       <a class="button ghost" href="/">Reset</a>
     </div>
   </form>
+  <?= $showingLine ?>
   <?= $pagination ?>
   <div class="table-wrap">
     <table>
@@ -377,16 +440,17 @@ final class WebController
             .':root{color-scheme:light;--bg:#f3efe6;--panel:rgba(255,251,244,.88);--text:#1f1a16;--muted:#6d6258;--accent:#0f6d48;--accent-2:#8c5cf6;--border:#e6dcca;--shadow:0 18px 48px rgba(48,32,14,.08)}'
             .'*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:radial-gradient(circle at top left,rgba(255,255,255,.95),transparent 40%),radial-gradient(circle at 90% 10%,rgba(140,92,246,.10),transparent 30%),radial-gradient(circle at 10% 90%,rgba(15,109,72,.10),transparent 25%),linear-gradient(180deg,#f8f4ec 0%,var(--bg) 100%)}'
             .'a{color:inherit}code,pre{background:rgba(15,109,72,.08);border-radius:10px;padding:2px 6px;white-space:pre-wrap;word-break:break-word}pre{margin:0;padding:10px 12px}main{padding:24px;display:grid;gap:20px}'
-            .'.panel{background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);padding:18px}.wide{width:100%}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat{padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.66);border:1px solid var(--border)}.stat span{display:block;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}.stat strong{font-size:1.35rem;line-height:1;font-weight:800}'
+            .'.panel{background:var(--panel);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);padding:18px}.wide{width:100%}.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}.stat{padding:14px 16px;border-radius:16px;background:rgba(255,255,255,.66);border:1px solid var(--border);text-decoration:none;color:inherit;display:block}.stat-link{transition:transform .15s ease, box-shadow .15s ease}.stat-link:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(48,32,14,.08)}.stat span{display:block;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px}.stat strong{font-size:1.35rem;line-height:1;font-weight:800}'
             .'.filters,form{display:grid;gap:10px}.split{display:grid;gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}'
             .'label{display:grid;gap:6px;font-size:.92rem;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--border);border-radius:12px;padding:10px 12px;font:inherit;background:rgba(255,255,255,.95);color:var(--text)}textarea{min-height:88px;resize:vertical}'
             .'button,.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;border:0;border-radius:999px;padding:10px 16px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}'
             .'button.secondary,.button.secondary{background:var(--accent-2)}button.ghost,.button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(15,109,72,.22)}'
             .'button.danger,.button.danger{background:#b91c1c;color:#fff}'
-            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}'
+            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 6px}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form label{display:inline-flex;align-items:center;gap:8px;color:var(--muted)}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 14px}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}'
             .'.notice{padding:12px 14px;border-radius:14px;margin-bottom:16px;border:1px solid transparent}.notice.success{background:rgba(15,109,72,.10);color:#0b4d34;border-color:rgba(15,109,72,.16)}.notice.error{background:rgba(185,28,28,.10);color:#7f1d1d;border-color:rgba(185,28,28,.16)}'
-            .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.false_positive,.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}'
-            .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}}'
+            .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}'
+            .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+            .'@media (max-width:540px){.stats{grid-template-columns:1fr}}'
             .'</style>'
             .'</head>'
             .'<body>'

@@ -93,7 +93,7 @@ final class FindingRepositoryTest extends UnitTestCase
         $other->setMethod('GET');
         $entityManager->persist($other);
 
-        $results = $repos['findings']->findPageByDomainAndStatus('alpha', 'verified', 1, 0);
+        $results = $repos['findings']->findPageByDomainAndStatus('alpha', 'verified', null, 1, 0);
 
         self::assertCount(1, $results);
         self::assertSame('alpha.example.com', $results[0]->getDomain()->getHostname());

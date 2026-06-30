@@ -8,7 +8,6 @@ final class FindingStatus
     public const VERIFIED = 'verified';
     public const REPORTED = 'reported';
     public const FIXED = 'fixed';
-    public const FALSE_POSITIVE = 'false_positive';
     public const WONTFIX = 'wontfix';
     public const DUPLICATE = 'duplicate';
 
@@ -19,7 +18,6 @@ final class FindingStatus
             self::VERIFIED,
             self::REPORTED,
             self::FIXED,
-            self::FALSE_POSITIVE,
             self::WONTFIX,
             self::DUPLICATE,
         ];

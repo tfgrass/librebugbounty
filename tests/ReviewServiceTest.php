@@ -232,8 +232,8 @@ final class ReviewServiceTest extends UnitTestCase
 
         $processed = $reviewService->scan();
 
-        self::assertSame(1, $processed);
-        self::assertSame(['chromium', 'firefox'], $capture->browserCalls);
+        self::assertSame(0, $processed);
+        self::assertSame([], $capture->browserCalls);
         self::assertSame('verified', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
     }

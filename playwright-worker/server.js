@@ -267,9 +267,7 @@ async function runRetest(payload) {
       ? 'Dialog matched expected evidence.'
       : 'Browser dialog appeared during the retest.';
   } else if (expectedEvidence && pageText.includes(expectedEvidence)) {
-    observedEvidence = expectedEvidence;
-    result = 'still_vulnerable';
-    classificationReason = 'Page text matched expected evidence.';
+    classificationReason = 'Expected evidence appeared in HTML only; manual review required.';
   } else if (expectedEvidence && responseStatus && responseStatus >= 200 && responseStatus < 400) {
     if (pageErrors.length > 0) {
       classificationReason = 'Loaded successfully, but browser page errors were observed before matching expected evidence.';
@@ -292,9 +290,7 @@ async function runRetest(payload) {
       };
 
       if (matched) {
-        observedEvidence = expectedEvidence;
-        result = 'still_vulnerable';
-        classificationReason = 'HTTP fallback response contained expected evidence.';
+        classificationReason = 'HTTP fallback response contained expected evidence only; manual review required.';
       } else if (classificationReason === null) {
         classificationReason = 'HTTP fallback did not contain expected evidence.';
       }
@@ -318,7 +314,7 @@ async function runRetest(payload) {
     classificationReason = 'No alert or evidence detected within the timeout window.';
   }
 
-  if (screenshot && screenshotBase64 === null && result !== 'error') {
+  if (screenshot && screenshotBase64 === null && result === 'still_vulnerable') {
     try {
       screenshotBase64 = await capturePageScreenshot(page, timeoutMs);
       screenshotCaptureMethod = 'page';

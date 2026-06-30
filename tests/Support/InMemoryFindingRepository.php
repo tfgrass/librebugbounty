@@ -63,7 +63,7 @@ final class InMemoryFindingRepository extends FindingRepository
         }));
     }
 
-    public function findPageByDomainAndStatus(?string $domainQuery = null, ?string $status = null, int $limit = 50, int $offset = 0): array
+    public function findPageByDomainAndStatus(?string $domainQuery = null, ?string $status = null, ?string $bucket = null, int $limit = 50, int $offset = 0): array
     {
         $results = array_values(array_filter($this->findings, static function (Finding $finding) use ($domainQuery, $status): bool {
             if ($domainQuery !== null && $domainQuery !== '' && !str_contains(strtolower($finding->getDomain()->getHostname()), strtolower($domainQuery))) {
@@ -83,12 +83,31 @@ final class InMemoryFindingRepository extends FindingRepository
             return $bDate <=> $aDate;
         });
 
+        $results = array_values(array_filter($results, static function (Finding $finding) use ($bucket): bool {
+            if ($bucket === null || $bucket === '') {
+                return true;
+            }
+
+            return match ($bucket) {
+                'open' => in_array($finding->getStatus(), ['new', 'verified', 'reported'], true) && $finding->getReviewState() === null && $finding->getLastRetestedAt() !== null,
+                'fixed' => $finding->getStatus() === 'fixed',
+                'manual_review' => $finding->getReviewState() === 'manual_checking',
+                'unchecked' => $finding->getLastRetestedAt() === null,
+                default => throw new \InvalidArgumentException(sprintf('Unsupported bucket "%s".', $bucket)),
+            };
+        }));
+
         return array_slice($results, max(0, $offset), $limit);
     }
 
-    public function countByDomainAndStatus(?string $domainQuery = null, ?string $status = null): int
+    public function countByDomainAndStatus(?string $domainQuery = null, ?string $status = null, ?string $bucket = null): int
     {
-        return count($this->findPageByDomainAndStatus($domainQuery, $status, 1000000, 0));
+        return count($this->findPageByDomainAndStatus($domainQuery, $status, $bucket, 1000000, 0));
+    }
+
+    public function countByBucket(string $bucket): int
+    {
+        return $this->countByDomainAndStatus(null, null, $bucket);
     }
 
     public function countOpenFindingsForDomain(Domain $domain): int

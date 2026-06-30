@@ -6,12 +6,42 @@ PROJECT_NAME=$(awk '/^name:/ { print $2; exit }' "$ROOT_DIR/.ddev/config.yaml")
 BASE_URL="${BASE_URL:-https://${PROJECT_NAME}.ddev.site}"
 CONTAINER="ddev-${PROJECT_NAME}-playwright"
 OUTPUT_DIR="/var/www/html/docs/screenshots"
+DB_PATH="$ROOT_DIR/storage/database/app.sqlite"
 
-ddev exec php bin/console app:screenshot:missing --limit 1 --browser chromium
+DETAIL_FINDING_ID=$(sqlite3 -noheader "$DB_PATH" "SELECT f.id
+FROM finding f
+JOIN evidence e ON e.finding_id = f.id AND e.kind = 'screenshot'
+WHERE f.status IN ('new', 'verified', 'reported')
+ORDER BY CASE f.status WHEN 'new' THEN 0 WHEN 'verified' THEN 1 WHEN 'reported' THEN 2 ELSE 3 END, COALESCE(f.submitted_at, f.created_at) DESC
+LIMIT 1;")
+
+if [ -z "$DETAIL_FINDING_ID" ]; then
+  ddev exec php bin/console app:screenshot:missing --limit 1 --browser chromium
+  DETAIL_FINDING_ID=$(sqlite3 -noheader "$DB_PATH" "SELECT f.id
+FROM finding f
+JOIN evidence e ON e.finding_id = f.id AND e.kind = 'screenshot'
+WHERE f.status IN ('new', 'verified', 'reported')
+ORDER BY CASE f.status WHEN 'new' THEN 0 WHEN 'verified' THEN 1 WHEN 'reported' THEN 2 ELSE 3 END, COALESCE(f.submitted_at, f.created_at) DESC
+LIMIT 1;")
+fi
+
+if [ -z "$DETAIL_FINDING_ID" ]; then
+  DETAIL_FINDING_ID=$(sqlite3 -noheader "$DB_PATH" "SELECT f.id
+FROM finding f
+JOIN evidence e ON e.finding_id = f.id AND e.kind = 'screenshot'
+ORDER BY COALESCE(f.submitted_at, f.created_at) DESC
+LIMIT 1;")
+fi
+
+if [ -z "$DETAIL_FINDING_ID" ]; then
+  echo "No screenshot-bearing finding found."
+  exit 1
+fi
 
 docker exec -i -w /var/www/html/playwright-worker "$CONTAINER" env \
   BASE_URL="$BASE_URL" \
   OUTPUT_DIR="$OUTPUT_DIR" \
+  DETAIL_FINDING_ID="$DETAIL_FINDING_ID" \
   node - <<'NODE'
 const fs = require('fs');
 const path = require('path');
@@ -19,6 +49,7 @@ const { chromium } = require('playwright');
 
 const baseUrl = process.env.BASE_URL || 'https://librebugbounty.ddev.site';
 const outputDir = process.env.OUTPUT_DIR || '/var/www/html/docs/screenshots';
+const detailFindingId = process.env.DETAIL_FINDING_ID || '';
 const overviewPath = path.join(outputDir, 'overview-redacted.png');
 const detailPath = path.join(outputDir, 'detail-redacted.png');
 
@@ -65,58 +96,13 @@ async function redact(page) {
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' });
   await redact(page);
-  await page.screenshot({ path: overviewPath, fullPage: false });
+  await page.screenshot({ path: overviewPath, fullPage: true });
 
-  const findingRows = await page.$$eval('table tbody tr', (rows) => rows.map((row) => {
-    const link = row.querySelector('a.row-link[href^="/findings/"]');
-    const badge = row.querySelector('.badge');
-
-    return {
-      href: link ? link.getAttribute('href') : null,
-      status: badge ? badge.textContent.trim().toLowerCase() : '',
-    };
-  }));
-
-  const openStatuses = new Set(['new', 'verified', 'reported', 'manual checking']);
-  const preferredRows = findingRows.filter((row) => typeof row.href === 'string' && row.href.length > 0 && openStatuses.has(row.status));
-  const fallbackRows = findingRows.filter((row) => typeof row.href === 'string' && row.href.length > 0);
-
-  if (fallbackRows.length === 0) {
-    throw new Error('No findings found. Seed the database or run app:review:scan first.');
+  if (!detailFindingId) {
+    throw new Error('No screenshot-bearing finding id available.');
   }
 
-  let chosenHref = null;
-  const candidates = preferredRows.length > 0 ? preferredRows : fallbackRows;
-  const maxCandidates = Math.min(candidates.length, 25);
-  for (let index = 0; index < maxCandidates; index += 1) {
-    const href = candidates[index].href;
-    await page.goto(new URL(href, baseUrl).toString(), { waitUntil: 'networkidle' });
-    await redact(page);
-    if ((await page.locator('.shot-card').count()) > 0) {
-      chosenHref = href;
-      break;
-    }
-  }
-
-  if (!chosenHref && preferredRows.length > 0) {
-    const fallbackCandidates = fallbackRows;
-    const fallbackLimit = Math.min(fallbackCandidates.length, 25);
-    for (let index = 0; index < fallbackLimit; index += 1) {
-      const href = fallbackCandidates[index].href;
-      await page.goto(new URL(href, baseUrl).toString(), { waitUntil: 'networkidle' });
-      await redact(page);
-      if ((await page.locator('.shot-card').count()) > 0) {
-        chosenHref = href;
-        break;
-      }
-    }
-  }
-
-  if (!chosenHref) {
-    throw new Error('Could not determine a finding with screenshots to capture.');
-  }
-
-  await page.goto(new URL(chosenHref, baseUrl).toString(), { waitUntil: 'networkidle' });
+  await page.goto(new URL(`/findings/${detailFindingId}`, baseUrl).toString(), { waitUntil: 'networkidle' });
   await redact(page);
   await page.screenshot({ path: detailPath, fullPage: true });
 

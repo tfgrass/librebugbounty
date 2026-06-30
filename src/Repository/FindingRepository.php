@@ -8,6 +8,7 @@ use App\Value\EvidenceKind;
 use App\Value\FindingStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\ORM\Query\Expr\Join;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -57,6 +58,11 @@ class FindingRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    public function countByBucket(string $bucket): int
+    {
+        return $this->countByCriteria(null, null, $bucket);
+    }
+
     /**
      * @return list<Finding>
      */
@@ -90,7 +96,22 @@ class FindingRepository extends ServiceEntityRepository
     /**
      * @return list<Finding>
      */
-    public function findPageByDomainAndStatus(?string $domainQuery = null, ?string $status = null, int $limit = 50, int $offset = 0): array
+    public function findPageByDomainAndStatus(?string $domainQuery = null, ?string $status = null, ?string $bucket = null, int $limit = 50, int $offset = 0): array
+    {
+        return $this->buildListQuery($domainQuery, $status, $bucket, $limit, $offset)->getQuery()->getResult();
+    }
+
+    public function countByDomainAndStatus(?string $domainQuery = null, ?string $status = null, ?string $bucket = null): int
+    {
+        return $this->countByCriteria($domainQuery, $status, $bucket);
+    }
+
+    public function countUncheckedFindings(): int
+    {
+        return $this->countByBucket('unchecked');
+    }
+
+    private function buildListQuery(?string $domainQuery, ?string $status, ?string $bucket, int $limit, int $offset)
     {
         $qb = $this->createQueryBuilder('f')
             ->addSelect('d')
@@ -100,25 +121,24 @@ class FindingRepository extends ServiceEntityRepository
             ->setMaxResults($limit)
             ->setFirstResult(max(0, $offset));
 
-        $domainQuery = $domainQuery !== null ? trim($domainQuery) : null;
-        if ($domainQuery !== null && $domainQuery !== '') {
-            $qb->andWhere('LOWER(d.hostname) LIKE :domainQuery')
-                ->setParameter('domainQuery', '%'.strtolower($domainQuery).'%');
-        }
+        $this->applyFilters($qb, $domainQuery, $status, $bucket);
 
-        if ($status !== null && $status !== '') {
-            $qb->andWhere('f.status = :status')->setParameter('status', $status);
-        }
-
-        return $qb->getQuery()->getResult();
+        return $qb;
     }
 
-    public function countByDomainAndStatus(?string $domainQuery = null, ?string $status = null): int
+    private function countByCriteria(?string $domainQuery, ?string $status, ?string $bucket): int
     {
         $qb = $this->createQueryBuilder('f')
             ->select('COUNT(f.id)')
             ->innerJoin('f.domain', 'd');
 
+        $this->applyFilters($qb, $domainQuery, $status, $bucket);
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
+    }
+
+    private function applyFilters(QueryBuilder $qb, ?string $domainQuery, ?string $status, ?string $bucket): void
+    {
         $domainQuery = $domainQuery !== null ? trim($domainQuery) : null;
         if ($domainQuery !== null && $domainQuery !== '') {
             $qb->andWhere('LOWER(d.hostname) LIKE :domainQuery')
@@ -129,7 +149,22 @@ class FindingRepository extends ServiceEntityRepository
             $qb->andWhere('f.status = :status')->setParameter('status', $status);
         }
 
-        return (int) $qb->getQuery()->getSingleScalarResult();
+        if ($bucket === null || $bucket === '') {
+            return;
+        }
+
+        match ($bucket) {
+            'open' => $qb->andWhere('f.status IN (:openStatuses)')
+                ->andWhere('f.reviewState IS NULL')
+                ->andWhere('f.lastRetestedAt IS NOT NULL')
+                ->setParameter('openStatuses', FindingStatus::openValues()),
+            'fixed' => $qb->andWhere('f.status = :fixedStatus')
+                ->setParameter('fixedStatus', FindingStatus::FIXED),
+            'manual_review' => $qb->andWhere('f.reviewState = :manualReviewState')
+                ->setParameter('manualReviewState', 'manual_checking'),
+            'unchecked' => $qb->andWhere('f.lastRetestedAt IS NULL'),
+            default => throw new \InvalidArgumentException(sprintf('Unsupported bucket "%s".', $bucket)),
+        };
     }
 
     /**
