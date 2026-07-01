@@ -9,6 +9,7 @@ use App\Repository\EvidenceRepository;
 use App\Repository\FindingRepository;
 use App\Repository\RetestRunRepository;
 use App\Service\FindingService;
+use App\Service\SettingsService;
 use App\Service\RetestService;
 use App\Value\FindingStatus;
 use App\Value\EvidenceKind;
@@ -24,6 +25,7 @@ final class WebController
     public function __construct(
         private readonly FindingService $findingService,
         private readonly RetestService $retestService,
+        private readonly SettingsService $settings,
         private readonly FindingRepository $findings,
         private readonly EvidenceRepository $evidenceRepository,
         private readonly RetestRunRepository $retestRunRepository,
@@ -77,6 +79,8 @@ final class WebController
         return new Response($this->renderHomePage(
             findings: $findings,
             stats: $stats,
+            defaultPayload: $this->settings->getDefaultPayload(),
+            autoVerifyMode: $this->settings->getAutoVerifyMode(),
             filters: [
                 'domain' => $domainQuery,
                 'status' => $statusFilter,
@@ -96,32 +100,84 @@ final class WebController
     public function createFinding(Request $request): Response
     {
         try {
+            $payload = trim($request->request->getString('payload'));
             $finding = $this->findingService->createFinding(
                 url: $request->request->getString('url'),
-                expectedEvidence: $request->request->getString('payload') ?: null,
+                expectedEvidence: $payload !== '' ? $payload : null,
                 privateNotes: $request->request->getString('annotate') ?: null,
             );
 
-            try {
-                $run = $this->retestService->retest($finding, true);
+            if ($this->settings->getAutoVerifyMode() === 'submit') {
+                try {
+                    $run = $this->retestService->retest($finding, true);
 
-                return $this->redirectMessage(sprintf(
-                    'Finding %s stored for %s. Auto verification: %s.',
-                    $this->shortId($finding),
-                    $finding->getDomain()->getHostname(),
-                    $run->getResult(),
-                ));
-            } catch (\Throwable $verificationException) {
-                return $this->redirectError(sprintf(
-                    'Finding %s stored for %s, but auto verification failed: %s',
-                    $this->shortId($finding),
-                    $finding->getDomain()->getHostname(),
-                    $verificationException->getMessage(),
-                ));
+                    return $this->redirectMessage(sprintf(
+                        'Finding %s stored for %s. Auto verification: %s.',
+                        $this->shortId($finding),
+                        $finding->getDomain()->getHostname(),
+                        $run->getResult(),
+                    ));
+                } catch (\Throwable $verificationException) {
+                    return $this->redirectError(sprintf(
+                        'Finding %s stored for %s, but auto verification failed: %s',
+                        $this->shortId($finding),
+                        $finding->getDomain()->getHostname(),
+                        $verificationException->getMessage(),
+                    ));
+                }
             }
+
+            return $this->redirectMessage(sprintf(
+                'Finding %s stored for %s. Auto verification is set to cron only.',
+                $this->shortId($finding),
+                $finding->getDomain()->getHostname(),
+            ));
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
+    }
+
+    #[Route(path: 'settings', name: 'settings', methods: ['GET', 'POST'])]
+    public function settings(Request $request): Response
+    {
+        if ($request->isMethod('POST')) {
+            $payload = trim($request->request->getString('default_payload'));
+            $autoVerifyMode = $request->request->getString('auto_verify_mode');
+            $timeoutMs = trim($request->request->getString('review_timeout_ms'));
+            $concurrency = trim($request->request->getString('review_concurrency'));
+
+            if ($payload === '') {
+                $payload = SettingsService::DEFAULTS['intake.default_payload'];
+            }
+            if (!in_array($autoVerifyMode, ['submit', 'cron_only'], true)) {
+                $autoVerifyMode = SettingsService::DEFAULTS['intake.auto_verify_mode'];
+            }
+            if ($timeoutMs === '' || !ctype_digit($timeoutMs) || (int) $timeoutMs < 1000) {
+                $timeoutMs = SettingsService::DEFAULTS['review.scan_timeout_ms'];
+            }
+            if ($concurrency === '' || !ctype_digit($concurrency) || (int) $concurrency < 1) {
+                $concurrency = SettingsService::DEFAULTS['review.scan_concurrency'];
+            }
+
+            $this->settings->save([
+                'intake.default_payload' => $payload,
+                'intake.auto_verify_mode' => $autoVerifyMode,
+                'review.scan_timeout_ms' => $timeoutMs,
+                'review.scan_concurrency' => $concurrency,
+            ]);
+
+            return $this->redirectMessage('Settings saved.');
+        }
+
+        return new Response($this->renderSettingsPage(
+            settings: $this->settings->all(),
+        ));
+    }
+
+    #[Route(path: 'about', name: 'about', methods: ['GET'])]
+    public function about(): Response
+    {
+        return new Response($this->renderAboutPage());
     }
 
     #[Route(path: 'findings/{id}/retest', name: 'finding_retest', methods: ['POST'])]
@@ -252,7 +308,7 @@ final class WebController
         ]);
     }
 
-    private function renderHomePage(array $findings, array $stats, array $filters, ?string $message, ?string $error): string
+    private function renderHomePage(array $findings, array $stats, string $defaultPayload, string $autoVerifyMode, array $filters, ?string $message, ?string $error): string
     {
         $messageBox = $message ? '<div class="notice success">'.$this->escape($message).'</div>' : '';
         $errorBox = $error ? '<div class="notice error">'.$this->escape($error).'</div>' : '';
@@ -361,15 +417,15 @@ final class WebController
   </div>
   <form method="post" action="/findings">
     <label>URL <input name="url" placeholder="https://example.com/search?q=%3Csvg%20onload=alert(1)%3E" required></label>
-    <label>Payload <input name="payload" placeholder="OPENBUGBOUNTY" value="OPENBUGBOUNTY"></label>
-    <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token>OPENBUGBOUNTY</code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token>OPENBUGBOUNTY</span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token>OPENBUGBOUNTY</span>/)&gt;</code></p>
+    <label>Payload <input name="payload" placeholder="<?= $this->escape($defaultPayload) ?>" value="<?= $this->escape($defaultPayload) ?>"></label>
+    <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token><?= $this->escape($defaultPayload) ?></code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token><?= $this->escape($defaultPayload) ?></span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token><?= $this->escape($defaultPayload) ?></span>/)&gt;</code></p>
     <label>Notes <textarea name="annotate" placeholder="Optional note."></textarea></label>
-    <button type="submit">Save and Verify</button>
+    <button type="submit"><?= $this->escape($autoVerifyMode === 'cron_only' ? 'Save' : 'Save and Verify') ?></button>
     <script>
 (() => {
   const payloadInput = document.querySelector('input[name="payload"]');
   const tokens = document.querySelectorAll('[data-payload-token]');
-  const fallback = 'OPENBUGBOUNTY';
+  const fallback = <?= json_encode($defaultPayload) ?>;
   const update = () => {
     const value = (payloadInput && payloadInput.value ? payloadInput.value.trim() : '') || fallback;
     tokens.forEach((token) => {
@@ -456,7 +512,7 @@ final class WebController
             .'button,.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;border:0;border-radius:999px;padding:10px 16px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}'
             .'button.secondary,.button.secondary{background:var(--accent-2)}button.ghost,.button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(15,109,72,.22)}'
             .'button.danger,.button.danger{background:#b91c1c;color:#fff}'
-            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}.badge{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:.8rem;font-weight:800;letter-spacing:.01em;border:1px solid transparent;text-transform:none}.badge-stack{display:flex;gap:8px;flex-wrap:wrap}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.14);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.14);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.16);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.16);color:#0b4d34}.badge.bucket.open{background:rgba(30,64,175,.10);color:#1e40af}.badge.bucket.fixed{background:rgba(15,109,72,.10);color:#0b4d34}.badge.bucket.manual_review{background:rgba(217,119,6,.12);color:#b45309}.badge.bucket.unchecked{background:rgba(107,114,128,.10);color:#4b5563}'
+            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}.badge{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:.8rem;font-weight:800;letter-spacing:.01em;border:1px solid transparent;text-transform:none;width:max-content;max-width:100%}.status-pills{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.14);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.14);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.16);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.16);color:#0b4d34}.badge.bucket.open{background:rgba(30,64,175,.10);color:#1e40af}.badge.bucket.fixed{background:rgba(15,109,72,.10);color:#0b4d34}.badge.bucket.manual_review{background:rgba(217,119,6,.12);color:#b45309}.badge.bucket.unchecked{background:rgba(107,114,128,.10);color:#4b5563}.utility-nav{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:16px 24px 0}.utility-nav a{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:8px 14px;border-radius:999px;border:1px solid rgba(15,109,72,.18);text-decoration:none;color:var(--accent);font-weight:700;background:rgba(255,255,255,.55)}'
             .'.notice{padding:12px 14px;border-radius:14px;margin-bottom:16px;border:1px solid transparent}.notice.success{background:rgba(15,109,72,.10);color:#0b4d34;border-color:rgba(15,109,72,.16)}.notice.error{background:rgba(185,28,28,.10);color:#7f1d1d;border-color:rgba(185,28,28,.16)}'
             .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}'
             .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'
@@ -464,9 +520,95 @@ final class WebController
             .'</style>'
             .'</head>'
             .'<body>'
+            .'<div class="utility-nav"><a href="/">Overview</a><a href="/settings">Settings</a><a href="/about">About</a></div>'
             .'<main>'.$body.'</main>'
             .'</body>'
             .'</html>';
+    }
+
+    private function renderSettingsPage(array $settings): string
+    {
+        $defaultPayload = (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']);
+        $autoVerifyMode = (string) ($settings['intake.auto_verify_mode'] ?? SettingsService::DEFAULTS['intake.auto_verify_mode']);
+        $reviewTimeout = (string) ($settings['review.scan_timeout_ms'] ?? SettingsService::DEFAULTS['review.scan_timeout_ms']);
+        $reviewConcurrency = (string) ($settings['review.scan_concurrency'] ?? SettingsService::DEFAULTS['review.scan_concurrency']);
+
+        ob_start();
+        ?>
+<section class="panel">
+  <div class="section-head">
+    <div>
+      <h2>Settings</h2>
+      <p class="hint">Local MVP defaults for intake and review automation.</p>
+    </div>
+  </div>
+  <form method="post" action="/settings">
+    <label>Default Payload
+      <input name="default_payload" value="<?= $this->escape($defaultPayload) ?>" placeholder="OPENBUGBOUNTY">
+    </label>
+    <label>Auto Verification
+      <select name="auto_verify_mode">
+        <option value="submit"<?= $autoVerifyMode === 'submit' ? ' selected' : '' ?>>On submit</option>
+        <option value="cron_only"<?= $autoVerifyMode === 'cron_only' ? ' selected' : '' ?>>Cron only</option>
+      </select>
+    </label>
+    <label>Review Timeout (ms)
+      <input name="review_timeout_ms" inputmode="numeric" value="<?= $this->escape($reviewTimeout) ?>" placeholder="45000">
+    </label>
+    <label>Review Concurrency
+      <input name="review_concurrency" inputmode="numeric" value="<?= $this->escape($reviewConcurrency) ?>" placeholder="4">
+    </label>
+    <p class="hint">Use a lower timeout for fragile targets, and set auto verification to cron only when you want intake to stay fast.</p>
+    <div class="actions">
+      <button type="submit">Save settings</button>
+      <a class="button ghost" href="/">Back to overview</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="section-head">
+    <div>
+      <h2>What these do</h2>
+    </div>
+  </div>
+  <div class="detail-list">
+    <div><dt>Default Payload</dt><dd>Used when no payload is typed in the intake form or CLI defaults.</dd></div>
+    <div><dt>Auto Verification</dt><dd><code>On submit</code> retests immediately after intake, while <code>Cron only</code> leaves verification to <code>app:review:scan</code>.</dd></div>
+    <div><dt>Review Timeout</dt><dd>Browser timeout for the review scan and browser retests.</dd></div>
+    <div><dt>Review Concurrency</dt><dd>How many findings the review scan may process in parallel.</dd></div>
+  </div>
+</section>
+<?php
+        return $this->renderLayout(
+            title: 'LibreBugBounty Settings',
+            body: ob_get_clean(),
+        );
+    }
+
+    private function renderAboutPage(): string
+    {
+        ob_start();
+        ?>
+<section class="panel">
+  <div class="section-head">
+    <div>
+      <h2>About LibreBugBounty</h2>
+      <p class="hint">A local OpenBugBounty-style MVP for reflected XSS triage.</p>
+    </div>
+  </div>
+  <div class="detail-list">
+    <div><dt>Purpose</dt><dd>Capture URLs, verify XSS automatically, and keep screenshots and review history in one place.</dd></div>
+    <div><dt>Current scope</dt><dd>URL intake, browser checks, screenshot evidence, manual review states, and a compact finding list.</dd></div>
+    <div><dt>Local-first</dt><dd>SQLite, screenshots, and artifacts stay on the host under <code>storage/</code>.</dd></div>
+    <div><dt>Next steps</dt><dd>Email automation, policy workflows, and a richer bug bounty CRM layer can be added later.</dd></div>
+  </div>
+</section>
+<?php
+        return $this->renderLayout(
+            title: 'About LibreBugBounty',
+            body: ob_get_clean(),
+        );
     }
 
     /**
@@ -609,11 +751,20 @@ final class WebController
     private function findingActions(Finding $finding): string
     {
         $decisionActions = '';
-        if ($finding->getReviewState() !== ReviewState::CONFIRMED_FIXED) {
-            $decisionActions = sprintf(
-                '<form method="post" action="/findings/%s/mark-vulnerable" class="inline-form"><button type="submit" class="secondary">Mark Vulnerable</button></form>'
-                .'<form method="post" action="/findings/%s/confirm-fixed" class="inline-form"><button type="submit" class="ghost">Confirm Fixed</button></form>',
+        $canMarkVulnerable = $finding->getReviewState() === ReviewState::MANUAL_CHECKING
+            || $finding->getStatus() !== FindingStatus::VERIFIED;
+        $canConfirmFixed = $finding->getReviewState() === ReviewState::MANUAL_CHECKING
+            || $finding->getStatus() !== FindingStatus::FIXED;
+
+        if ($canMarkVulnerable) {
+            $decisionActions .= sprintf(
+                '<form method="post" action="/findings/%s/mark-vulnerable" class="inline-form"><button type="submit" class="secondary">Mark Vulnerable</button></form>',
                 $this->escape($finding->getId()),
+            );
+        }
+        if ($canConfirmFixed) {
+            $decisionActions .= sprintf(
+                '<form method="post" action="/findings/%s/confirm-fixed" class="inline-form"><button type="submit" class="ghost">Confirm Fixed</button></form>',
                 $this->escape($finding->getId()),
             );
         }
@@ -649,7 +800,7 @@ final class WebController
             $pills[] = $this->badge('bucket '.$bucket, $this->humanizeBadgeLabel($bucket));
         }
 
-        return '<div class="badge-stack">'.implode('', $pills).'</div>';
+        return '<div class="status-pills">'.implode('', $pills).'</div>';
     }
 
     private function badge(string $class, string $label): string

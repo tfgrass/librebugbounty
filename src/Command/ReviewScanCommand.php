@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Service\ReviewService;
+use App\Service\SettingsService;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -16,6 +17,7 @@ final class ReviewScanCommand extends Command
 {
     public function __construct(
         private readonly ReviewService $reviewService,
+        private readonly SettingsService $settings,
     ) {
         parent::__construct();
     }
@@ -24,8 +26,8 @@ final class ReviewScanCommand extends Command
     {
         $this
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings to inspect.', PHP_INT_MAX)
-            ->addOption('timeout', null, InputOption::VALUE_REQUIRED, 'Timeout in milliseconds for each browser retest.', 45000)
-            ->addOption('concurrency', null, InputOption::VALUE_REQUIRED, 'Number of findings to review in parallel.', 4)
+            ->addOption('timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in milliseconds for each browser retest.')
+            ->addOption('concurrency', null, InputOption::VALUE_OPTIONAL, 'Number of findings to review in parallel.')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show which findings would be reviewed without running browsers.')
         ;
     }
@@ -34,8 +36,12 @@ final class ReviewScanCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $limit = max(1, (int) $input->getOption('limit'));
-        $timeout = max(1000, (int) $input->getOption('timeout'));
-        $concurrency = max(1, (int) $input->getOption('concurrency'));
+        $timeout = $input->getOption('timeout') !== null
+            ? max(1000, (int) $input->getOption('timeout'))
+            : $this->settings->getReviewScanTimeoutMs();
+        $concurrency = $input->getOption('concurrency') !== null
+            ? max(1, (int) $input->getOption('concurrency'))
+            : $this->settings->getReviewScanConcurrency();
 
         if ((bool) $input->getOption('dry-run')) {
             $rows = [];

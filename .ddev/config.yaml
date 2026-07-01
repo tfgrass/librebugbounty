@@ -17,4 +17,5 @@ web_environment:
 hooks:
   post-start:
     - exec: "mkdir -p storage/database storage/artifacts storage/test/database storage/test/artifacts"
+    - composer: install
     - exec: "php bin/console app:db:init"

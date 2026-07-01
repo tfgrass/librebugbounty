@@ -18,6 +18,7 @@ final class FindingService
         private readonly EntityManagerInterface $entityManager,
         private readonly ValidationService $validation,
         private readonly Filesystem $filesystem,
+        private readonly ?SettingsService $settings = null,
     ) {
     }
 
@@ -68,7 +69,9 @@ final class FindingService
         $title ??= 'reflected_xss';
         $type ??= 'reflected_xss';
         $submittedAt ??= new \DateTimeImmutable();
-        $expectedEvidence = $expectedEvidence !== null && trim($expectedEvidence) !== '' ? $expectedEvidence : 'OPENBUGBOUNTY';
+        $expectedEvidence = $expectedEvidence !== null && trim($expectedEvidence) !== ''
+            ? $expectedEvidence
+            : $this->settings?->getDefaultPayload() ?? 'OPENBUGBOUNTY';
 
         $finding = new Finding();
         $finding->setDomain($domain);

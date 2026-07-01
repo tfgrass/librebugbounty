@@ -80,10 +80,6 @@ final class RetestService
             $run->setScreenshotPath($screenshotPath);
         }
 
-        if ($result->observedEvidence !== null && $result->observedEvidence !== '') {
-            $this->storeBrowserEvidence($finding, $result->observedEvidence);
-        }
-
         if ($result->dialogText !== null && $result->dialogText !== '') {
             $this->storeAlertTextEvidence($finding, $result->dialogText);
         }
@@ -140,16 +136,6 @@ final class RetestService
         $evidence->setFinding($finding);
         $evidence->setKind(EvidenceKind::ALERT_TEXT);
         $evidence->setValue($text);
-        $this->entityManager->persist($evidence);
-        $this->entityManager->flush();
-    }
-
-    private function storeBrowserEvidence(Finding $finding, string $value): void
-    {
-        $evidence = new Evidence();
-        $evidence->setFinding($finding);
-        $evidence->setKind(EvidenceKind::HTML);
-        $evidence->setValue($value);
         $this->entityManager->persist($evidence);
         $this->entityManager->flush();
     }

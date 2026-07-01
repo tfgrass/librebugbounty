@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Service\FindingService;
+use App\Service\SettingsService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -16,6 +17,7 @@ final class FindingAddCommand extends Command
 {
     public function __construct(
         private readonly FindingService $findingService,
+        private readonly SettingsService $settings,
     ) {
         parent::__construct();
     }
@@ -24,7 +26,7 @@ final class FindingAddCommand extends Command
     {
         $this
             ->addArgument('url', InputArgument::REQUIRED)
-            ->addOption('expected-payload', null, InputOption::VALUE_REQUIRED, 'Expected payload or marker.', 'OPENBUGBOUNTY')
+            ->addOption('expected-payload', null, InputOption::VALUE_OPTIONAL, 'Expected payload or marker.')
             ->addOption('annotate', null, InputOption::VALUE_REQUIRED, 'Optional note or annotation.')
         ;
     }
@@ -34,7 +36,9 @@ final class FindingAddCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $url = (string) $input->getArgument('url');
-        $expected = $input->getOption('expected-payload') ?: 'OPENBUGBOUNTY';
+        $expected = is_string($input->getOption('expected-payload')) && trim((string) $input->getOption('expected-payload')) !== ''
+            ? (string) $input->getOption('expected-payload')
+            : $this->settings->getDefaultPayload();
         $annotate = $input->getOption('annotate') ?: null;
 
         $finding = $this->findingService->createFinding(
