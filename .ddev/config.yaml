@@ -8,7 +8,7 @@ composer_version: "2"
 additional_hostnames: []
 additional_fqdns: []
 project_tz: Europe/Berlin
-mkcert_caroot: /home/tomka/.local/share/mkcert
+mkcert_caroot: ~/.local/share/mkcert
 web_environment:
   - APP_ENV=dev
   - APP_DEBUG=1
