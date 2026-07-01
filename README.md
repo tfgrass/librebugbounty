@@ -33,9 +33,12 @@ open https://librebugbounty.ddev.site/
 
 Redacted previews of the current UI:
 
-<img src="docs/screenshots/overview-redacted.png" alt="LibreBugBounty overview screenshot" />
-
-<img src="docs/screenshots/detail-redacted.png" alt="LibreBugBounty detail screenshot" />
+<a href="docs/screenshots/overview-redacted.png">
+  <img src="docs/screenshots/overview-redacted.png" alt="LibreBugBounty overview screenshot" width="49%" />
+</a>
+<a href="docs/screenshots/detail-redacted.png">
+  <img src="docs/screenshots/detail-redacted.png" alt="LibreBugBounty detail screenshot" width="49%" />
+</a>
 
 Regenerate both screenshots with:
 

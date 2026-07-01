@@ -10,18 +10,14 @@ DB_PATH="$ROOT_DIR/storage/database/app.sqlite"
 
 DETAIL_FINDING_ID=$(sqlite3 -noheader "$DB_PATH" "SELECT f.id
 FROM finding f
-JOIN evidence e ON e.finding_id = f.id AND e.kind = 'screenshot'
-WHERE f.status = 'verified'
-ORDER BY COALESCE(f.submitted_at, f.created_at) DESC
+JOIN retest_run r ON r.finding_id = f.id AND r.screenshot_path IS NOT NULL
+WHERE f.status IN ('new', 'verified', 'reported')
+  AND f.review_state IS NULL
+ORDER BY CASE f.status WHEN 'verified' THEN 0 WHEN 'new' THEN 1 WHEN 'reported' THEN 2 ELSE 3 END, r.started_at DESC
 LIMIT 1;")
 
 if [ -z "$DETAIL_FINDING_ID" ]; then
-  echo "No verified screenshot-bearing finding found."
-  exit 1
-fi
-
-if [ -z "$DETAIL_FINDING_ID" ]; then
-  echo "No screenshot-bearing finding found."
+  echo "No vulnerable finding with a retest screenshot found."
   exit 1
 fi
 
