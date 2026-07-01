@@ -315,7 +315,7 @@ final class WebController
         $pagination = '';
         $prevDisabled = $currentPage <= 1 ? ' aria-disabled="true" class="button ghost"' : '';
         $nextDisabled = $currentPage >= $totalPages ? ' aria-disabled="true" class="button ghost"' : '';
-        $pageSizeForm = '<form method="get" action="/" class="per-page-form">'
+        $pageSizeForm = '<form method="get" action="/#findings" class="per-page-form">'
             .($domainFilter !== '' ? '<input type="hidden" name="domain" value="'.$this->escape($domainFilter).'">' : '')
             .($statusFilter !== '' ? '<input type="hidden" name="status" value="'.$this->escape($statusFilter).'">' : '')
             .($bucketFilter !== '' ? '<input type="hidden" name="bucket" value="'.$this->escape($bucketFilter).'">' : '')
@@ -392,11 +392,11 @@ final class WebController
       <p class="hint">Compact overview for intake and rechecks.</p>
     </div>
   </div>
-  <form method="get" action="/" class="filters">
+  <form method="get" action="/#findings" class="filters">
     <div class="split">
       <label>Domain <input name="domain" value="<?= $this->escape($domainFilter) ?>" placeholder="example.com"></label>
       <label>Status / Bucket
-        <select name="status">
+        <select name="status" onchange="this.form.submit()">
           <option value="">Any status</option>
           <optgroup label="Buckets">
             <?php foreach (['open' => 'Open', 'manual_review' => 'Manual Review', 'unchecked' => 'Unchecked'] as $value => $label): ?>
@@ -456,7 +456,7 @@ final class WebController
             .'button,.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;border:0;border-radius:999px;padding:10px 16px;background:var(--accent);color:#fff;font:inherit;font-weight:700;cursor:pointer;text-decoration:none}'
             .'button.secondary,.button.secondary{background:var(--accent-2)}button.ghost,.button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(15,109,72,.22)}'
             .'button.danger,.button.danger{background:#b91c1c;color:#fff}'
-            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}'
+            .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}.badge{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:.8rem;font-weight:800;letter-spacing:.01em;border:1px solid transparent;text-transform:none}.badge-stack{display:flex;gap:8px;flex-wrap:wrap}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.14);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.14);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.16);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.16);color:#0b4d34}.badge.bucket.open{background:rgba(30,64,175,.10);color:#1e40af}.badge.bucket.fixed{background:rgba(15,109,72,.10);color:#0b4d34}.badge.bucket.manual_review{background:rgba(217,119,6,.12);color:#b45309}.badge.bucket.unchecked{background:rgba(107,114,128,.10);color:#4b5563}'
             .'.notice{padding:12px 14px;border-radius:14px;margin-bottom:16px;border:1px solid transparent}.notice.success{background:rgba(15,109,72,.10);color:#0b4d34;border-color:rgba(15,109,72,.16)}.notice.error{background:rgba(185,28,28,.10);color:#7f1d1d;border-color:rgba(185,28,28,.16)}'
             .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}'
             .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'
@@ -547,13 +547,9 @@ final class WebController
   </div>
   <div class="detail-grid">
     <div>
-      <div class="badge-stack">
-        <?= $this->statusCell($finding) ?>
-      </div>
+      <?= $this->statusCell($finding) ?>
       <dl class="detail-list">
         <div><dt>Title</dt><dd><?= $this->escape($finding->getTitle()) ?></dd></div>
-        <div><dt>Type</dt><dd><?= $this->escape($finding->getType()) ?></dd></div>
-        <div><dt>Severity</dt><dd><?= $this->escape($finding->getSeverity()) ?></dd></div>
         <div><dt>URL</dt><dd><code><?= $this->escape($finding->getUrl()) ?></code></dd></div>
         <div><dt>Payload</dt><dd><code><?= $this->escape($finding->getExpectedEvidence() ?? 'n/a') ?></code></dd></div>
         <div><dt>Submitted</dt><dd><?= $this->escape($finding->getSubmittedAt()?->format(DATE_ATOM) ?? 'n/a') ?></dd></div>
@@ -612,15 +608,22 @@ final class WebController
 
     private function findingActions(Finding $finding): string
     {
+        $decisionActions = '';
+        if ($finding->getReviewState() !== ReviewState::CONFIRMED_FIXED) {
+            $decisionActions = sprintf(
+                '<form method="post" action="/findings/%s/mark-vulnerable" class="inline-form"><button type="submit" class="secondary">Mark Vulnerable</button></form>'
+                .'<form method="post" action="/findings/%s/confirm-fixed" class="inline-form"><button type="submit" class="ghost">Confirm Fixed</button></form>',
+                $this->escape($finding->getId()),
+                $this->escape($finding->getId()),
+            );
+        }
+
         return sprintf(
             '<div class="row-actions">'
-            .'<form method="post" action="/findings/%s/mark-vulnerable" class="inline-form"><button type="submit" class="secondary">Mark Vulnerable</button></form>'
-            .'<form method="post" action="/findings/%s/confirm-fixed" class="inline-form"><button type="submit" class="ghost">Confirm Fixed</button></form>'
+            .$decisionActions
             .'<form method="post" action="/findings/%s/retest" class="inline-form"><button type="submit">Recheck + Screenshot</button></form>'
             .'<form method="post" action="/findings/%s/delete" class="inline-form"><button type="submit" class="danger">Delete</button></form>'
             .'</div>',
-            $this->escape($finding->getId()),
-            $this->escape($finding->getId()),
             $this->escape($finding->getId()),
             $this->escape($finding->getId()),
         );
@@ -628,19 +631,69 @@ final class WebController
 
     private function statusCell(Finding $finding): string
     {
-        $status = $this->badge('status '.$finding->getStatus(), $finding->getStatus());
+        $pills = [];
         $review = match ($finding->getReviewState()) {
-            ReviewState::MANUAL_CHECKING => $this->badge('review manual_checking', 'manual checking'),
-            ReviewState::CONFIRMED_FIXED => $this->badge('review confirmed_fixed', 'confirmed fixed'),
+            ReviewState::MANUAL_CHECKING => $this->badge('review manual_checking', 'Manual checking'),
+            ReviewState::CONFIRMED_FIXED => $this->badge('review confirmed_fixed', 'Confirmed fixed'),
             default => '',
         };
 
-        return '<div class="badge-stack">'.$status.$review.'</div>';
+        if ($review !== '') {
+            $pills[] = $review;
+        } else {
+            $pills[] = $this->badge('status '.$finding->getStatus(), $this->humanizeBadgeLabel($finding->getStatus()));
+        }
+
+        $bucket = $this->bucketForFinding($finding);
+        if ($bucket !== null && $bucket !== $finding->getStatus()) {
+            $pills[] = $this->badge('bucket '.$bucket, $this->humanizeBadgeLabel($bucket));
+        }
+
+        return '<div class="badge-stack">'.implode('', $pills).'</div>';
     }
 
     private function badge(string $class, string $label): string
     {
         return sprintf('<span class="badge %s">%s</span>', $this->escape($class), $this->escape($label));
+    }
+
+    private function bucketForFinding(Finding $finding): ?string
+    {
+        if ($finding->getReviewState() === ReviewState::MANUAL_CHECKING) {
+            return 'manual_review';
+        }
+
+        if ($finding->getStatus() === 'fixed') {
+            return 'fixed';
+        }
+
+        if ($finding->getLastRetestedAt() === null) {
+            return 'unchecked';
+        }
+
+        if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)) {
+            return 'open';
+        }
+
+        return null;
+    }
+
+    private function humanizeBadgeLabel(string $value): string
+    {
+        return match ($value) {
+            'manual_review' => 'Manual review',
+            'manual_checking' => 'Manual checking',
+            'confirmed_fixed' => 'Confirmed fixed',
+            'new' => 'New',
+            'verified' => 'Verified',
+            'reported' => 'Reported',
+            'fixed' => 'Fixed',
+            'wontfix' => 'Wontfix',
+            'duplicate' => 'Duplicate',
+            'open' => 'Open',
+            'unchecked' => 'Unchecked',
+            default => ucfirst(str_replace('_', ' ', $value)),
+        };
     }
 
     private function redirectMessage(string $message): RedirectResponse
