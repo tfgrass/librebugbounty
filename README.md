@@ -26,7 +26,7 @@ ddev exec php bin/console app:db:init
 Open the UI:
 
 ```bash
-open https://librebugbounty.ddev.site/
+ddev launch
 ```
 
 ## Screenshots
