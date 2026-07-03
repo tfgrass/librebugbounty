@@ -4,8 +4,14 @@ LibreBugBounty is a local, open-source OpenBugBounty alternative for reflected X
 It focuses on URL intake, automated browser verification, screenshot evidence, and a compact review workflow.
 Later CRM features such as notification emails and a public interface can be added on top of this base.
 
-If you are looking for terms that describe the project well, use:
-reflected XSS, OpenBugBounty alternative, screenshot evidence, bug bounty CRM, and browser verification.
+## Screenshots
+
+<a href="docs/screenshots/overview-redacted.png">
+  <img src="docs/screenshots/overview-redacted.png" alt="LibreBugBounty overview screenshot" width="49%" />
+</a>
+<a href="docs/screenshots/detail-redacted.png">
+  <img src="docs/screenshots/detail-redacted.png" alt="LibreBugBounty detail screenshot" width="49%" />
+</a>
 
 ## Setup
 
@@ -27,23 +33,6 @@ Open the UI:
 
 ```bash
 ddev launch
-```
-
-## Screenshots
-
-Redacted previews of the current UI:
-
-<a href="docs/screenshots/overview-redacted.png">
-  <img src="docs/screenshots/overview-redacted.png" alt="LibreBugBounty overview screenshot" width="49%" />
-</a>
-<a href="docs/screenshots/detail-redacted.png">
-  <img src="docs/screenshots/detail-redacted.png" alt="LibreBugBounty detail screenshot" width="49%" />
-</a>
-
-Regenerate both screenshots with:
-
-```bash
-ddev readme-screenshots
 ```
 
 ## Intake
