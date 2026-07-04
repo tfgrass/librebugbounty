@@ -34,6 +34,11 @@ final class InMemoryEvidenceRepository extends EvidenceRepository
             $results = array_values(array_filter($results, static fn (Evidence $evidence): bool => $evidence->getFinding()->getId() === $finding->getId()));
         }
 
+        if (isset($criteria['kind'])) {
+            $kind = $criteria['kind'];
+            $results = array_values(array_filter($results, static fn (Evidence $evidence): bool => $evidence->getKind() === $kind));
+        }
+
         return $results;
     }
 

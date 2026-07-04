@@ -75,7 +75,7 @@ final class RetestService
         $run->setRawResult($result->raw);
         $run->setFinishedAt(new \DateTimeImmutable());
 
-        if ($screenshot && $result->screenshotBase64) {
+        if ($result->screenshotBase64 !== null && $result->screenshotBase64 !== '') {
             $screenshotPath = $this->storeScreenshot($finding, $run, $result->screenshotBase64);
             $run->setScreenshotPath($screenshotPath);
         }

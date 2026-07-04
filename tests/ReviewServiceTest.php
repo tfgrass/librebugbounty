@@ -11,6 +11,7 @@ use App\Service\EvidenceStorageInterface;
 use App\Service\RetestService;
 use App\Service\ReviewService;
 use App\Service\ValidationService;
+use App\Value\EvidenceKind;
 use App\Value\RetestResult;
 
 final class ReviewServiceTest extends UnitTestCase
@@ -67,6 +68,7 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('review-shot-1'),
                 );
             }
         };
@@ -94,6 +96,7 @@ final class ReviewServiceTest extends UnitTestCase
         self::assertSame(['chromium', 'firefox'], $capture->browserCalls);
         self::assertSame('verified', $pendingFinding->getStatus());
         self::assertNull($pendingFinding->getReviewState());
+        self::assertCount(2, $repos['evidence']->findBy(['finding' => $pendingFinding, 'kind' => EvidenceKind::SCREENSHOT]));
         self::assertSame('fixed', $confirmedFinding->getStatus());
         self::assertSame('confirmed_fixed', $confirmedFinding->getReviewState());
     }
@@ -140,6 +143,7 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('review-shot-2-'.$this->capture->index),
                 );
             }
         };
@@ -166,6 +170,7 @@ final class ReviewServiceTest extends UnitTestCase
         self::assertSame(1, $processed);
         self::assertSame('fixed', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
+        self::assertCount(2, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
     }
 
     public function testManualCheckingFindingsKeepTheirStatusAndStayInManualReview(): void
@@ -209,6 +214,7 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('review-shot-3'),
                 );
             }
         };

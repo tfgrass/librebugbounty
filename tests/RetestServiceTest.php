@@ -12,6 +12,7 @@ use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
 use App\Service\RetestService;
 use App\Service\ValidationService;
+use App\Value\EvidenceKind;
 use App\Value\RetestResult;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -48,6 +49,7 @@ final class RetestServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: 'dialog',
                     dialogText: 'dialog',
+                    screenshotBase64: base64_encode('shot-1'),
                     raw: ['mocked' => true],
                 );
             }
@@ -57,6 +59,8 @@ final class RetestServiceTest extends UnitTestCase
 
         self::assertSame(RetestResult::STILL_VULNERABLE, $run->getResult());
         self::assertSame('verified', $finding->getStatus());
+        self::assertNotNull($run->getScreenshotPath());
+        self::assertCount(1, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
     }
 
     public function testBrowserRetestFindsExpectedEvidence(): void
@@ -91,6 +95,7 @@ final class RetestServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('shot-2'),
                     raw: ['mocked' => true],
                 );
             }
@@ -101,6 +106,8 @@ final class RetestServiceTest extends UnitTestCase
         self::assertSame(RetestResult::STILL_VULNERABLE, $run->getResult());
         self::assertSame('xss-token-123', $run->getObservedEvidence());
         self::assertNotNull($run->getFinishedAt());
+        self::assertNotNull($run->getScreenshotPath());
+        self::assertCount(1, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
     }
 
     public function testBrowserSelectionIsForwardedToTheWorker(): void
@@ -144,6 +151,7 @@ final class RetestServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('shot-3'),
                 );
             }
         });
@@ -185,6 +193,7 @@ final class RetestServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
+                    screenshotBase64: base64_encode('shot-4'),
                     raw: ['mocked' => true],
                 );
             }
@@ -193,6 +202,7 @@ final class RetestServiceTest extends UnitTestCase
         $service->retest($finding);
 
         self::assertSame('verified', $finding->getStatus());
+        self::assertCount(1, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
     }
 
     public function testBrowserRetestClientIsAbstractedAndMockable(): void
