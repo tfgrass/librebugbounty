@@ -25,6 +25,7 @@ final class PlaywrightBrowserRetestClient implements BrowserRetestClientInterfac
                 'expectedEvidence' => $request->expectedEvidence,
                 'timeoutMs' => $request->timeoutMs,
                 'screenshot' => $request->screenshot,
+                'headless' => $request->headless,
                 'browser' => $request->browser,
             ],
             'timeout' => $timeoutSeconds,

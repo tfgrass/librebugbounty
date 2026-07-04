@@ -53,6 +53,8 @@ final class ReviewServiceTest extends UnitTestCase
 
         $capture = new \stdClass();
         $capture->browserCalls = [];
+        $capture->headlessCalls = [];
+        $capture->screenshotCalls = [];
         $browserClient = new class($capture) implements BrowserRetestClientInterface {
             public function __construct(private object $capture)
             {
@@ -61,6 +63,8 @@ final class ReviewServiceTest extends UnitTestCase
             public function retest(BrowserRetestRequest $request): RetestResultData
             {
                 $this->capture->browserCalls[] = $request->browser;
+                $this->capture->headlessCalls[] = $request->headless;
+                $this->capture->screenshotCalls[] = $request->screenshot;
 
                 return new RetestResultData(
                     result: RetestResult::STILL_VULNERABLE,
@@ -68,7 +72,6 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
-                    screenshotBase64: base64_encode('review-shot-1'),
                 );
             }
         };
@@ -94,9 +97,11 @@ final class ReviewServiceTest extends UnitTestCase
 
         self::assertSame(1, $processed);
         self::assertSame(['chromium', 'firefox'], $capture->browserCalls);
+        self::assertSame([true, true], $capture->headlessCalls);
+        self::assertSame([false, false], $capture->screenshotCalls);
         self::assertSame('verified', $pendingFinding->getStatus());
         self::assertNull($pendingFinding->getReviewState());
-        self::assertCount(2, $repos['evidence']->findBy(['finding' => $pendingFinding, 'kind' => EvidenceKind::SCREENSHOT]));
+        self::assertCount(0, $repos['evidence']->findBy(['finding' => $pendingFinding, 'kind' => EvidenceKind::SCREENSHOT]));
         self::assertSame('fixed', $confirmedFinding->getStatus());
         self::assertSame('confirmed_fixed', $confirmedFinding->getReviewState());
     }
@@ -127,6 +132,7 @@ final class ReviewServiceTest extends UnitTestCase
         $capture = new \stdClass();
         $capture->results = [RetestResult::FIXED, RetestResult::INCONCLUSIVE];
         $capture->index = 0;
+        $capture->headlessCalls = [];
         $browserClient = new class($capture) implements BrowserRetestClientInterface {
             public function __construct(private object $capture)
             {
@@ -136,6 +142,7 @@ final class ReviewServiceTest extends UnitTestCase
             {
                 $result = $this->capture->results[$this->capture->index];
                 $this->capture->index++;
+                $this->capture->headlessCalls[] = $request->headless;
 
                 return new RetestResultData(
                     result: $result,
@@ -143,7 +150,6 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
-                    screenshotBase64: base64_encode('review-shot-2-'.$this->capture->index),
                 );
             }
         };
@@ -168,9 +174,10 @@ final class ReviewServiceTest extends UnitTestCase
         $processed = $reviewService->scan();
 
         self::assertSame(1, $processed);
+        self::assertSame([true, true], $capture->headlessCalls);
         self::assertSame('fixed', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
-        self::assertCount(2, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
+        self::assertCount(0, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
     }
 
     public function testManualCheckingFindingsKeepTheirStatusAndStayInManualReview(): void
@@ -199,6 +206,7 @@ final class ReviewServiceTest extends UnitTestCase
 
         $capture = new \stdClass();
         $capture->browserCalls = [];
+        $capture->headlessCalls = [];
         $browserClient = new class($capture) implements BrowserRetestClientInterface {
             public function __construct(private object $capture)
             {
@@ -207,6 +215,7 @@ final class ReviewServiceTest extends UnitTestCase
             public function retest(BrowserRetestRequest $request): RetestResultData
             {
                 $this->capture->browserCalls[] = $request->browser;
+                $this->capture->headlessCalls[] = $request->headless;
 
                 return new RetestResultData(
                     result: RetestResult::FIXED,
@@ -214,7 +223,6 @@ final class ReviewServiceTest extends UnitTestCase
                     finalUrl: $request->url,
                     observedEvidence: $request->expectedEvidence,
                     dialogText: $request->expectedEvidence,
-                    screenshotBase64: base64_encode('review-shot-3'),
                 );
             }
         };
@@ -240,6 +248,7 @@ final class ReviewServiceTest extends UnitTestCase
 
         self::assertSame(0, $processed);
         self::assertSame([], $capture->browserCalls);
+        self::assertSame([], $capture->headlessCalls);
         self::assertSame('verified', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
     }

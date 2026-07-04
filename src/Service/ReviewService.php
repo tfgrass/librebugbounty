@@ -78,8 +78,8 @@ final class ReviewService
         $wasManualCheck = $finding->getReviewState() === ReviewState::MANUAL_CHECKING;
         $noStatusUpdate = $wasManualCheck;
 
-        $chromium = $this->retestService->retest($finding, true, $timeoutMs, false, $noStatusUpdate, 'chromium');
-        $firefox = $this->retestService->retest($finding, true, $timeoutMs, false, $noStatusUpdate, 'firefox');
+        $chromium = $this->retestService->retest($finding, false, $timeoutMs, false, $noStatusUpdate, true, 'chromium');
+        $firefox = $this->retestService->retest($finding, false, $timeoutMs, false, $noStatusUpdate, true, 'firefox');
 
         if ($wasManualCheck) {
             $finding->setReviewState(ReviewState::MANUAL_CHECKING);

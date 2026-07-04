@@ -55,7 +55,7 @@ final class RetestServiceTest extends UnitTestCase
             }
         });
 
-        $run = $service->retest($finding, true);
+        $run = $service->retest($finding, true, 120000, false, false, false);
 
         self::assertSame(RetestResult::STILL_VULNERABLE, $run->getResult());
         self::assertSame('verified', $finding->getStatus());
@@ -101,7 +101,7 @@ final class RetestServiceTest extends UnitTestCase
             }
         });
 
-        $run = $service->retest($finding);
+        $run = $service->retest($finding, true, 120000, false, false, false);
 
         self::assertSame(RetestResult::STILL_VULNERABLE, $run->getResult());
         self::assertSame('xss-token-123', $run->getObservedEvidence());
@@ -156,7 +156,7 @@ final class RetestServiceTest extends UnitTestCase
             }
         });
 
-        $service->retest($finding, false, 120000, false, false, 'firefox');
+        $service->retest($finding, false, 120000, false, false, true, 'firefox');
 
         self::assertSame('firefox', $capture->browser);
     }
@@ -199,7 +199,7 @@ final class RetestServiceTest extends UnitTestCase
             }
         });
 
-        $service->retest($finding);
+        $service->retest($finding, true, 120000, false, false, false);
 
         self::assertSame('verified', $finding->getStatus());
         self::assertCount(1, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
@@ -250,7 +250,7 @@ final class RetestServiceTest extends UnitTestCase
 
         $service = $this->createRetestService($entityManager, $repos, $browserClient);
 
-        $run = $service->retest($finding, true);
+        $run = $service->retest($finding, true, 120000, false, false, false);
 
         self::assertSame(RetestResult::STILL_VULNERABLE, $run->getResult());
         self::assertSame('browser', $run->getMode());

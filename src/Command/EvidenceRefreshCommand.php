@@ -265,10 +265,11 @@ final class EvidenceRefreshCommand extends Command
         foreach ($browsers as $browser) {
             $run = $this->retestService->retest(
                 finding: $finding,
-                screenshot: true,
+                screenshot: false,
                 timeoutMs: $timeout,
                 dryRun: false,
                 noStatusUpdate: false,
+                headless: true,
                 browser: $browser,
             );
 

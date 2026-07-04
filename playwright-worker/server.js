@@ -60,16 +60,6 @@ async function captureDesktopScreenshot() {
   }
 }
 
-async function capturePageScreenshot(page, timeoutMs) {
-  const buffer = await page.screenshot({
-    fullPage: true,
-    type: 'png',
-    timeout: Math.min(timeoutMs, 10000),
-  });
-
-  return buffer.toString('base64');
-}
-
 async function fetchHttpFallback(url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.min(timeoutMs, 10000));
@@ -129,14 +119,14 @@ function normalizeBrowserName(browserName) {
   }[normalized] || normalized;
 }
 
-async function launchBrowser(browserName) {
+async function launchBrowser(browserName, headless) {
   switch (browserName) {
     case 'firefox':
-      return firefox.launch({ headless: false });
+      return firefox.launch({ headless });
     case 'chromium':
       return chromium.launch({
-        headless: false,
-        args: ['--window-size=1440,900', '--start-maximized'],
+        headless,
+        args: headless ? [] : ['--window-size=1440,900', '--start-maximized'],
       });
     default:
       throw new Error(`Unsupported browser "${browserName}". Use chromium or firefox.`);
@@ -148,10 +138,11 @@ async function runRetest(payload) {
   const expectedEvidence = payload.expectedEvidence || '';
   const timeoutMs = Math.min(120000, Math.max(1000, Number(payload.timeoutMs || 120000)));
   const screenshot = Boolean(payload.screenshot);
+  const headless = payload.headless !== false;
   const browserName = normalizeBrowserName(payload.browser);
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const browser = await launchBrowser(browserName);
+  const browser = await launchBrowser(browserName, headless);
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 900 },
@@ -206,24 +197,15 @@ async function runRetest(payload) {
       type: dialog.type(),
       message: dialog.message(),
     });
-    if (screenshot && screenshotBase64 === null) {
+    if (screenshot && screenshotBase64 === null && !headless) {
       await wait(400);
 
       try {
         screenshotBase64 = await captureDesktopScreenshot();
         screenshotCapturedFromDialog = screenshotBase64 !== null;
-        screenshotCaptureMethod = screenshotCapturedFromDialog ? 'desktop' : null;
+        screenshotCaptureMethod = screenshotCapturedFromDialog ? 'desktop-dialog' : null;
       } catch (error) {
         screenshotCaptureError = error.message;
-      }
-
-      if (screenshotBase64 === null) {
-        try {
-          screenshotBase64 = await capturePageScreenshot(page, timeoutMs);
-          screenshotCaptureMethod = 'page';
-        } catch (error) {
-          screenshotCaptureError = screenshotCaptureError || error.message;
-        }
       }
     }
     try {
@@ -314,10 +296,10 @@ async function runRetest(payload) {
     classificationReason = 'No alert or evidence detected within the timeout window.';
   }
 
-  if (screenshot && screenshotBase64 === null && result === 'still_vulnerable') {
+  if (screenshot && screenshotBase64 === null && !headless && result === 'still_vulnerable') {
     try {
-      screenshotBase64 = await capturePageScreenshot(page, timeoutMs);
-      screenshotCaptureMethod = 'page';
+      screenshotBase64 = await captureDesktopScreenshot();
+      screenshotCaptureMethod = 'desktop';
     } catch (error) {
       screenshotCaptureError = screenshotCaptureError || error.message;
     }

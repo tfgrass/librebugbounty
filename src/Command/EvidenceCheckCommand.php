@@ -11,7 +11,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:evidence:check', description: 'Run browser checks for findings that still need browser evidence.')]
+#[AsCommand(name: 'app:evidence:check', description: 'Capture browser evidence and screenshots for findings that still need them.')]
 final class EvidenceCheckCommand extends Command
 {
     public function __construct(
@@ -27,7 +27,6 @@ final class EvidenceCheckCommand extends Command
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings.', 20)
             ->addOption('timeout', null, InputOption::VALUE_REQUIRED, 'Timeout in milliseconds.', 120000)
             ->addOption('browser', null, InputOption::VALUE_REQUIRED, 'Browser engine to use (chromium or firefox).', 'chromium')
-            ->addOption('screenshot', null, InputOption::VALUE_NONE, 'Capture screenshots during browser checks.')
         ;
     }
 
@@ -37,15 +36,14 @@ final class EvidenceCheckCommand extends Command
         $limit = max(1, (int) $input->getOption('limit'));
         $timeout = (int) $input->getOption('timeout');
         $browser = (string) $input->getOption('browser');
-        $screenshot = (bool) $input->getOption('screenshot');
 
-        $findings = $this->findings->findOpenFindingsWithoutEvidence($limit);
+        $findings = $this->findings->findAllWithoutScreenshotEvidence(null, null, $limit);
         if ($findings === []) {
-            $io->success('No findings are currently waiting for browser evidence.');
+            $io->success('No findings are currently missing browser screenshots.');
             return Command::SUCCESS;
         }
 
-        $io->writeln(sprintf('Checking %d finding(s) for browser evidence...', count($findings)));
+        $io->writeln(sprintf('Checking %d finding(s) for browser evidence and screenshots...', count($findings)));
         $rows = [];
         foreach ($findings as $index => $finding) {
             $io->writeln(sprintf(
@@ -58,8 +56,9 @@ final class EvidenceCheckCommand extends Command
 
             $run = $this->retestService->retest(
                 finding: $finding,
-                screenshot: $screenshot,
+                screenshot: true,
                 timeoutMs: $timeout,
+                headless: false,
                 browser: $browser,
             );
 

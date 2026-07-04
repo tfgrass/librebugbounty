@@ -62,6 +62,7 @@ final class RetestCommand extends Command
             timeoutMs: $timeout,
             dryRun: false,
             noStatusUpdate: $noStatusUpdate,
+            headless: !$screenshot,
             browser: $browser,
         );
 

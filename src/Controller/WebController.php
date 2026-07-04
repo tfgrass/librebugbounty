@@ -109,7 +109,7 @@ final class WebController
 
             if ($this->settings->getAutoVerifyMode() === 'submit') {
                 try {
-                    $run = $this->retestService->retest($finding, true);
+                    $run = $this->retestService->retest($finding, true, 120000, false, false, false);
 
                     return $this->redirectMessage(sprintf(
                         'Finding %s stored for %s. Auto verification: %s.',
@@ -185,7 +185,7 @@ final class WebController
     {
         try {
             $finding = $this->findingService->getFindingOrFail($id);
-            $run = $this->retestService->retest($finding, true);
+            $run = $this->retestService->retest($finding, true, 120000, false, false, false);
 
             return $this->redirectMessage(sprintf(
                 'Retest finished for %s: %s.',

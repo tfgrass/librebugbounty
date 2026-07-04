@@ -71,7 +71,7 @@ final class RetestDueCommand extends Command
         }
 
         foreach ($findings as $finding) {
-            $run = $this->retestService->retest($finding, $screenshot, $timeout, false, false, $browser);
+            $run = $this->retestService->retest($finding, $screenshot, $timeout, false, false, !$screenshot, $browser);
             $io->writeln(sprintf('%s -> %s (%s)', substr($finding->getId(), 0, 8), $run->getResult(), $browser));
         }
 

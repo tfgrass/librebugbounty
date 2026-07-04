@@ -104,7 +104,7 @@ final class ScreenshotAllCommand extends Command
                 $finding->getDomain()->getHostname(),
             ));
 
-            $run = $this->retestService->retest($finding, true, $timeout, false, false, $browser);
+            $run = $this->retestService->retest($finding, true, $timeout, false, false, false, $browser);
             $io->writeln(sprintf(
                 '  -> %s%s (%s)',
                 $run->getResult(),

@@ -31,6 +31,7 @@ final class RetestService
         int $timeoutMs = 120000,
         bool $dryRun = false,
         bool $noStatusUpdate = false,
+        bool $headless = true,
         string $browser = 'chromium',
     ): RetestRun {
         $this->validation->assertRetestMode(RetestMode::BROWSER);
@@ -51,7 +52,8 @@ final class RetestService
             url: $finding->getUrl(),
             expectedEvidence: $finding->getExpectedEvidence(),
             timeoutMs: $timeoutMs,
-            screenshot: true,
+            screenshot: $screenshot,
+            headless: $headless,
             browser: $browser,
         ));
 
