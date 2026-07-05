@@ -14,6 +14,7 @@ final class ReviewService
     public function __construct(
         private readonly FindingRepository $findings,
         private readonly RetestService $retestService,
+        private readonly BrowserRetestTransportInterface $browserRetestTransport,
         private readonly EntityManagerInterface $entityManager,
     ) {
     }
@@ -73,13 +74,41 @@ final class ReviewService
         };
     }
 
-    public function reviewFinding(Finding $finding, int $timeoutMs = 45000): void
+    public function reviewFinding(
+        Finding $finding,
+        int $timeoutMs = 45000,
+        bool $captureScreenshots = false,
+        bool $headless = true,
+    ): void
     {
         $wasManualCheck = $finding->getReviewState() === ReviewState::MANUAL_CHECKING;
         $noStatusUpdate = $wasManualCheck;
 
-        $chromium = $this->retestService->retest($finding, false, $timeoutMs, false, $noStatusUpdate, true, 'chromium');
-        $firefox = $this->retestService->retest($finding, false, $timeoutMs, false, $noStatusUpdate, true, 'firefox');
+        $chromiumRequest = new \App\Dto\BrowserRetestRequest(
+            url: $finding->getUrl(),
+            expectedEvidence: $finding->getExpectedEvidence(),
+            timeoutMs: $timeoutMs,
+            screenshot: $captureScreenshots,
+            headless: $headless,
+            browser: 'chromium',
+        );
+        $firefoxRequest = new \App\Dto\BrowserRetestRequest(
+            url: $finding->getUrl(),
+            expectedEvidence: $finding->getExpectedEvidence(),
+            timeoutMs: $timeoutMs,
+            screenshot: $captureScreenshots,
+            headless: $headless,
+            browser: 'firefox',
+        );
+
+        $chromiumResponse = $this->browserRetestTransport->request($chromiumRequest);
+        $firefoxResponse = $this->browserRetestTransport->request($firefoxRequest);
+
+        $chromium = $this->browserRetestTransport->decode($chromiumResponse);
+        $firefox = $this->browserRetestTransport->decode($firefoxResponse);
+
+        $this->retestService->recordBrowserResult($finding, $chromium, $captureScreenshots, true);
+        $this->retestService->recordBrowserResult($finding, $firefox, $captureScreenshots, true);
 
         if ($wasManualCheck) {
             $finding->setReviewState(ReviewState::MANUAL_CHECKING);
@@ -88,7 +117,7 @@ final class ReviewService
             return;
         }
 
-        $results = [$chromium->getResult(), $firefox->getResult()];
+        $results = [$chromium->result, $firefox->result];
         $hasStillVulnerable = in_array(RetestResult::STILL_VULNERABLE, $results, true);
         $hasFixed = in_array(RetestResult::FIXED, $results, true);
         $hasInconclusive = in_array(RetestResult::INCONCLUSIVE, $results, true);

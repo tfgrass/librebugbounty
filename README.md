@@ -48,10 +48,16 @@ Run the screenshot-first review flow manually or from cron:
 ddev exec php bin/console app:review:scan
 ```
 
+Run the full serial maintenance pass, which first reviews pending findings and then fills in missing screenshots:
+
+```bash
+ddev exec php bin/console app:review:refresh
+```
+
 Generate screenshots only for findings that are still missing them:
 
 ```bash
-ddev screenshot-missing
+ddev exec php bin/console app:screenshot:missing
 ```
 
 Preview which findings would be processed:

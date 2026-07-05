@@ -17,6 +17,7 @@ services:
       - '../src/Kernel.php'
 
   App\Service\BrowserRetestClientInterface: '@App\Service\PlaywrightBrowserRetestClient'
+  App\Service\BrowserRetestTransportInterface: '@App\Service\PlaywrightBrowserRetestClient'
   App\Service\EvidenceStorageInterface: '@App\Service\LocalEvidenceStorage'
 
   App\Service\LocalEvidenceStorage:

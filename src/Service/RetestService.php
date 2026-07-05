@@ -62,6 +62,23 @@ final class RetestService
         return $run;
     }
 
+    public function recordBrowserResult(
+        Finding $finding,
+        RetestResultData $result,
+        bool $screenshot = false,
+        bool $noStatusUpdate = false,
+    ): RetestRun {
+        $run = new RetestRun();
+        $run->setFinding($finding);
+        $run->setMode(RetestMode::BROWSER);
+        $run->setResult(RetestResult::PENDING);
+        $run->setStartedAt(new \DateTimeImmutable());
+
+        $this->applyResult($run, $finding, $result, $screenshot, $noStatusUpdate);
+
+        return $run;
+    }
+
     private function applyResult(
         RetestRun $run,
         Finding $finding,

@@ -6,13 +6,13 @@ use App\Dto\BrowserRetestRequest;
 use App\Dto\RetestResultData;
 use App\Entity\Domain;
 use App\Entity\Finding;
-use App\Service\BrowserRetestClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\RetestService;
 use App\Service\ReviewService;
 use App\Service\ValidationService;
 use App\Value\EvidenceKind;
 use App\Value\RetestResult;
+use App\Tests\Support\ReviewBrowserTransportStub;
 
 final class ReviewServiceTest extends UnitTestCase
 {
@@ -51,30 +51,10 @@ final class ReviewServiceTest extends UnitTestCase
         $confirmedFinding->setSubmittedAt(new \DateTimeImmutable());
         $entityManager->persist($confirmedFinding);
 
-        $capture = new \stdClass();
-        $capture->browserCalls = [];
-        $capture->headlessCalls = [];
-        $capture->screenshotCalls = [];
-        $browserClient = new class($capture) implements BrowserRetestClientInterface {
-            public function __construct(private object $capture)
-            {
-            }
-
-            public function retest(BrowserRetestRequest $request): RetestResultData
-            {
-                $this->capture->browserCalls[] = $request->browser;
-                $this->capture->headlessCalls[] = $request->headless;
-                $this->capture->screenshotCalls[] = $request->screenshot;
-
-                return new RetestResultData(
-                    result: RetestResult::STILL_VULNERABLE,
-                    httpStatus: 200,
-                    finalUrl: $request->url,
-                    observedEvidence: $request->expectedEvidence,
-                    dialogText: $request->expectedEvidence,
-                );
-            }
-        };
+        $browserClient = new ReviewBrowserTransportStub([
+            RetestResult::STILL_VULNERABLE,
+            RetestResult::STILL_VULNERABLE,
+        ]);
 
         $reviewService = new ReviewService(
             $repos['findings'],
@@ -90,20 +70,74 @@ final class ReviewServiceTest extends UnitTestCase
                     }
                 },
             ),
+            $browserClient,
             $entityManager,
         );
 
         $processed = $reviewService->scan();
 
         self::assertSame(1, $processed);
-        self::assertSame(['chromium', 'firefox'], $capture->browserCalls);
-        self::assertSame([true, true], $capture->headlessCalls);
-        self::assertSame([false, false], $capture->screenshotCalls);
+        self::assertSame(['chromium', 'firefox'], $browserClient->browserCalls);
+        self::assertSame([true, true], $browserClient->headlessCalls);
+        self::assertSame([false, false], $browserClient->screenshotCalls);
         self::assertSame('verified', $pendingFinding->getStatus());
         self::assertNull($pendingFinding->getReviewState());
         self::assertCount(0, $repos['evidence']->findBy(['finding' => $pendingFinding, 'kind' => EvidenceKind::SCREENSHOT]));
         self::assertSame('fixed', $confirmedFinding->getStatus());
         self::assertSame('confirmed_fixed', $confirmedFinding->getReviewState());
+    }
+
+    public function testReviewFindingCanCaptureScreenshotsInHeadedMode(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Screenshot capture');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('new');
+        $finding->setUrl('https://example.com/screenshot?q=test');
+        $finding->setMethod('GET');
+        $finding->setSubmittedAt(new \DateTimeImmutable('-1 day'));
+        $entityManager->persist($finding);
+
+        $browserClient = new ReviewBrowserTransportStub([
+            RetestResult::STILL_VULNERABLE,
+            RetestResult::STILL_VULNERABLE,
+        ]);
+
+        $reviewService = new ReviewService(
+            $repos['findings'],
+            new RetestService(
+                $entityManager,
+                $repos['retestRuns'],
+                $browserClient,
+                new ValidationService($this->createValidator()),
+                new class implements EvidenceStorageInterface {
+                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
+                    {
+                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
+                    }
+                },
+            ),
+            $browserClient,
+            $entityManager,
+        );
+
+        $reviewService->reviewFinding($finding, 45000, true, false);
+
+        self::assertSame(['chromium', 'firefox'], $browserClient->browserCalls);
+        self::assertSame([false, false], $browserClient->headlessCalls);
+        self::assertSame([true, true], $browserClient->screenshotCalls);
     }
 
     public function testReviewScanMarksFixedAndInconclusiveResultsForManualChecking(): void
@@ -129,30 +163,10 @@ final class ReviewServiceTest extends UnitTestCase
         $finding->setSubmittedAt(new \DateTimeImmutable('-1 day'));
         $entityManager->persist($finding);
 
-        $capture = new \stdClass();
-        $capture->results = [RetestResult::FIXED, RetestResult::INCONCLUSIVE];
-        $capture->index = 0;
-        $capture->headlessCalls = [];
-        $browserClient = new class($capture) implements BrowserRetestClientInterface {
-            public function __construct(private object $capture)
-            {
-            }
-
-            public function retest(BrowserRetestRequest $request): RetestResultData
-            {
-                $result = $this->capture->results[$this->capture->index];
-                $this->capture->index++;
-                $this->capture->headlessCalls[] = $request->headless;
-
-                return new RetestResultData(
-                    result: $result,
-                    httpStatus: 200,
-                    finalUrl: $request->url,
-                    observedEvidence: $request->expectedEvidence,
-                    dialogText: $request->expectedEvidence,
-                );
-            }
-        };
+        $browserClient = new ReviewBrowserTransportStub([
+            RetestResult::FIXED,
+            RetestResult::INCONCLUSIVE,
+        ]);
 
         $reviewService = new ReviewService(
             $repos['findings'],
@@ -168,13 +182,14 @@ final class ReviewServiceTest extends UnitTestCase
                     }
                 },
             ),
+            $browserClient,
             $entityManager,
         );
 
         $processed = $reviewService->scan();
 
         self::assertSame(1, $processed);
-        self::assertSame([true, true], $capture->headlessCalls);
+        self::assertSame([true, true], $browserClient->headlessCalls);
         self::assertSame('fixed', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
         self::assertCount(0, $repos['evidence']->findBy(['finding' => $finding, 'kind' => EvidenceKind::SCREENSHOT]));
@@ -204,28 +219,10 @@ final class ReviewServiceTest extends UnitTestCase
         $finding->setSubmittedAt(new \DateTimeImmutable('-1 day'));
         $entityManager->persist($finding);
 
-        $capture = new \stdClass();
-        $capture->browserCalls = [];
-        $capture->headlessCalls = [];
-        $browserClient = new class($capture) implements BrowserRetestClientInterface {
-            public function __construct(private object $capture)
-            {
-            }
-
-            public function retest(BrowserRetestRequest $request): RetestResultData
-            {
-                $this->capture->browserCalls[] = $request->browser;
-                $this->capture->headlessCalls[] = $request->headless;
-
-                return new RetestResultData(
-                    result: RetestResult::FIXED,
-                    httpStatus: 200,
-                    finalUrl: $request->url,
-                    observedEvidence: $request->expectedEvidence,
-                    dialogText: $request->expectedEvidence,
-                );
-            }
-        };
+        $browserClient = new ReviewBrowserTransportStub([
+            RetestResult::FIXED,
+            RetestResult::FIXED,
+        ]);
 
         $reviewService = new ReviewService(
             $repos['findings'],
@@ -241,14 +238,15 @@ final class ReviewServiceTest extends UnitTestCase
                     }
                 },
             ),
+            $browserClient,
             $entityManager,
         );
 
         $processed = $reviewService->scan();
 
         self::assertSame(0, $processed);
-        self::assertSame([], $capture->browserCalls);
-        self::assertSame([], $capture->headlessCalls);
+        self::assertSame([], $browserClient->browserCalls);
+        self::assertSame([], $browserClient->headlessCalls);
         self::assertSame('verified', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
     }
@@ -292,18 +290,10 @@ final class ReviewServiceTest extends UnitTestCase
             new RetestService(
                 $entityManager,
                 $repos['retestRuns'],
-                new class implements BrowserRetestClientInterface {
-                    public function retest(BrowserRetestRequest $request): RetestResultData
-                    {
-                        return new RetestResultData(
-                            result: RetestResult::STILL_VULNERABLE,
-                            httpStatus: 200,
-                            finalUrl: $request->url,
-                            observedEvidence: $request->expectedEvidence,
-                            dialogText: $request->expectedEvidence,
-                        );
-                    }
-                },
+                new ReviewBrowserTransportStub([
+                    RetestResult::STILL_VULNERABLE,
+                    RetestResult::STILL_VULNERABLE,
+                ]),
                 new ValidationService($this->createValidator()),
                 new class implements EvidenceStorageInterface {
                     public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
@@ -312,6 +302,10 @@ final class ReviewServiceTest extends UnitTestCase
                     }
                 },
             ),
+            new ReviewBrowserTransportStub([
+                RetestResult::STILL_VULNERABLE,
+                RetestResult::STILL_VULNERABLE,
+            ]),
             $entityManager,
         );
 

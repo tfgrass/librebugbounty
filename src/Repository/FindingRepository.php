@@ -257,6 +257,15 @@ class FindingRepository extends ServiceEntityRepository
      */
     public function findAllWithoutScreenshotEvidence(?Domain $domain = null, ?string $status = null, int $limit = 1000): array
     {
+        return $this->findAllWithoutScreenshotEvidenceByStatuses($domain, $status !== null ? [$status] : [], $limit);
+    }
+
+    /**
+     * @param list<string> $statuses
+     * @return list<Finding>
+     */
+    public function findAllWithoutScreenshotEvidenceByStatuses(?Domain $domain = null, array $statuses = [], int $limit = 1000): array
+    {
         $qb = $this->createQueryBuilder('f')
             ->distinct()
             ->addSelect('d')
@@ -272,8 +281,9 @@ class FindingRepository extends ServiceEntityRepository
             $qb->andWhere('f.domain = :domain')->setParameter('domain', $domain);
         }
 
-        if ($status) {
-            $qb->andWhere('f.status = :status')->setParameter('status', $status);
+        $statuses = array_values(array_filter($statuses, static fn (string $status): bool => $status !== ''));
+        if ($statuses !== []) {
+            $qb->andWhere('f.status IN (:statuses)')->setParameter('statuses', $statuses);
         }
 
         return $qb->getQuery()->getResult();
