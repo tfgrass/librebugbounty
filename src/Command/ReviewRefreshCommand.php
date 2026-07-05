@@ -54,7 +54,7 @@ final class ReviewRefreshCommand extends Command
         $reviewTargets = $this->reviewService->getPendingFindings($reviewLimit);
         $screenshotTargets = $this->findings->findAllWithoutScreenshotEvidenceByStatuses(
             null,
-            ['verified', 'manual_checking'],
+            ['verified', 'manual_checking', 'manually_checked'],
             $screenshotLimit,
         );
 

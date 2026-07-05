@@ -100,4 +100,31 @@ final class FindingRepositoryTest extends UnitTestCase
         self::assertSame('verified', $results[0]->getStatus());
         self::assertSame(2, $repos['findings']->countByDomainAndStatus('alpha', 'verified'));
     }
+
+    public function testCountOpenFindingsIncludesManuallyCheckedVerifiedFindings(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Manually checked');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('verified');
+        $finding->setReviewState('manually_checked');
+        $finding->setUrl('https://example.com/manual');
+        $finding->setMethod('GET');
+        $finding->setLastRetestedAt(new \DateTimeImmutable('-1 hour'));
+        $entityManager->persist($finding);
+
+        self::assertSame(1, $repos['findings']->countOpenFindingsForDomain($domain));
+    }
 }

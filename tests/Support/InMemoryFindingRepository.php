@@ -89,7 +89,9 @@ final class InMemoryFindingRepository extends FindingRepository
             }
 
             return match ($bucket) {
-                'open' => in_array($finding->getStatus(), ['new', 'verified', 'reported'], true) && $finding->getReviewState() === null && $finding->getLastRetestedAt() !== null,
+                'open' => in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)
+                    && in_array($finding->getReviewState(), [null, 'manually_checked'], true)
+                    && $finding->getLastRetestedAt() !== null,
                 'fixed' => $finding->getStatus() === 'fixed',
                 'manual_review' => $finding->getReviewState() === 'manual_checking',
                 'unchecked' => $finding->getLastRetestedAt() === null,
@@ -118,7 +120,9 @@ final class InMemoryFindingRepository extends FindingRepository
                 continue;
             }
 
-            if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)) {
+            if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)
+                && in_array($finding->getReviewState(), [null, 'manually_checked'], true)
+            ) {
                 $count++;
             }
         }

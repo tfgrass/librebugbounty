@@ -793,15 +793,16 @@ final class WebController
         $pills = [];
         $review = match ($finding->getReviewState()) {
             ReviewState::MANUAL_CHECKING => $this->badge('review manual_checking', 'Manual checking'),
+            ReviewState::MANUALLY_CHECKED => $this->badge('review manual_checking', 'Manually checked'),
             ReviewState::CONFIRMED_FIXED => $this->badge('review confirmed_fixed', 'Confirmed fixed'),
             default => '',
         };
 
         if ($review !== '') {
             $pills[] = $review;
-        } else {
-            $pills[] = $this->badge('status '.$finding->getStatus(), $this->humanizeBadgeLabel($finding->getStatus()));
         }
+
+        $pills[] = $this->badge('status '.$finding->getStatus(), $this->humanizeBadgeLabel($finding->getStatus()));
 
         $bucket = $this->bucketForFinding($finding);
         if ($bucket !== null && $bucket !== $finding->getStatus()) {
@@ -830,7 +831,9 @@ final class WebController
             return 'unchecked';
         }
 
-        if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)) {
+        if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)
+            && in_array($finding->getReviewState(), [null, ReviewState::MANUALLY_CHECKED], true)
+        ) {
             return 'open';
         }
 

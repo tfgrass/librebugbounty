@@ -123,7 +123,7 @@ final class FindingService
     public function markVulnerable(Finding $finding): void
     {
         $finding->setStatus(FindingStatus::VERIFIED);
-        $finding->setReviewState(ReviewState::MANUAL_CHECKING);
+        $finding->setReviewState(ReviewState::MANUALLY_CHECKED);
         $this->entityManager->flush();
     }
 

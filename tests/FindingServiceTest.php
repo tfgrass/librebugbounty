@@ -236,7 +236,7 @@ final class FindingServiceTest extends UnitTestCase
         $service->markVulnerable($finding);
 
         self::assertSame('verified', $finding->getStatus());
-        self::assertSame('manual_checking', $finding->getReviewState());
+        self::assertSame('manually_checked', $finding->getReviewState());
     }
 
     public function testFindingCanBeConfirmedFixed(): void

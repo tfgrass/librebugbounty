@@ -155,9 +155,10 @@ class FindingRepository extends ServiceEntityRepository
 
         match ($bucket) {
             'open' => $qb->andWhere('f.status IN (:openStatuses)')
-                ->andWhere('f.reviewState IS NULL')
+                ->andWhere('(f.reviewState IS NULL OR f.reviewState = :manuallyCheckedReviewState)')
                 ->andWhere('f.lastRetestedAt IS NOT NULL')
-                ->setParameter('openStatuses', FindingStatus::openValues()),
+                ->setParameter('openStatuses', FindingStatus::openValues())
+                ->setParameter('manuallyCheckedReviewState', \App\Value\ReviewState::MANUALLY_CHECKED),
             'fixed' => $qb->andWhere('f.status = :fixedStatus')
                 ->setParameter('fixedStatus', FindingStatus::FIXED),
             'manual_review' => $qb->andWhere('f.reviewState = :manualReviewState')
@@ -193,8 +194,10 @@ class FindingRepository extends ServiceEntityRepository
             ->select('COUNT(f.id)')
             ->andWhere('f.domain = :domain')
             ->andWhere('f.status IN (:statuses)')
+            ->andWhere('(f.reviewState IS NULL OR f.reviewState = :manuallyCheckedReviewState)')
             ->setParameter('domain', $domain)
             ->setParameter('statuses', FindingStatus::openValues())
+            ->setParameter('manuallyCheckedReviewState', \App\Value\ReviewState::MANUALLY_CHECKED)
             ->getQuery()
             ->getSingleScalarResult();
     }
