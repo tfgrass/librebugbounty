@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\Domain;
+use Doctrine\ORM\Query\Expr\Join;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -27,6 +28,25 @@ class DomainRepository extends ServiceEntityRepository
     public function findAllOrdered(bool $authorizedOnly = false): array
     {
         $qb = $this->createQueryBuilder('d')
+            ->orderBy('d.hostname', 'ASC');
+
+        if ($authorizedOnly) {
+            $qb->andWhere('d.authorized = true');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * @return list<Domain>
+     */
+    public function findAllWithoutContactedFindings(bool $authorizedOnly = false): array
+    {
+        $qb = $this->createQueryBuilder('d')
+            ->select('DISTINCT d')
+            ->leftJoin('d.findings', 'f', Join::WITH, 'f.contactedAt IS NOT NULL')
+            ->andWhere('d.findings IS NOT EMPTY')
+            ->andWhere('f.id IS NULL')
             ->orderBy('d.hostname', 'ASC');
 
         if ($authorizedOnly) {
