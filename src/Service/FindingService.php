@@ -127,6 +127,12 @@ final class FindingService
         $this->entityManager->flush();
     }
 
+    public function markContacted(Finding $finding): void
+    {
+        $finding->setContactedAt(new \DateTimeImmutable());
+        $this->entityManager->flush();
+    }
+
     public function confirmFixed(Finding $finding): void
     {
         $finding->setStatus(FindingStatus::FIXED);
@@ -154,6 +160,7 @@ final class FindingService
         $finding->setPrivateNotes(null);
         $finding->setReportedAt(null);
         $finding->setNotifiedOwnerAt(null);
+        $finding->setContactedAt(null);
         $finding->setLastRetestedAt(null);
         $finding->setReviewState(null);
         $this->entityManager->flush();

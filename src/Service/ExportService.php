@@ -99,6 +99,7 @@ final class ExportService
             'reportedAt' => $finding->getReportedAt()?->format(DATE_ATOM),
             'submittedAt' => $finding->getSubmittedAt()?->format(DATE_ATOM),
             'notifiedOwnerAt' => $finding->getNotifiedOwnerAt()?->format(DATE_ATOM),
+            'contactedAt' => $finding->getContactedAt()?->format(DATE_ATOM),
             'lastRetestedAt' => $finding->getLastRetestedAt()?->format(DATE_ATOM),
             'createdAt' => $finding->getCreatedAt()->format(DATE_ATOM),
             'updatedAt' => $finding->getUpdatedAt()->format(DATE_ATOM),

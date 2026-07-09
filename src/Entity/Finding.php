@@ -65,6 +65,9 @@ class Finding extends AbstractTimestampedEntity
     private ?\DateTimeImmutable $notifiedOwnerAt = null;
 
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $contactedAt = null;
+
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $lastRetestedAt = null;
 
     #[ORM\Column(type: 'string', length: 32, nullable: true)]
@@ -266,6 +269,18 @@ class Finding extends AbstractTimestampedEntity
     public function setNotifiedOwnerAt(?\DateTimeImmutable $notifiedOwnerAt): self
     {
         $this->notifiedOwnerAt = $notifiedOwnerAt;
+
+        return $this;
+    }
+
+    public function getContactedAt(): ?\DateTimeImmutable
+    {
+        return $this->contactedAt;
+    }
+
+    public function setContactedAt(?\DateTimeImmutable $contactedAt): self
+    {
+        $this->contactedAt = $contactedAt;
 
         return $this;
     }

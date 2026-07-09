@@ -265,6 +265,31 @@ final class FindingServiceTest extends UnitTestCase
         self::assertSame('confirmed_fixed', $finding->getReviewState());
     }
 
+    public function testFindingCanBeMarkedContacted(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $service = new FindingService(
+            new DomainService(
+                $repos['domains'],
+                $entityManager,
+                new ValidationService($this->createValidator()),
+            ),
+            $repos['findings'],
+            $entityManager,
+            new ValidationService($this->createValidator()),
+            new Filesystem(),
+        );
+
+        $finding = $service->createFinding(url: 'https://example.com/contact?q=test');
+
+        $service->markContacted($finding);
+
+        self::assertNotNull($finding->getContactedAt());
+    }
+
     public function testFindingCanBeResetToFreshStart(): void
     {
         $repos = $this->createRepositories();
@@ -287,6 +312,7 @@ final class FindingServiceTest extends UnitTestCase
         $finding->setStatus('verified');
         $finding->setReportedAt(new \DateTimeImmutable('-2 days'));
         $finding->setNotifiedOwnerAt(new \DateTimeImmutable('-1 day'));
+        $finding->setContactedAt(new \DateTimeImmutable('-12 hours'));
         $finding->setLastRetestedAt(new \DateTimeImmutable('-1 hour'));
 
         $service->resetFreshStartState($finding);
@@ -295,6 +321,7 @@ final class FindingServiceTest extends UnitTestCase
         self::assertNull($finding->getPrivateNotes());
         self::assertNull($finding->getReportedAt());
         self::assertNull($finding->getNotifiedOwnerAt());
+        self::assertNull($finding->getContactedAt());
         self::assertNull($finding->getLastRetestedAt());
         self::assertNull($finding->getReviewState());
     }
