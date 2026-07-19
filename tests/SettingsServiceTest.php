@@ -19,7 +19,6 @@ final class SettingsServiceTest extends TestCase
         self::assertSame('OPENBUGBOUNTY', $service->getDefaultPayload());
         self::assertSame('submit', $service->getAutoVerifyMode());
         self::assertSame(45000, $service->getReviewScanTimeoutMs());
-        self::assertSame(4, $service->getReviewScanConcurrency());
     }
 
     public function testSettingsCanBeSavedAndReloaded(): void
@@ -31,13 +30,11 @@ final class SettingsServiceTest extends TestCase
             'intake.default_payload' => 'PAYLOAD123',
             'intake.auto_verify_mode' => 'cron_only',
             'review.scan_timeout_ms' => '30000',
-            'review.scan_concurrency' => '7',
         ]);
 
         self::assertSame('PAYLOAD123', $service->getDefaultPayload());
         self::assertSame('cron_only', $service->getAutoVerifyMode());
         self::assertSame(30000, $service->getReviewScanTimeoutMs());
-        self::assertSame(7, $service->getReviewScanConcurrency());
     }
 
     /**

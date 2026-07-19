@@ -11,7 +11,6 @@ final class SettingsService
         'intake.default_payload' => 'OPENBUGBOUNTY',
         'intake.auto_verify_mode' => 'submit',
         'review.scan_timeout_ms' => '45000',
-        'review.scan_concurrency' => '4',
     ];
 
     public function __construct(
@@ -94,11 +93,6 @@ final class SettingsService
     public function getReviewScanTimeoutMs(): int
     {
         return max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms']));
-    }
-
-    public function getReviewScanConcurrency(): int
-    {
-        return max(1, $this->getInt('review.scan_concurrency', (int) self::DEFAULTS['review.scan_concurrency']));
     }
 
     private function getRaw(string $key): ?string

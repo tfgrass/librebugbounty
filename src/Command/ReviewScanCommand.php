@@ -3,7 +3,6 @@
 namespace App\Command;
 
 use App\Service\ReviewService;
-use App\Service\SettingsService;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -17,7 +16,6 @@ final class ReviewScanCommand extends Command
 {
     public function __construct(
         private readonly ReviewService $reviewService,
-        private readonly SettingsService $settings,
     ) {
         parent::__construct();
     }
@@ -26,8 +24,7 @@ final class ReviewScanCommand extends Command
     {
         $this
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings to inspect.', PHP_INT_MAX)
-            ->addOption('timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in milliseconds for each browser retest.')
-            ->addOption('concurrency', null, InputOption::VALUE_OPTIONAL, 'Number of findings to review in parallel.')
+            ->addOption('timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in milliseconds for each browser retest.', 45000)
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show which findings would be reviewed without running browsers.')
         ;
     }
@@ -36,12 +33,7 @@ final class ReviewScanCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         $limit = max(1, (int) $input->getOption('limit'));
-        $timeout = $input->getOption('timeout') !== null
-            ? max(1000, (int) $input->getOption('timeout'))
-            : $this->settings->getReviewScanTimeoutMs();
-        $concurrency = $input->getOption('concurrency') !== null
-            ? max(1, (int) $input->getOption('concurrency'))
-            : $this->settings->getReviewScanConcurrency();
+        $timeout = max(1000, (int) $input->getOption('timeout'));
 
         if ((bool) $input->getOption('dry-run')) {
             $rows = [];
@@ -67,168 +59,26 @@ final class ReviewScanCommand extends Command
         }
 
         $io->writeln(sprintf(
-            'Resuming review scan with %d finding(s). New findings are processed first. Browser timeout: %d ms. Concurrency: %d.',
+            'Resuming review scan with %d finding(s). New findings are processed first. Browser timeout: %d ms.',
             count($targets),
             $timeout,
-            $concurrency,
         ));
         $progressBar = new ProgressBar($output, count($targets));
         $progressBar->setFormat('%current%/%max% [%bar%] %percent:3s%% %message%');
         $progressBar->setMessage('new findings first');
         $progressBar->start();
 
-        if ($concurrency === 1) {
-            $processed = 0;
-            foreach ($targets as $finding) {
-                $progressBar->setMessage(sprintf('%s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
-                $this->reviewService->reviewFinding($finding, $timeout);
-                $processed++;
-                $progressBar->advance();
-            }
-
-            $progressBar->finish();
-            $io->newLine(2);
-            $io->success(sprintf('Review scan finished. Processed %d finding(s).', $processed));
-
-            return Command::SUCCESS;
-        }
-
-        $rootDir = dirname(__DIR__, 2);
-        $phpBinary = escapeshellarg(PHP_BINARY);
-        $running = [];
-        $queue = array_values($targets);
         $processed = 0;
-        $failed = [];
-
-        $startWorker = function (\App\Entity\Finding $finding) use ($phpBinary, $rootDir, $timeout): array {
-            $command = sprintf(
-                '%s bin/console app:review:one %s --timeout=%d --no-interaction --no-ansi',
-                $phpBinary,
-                escapeshellarg($finding->getId()),
-                $timeout,
-            );
-            $descriptors = [
-                0 => ['pipe', 'r'],
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-            ];
-            $pipes = [];
-            $process = proc_open($command, $descriptors, $pipes, $rootDir);
-            if (!\is_resource($process)) {
-                throw new \RuntimeException(sprintf('Failed to start review worker for %s.', $finding->getId()));
-            }
-
-            fclose($pipes[0]);
-
-            return [
-                'finding' => $finding,
-                'process' => $process,
-                'stdout' => $pipes[1],
-                'stderr' => $pipes[2],
-            ];
-        };
-
-        $finishWorker = static function (array $worker) use (&$failed): int {
-            $stdout = '';
-            $stderr = '';
-            if (\is_resource($worker['stdout'])) {
-                $stdout = (string) stream_get_contents($worker['stdout']);
-                fclose($worker['stdout']);
-            }
-            if (\is_resource($worker['stderr'])) {
-                $stderr = (string) stream_get_contents($worker['stderr']);
-                fclose($worker['stderr']);
-            }
-
-            try {
-                $exitCode = \is_resource($worker['process']) ? proc_close($worker['process']) : 0;
-            } catch (\Throwable $exception) {
-                $exitCode = 1;
-                $stderr = trim($stderr."\n".$exception->getMessage());
-            }
-
-            if ($exitCode !== 0) {
-                $failed[] = [
-                    'finding' => $worker['finding'],
-                    'stdout' => trim($stdout),
-                    'stderr' => trim($stderr),
-                    'exitCode' => $exitCode,
-                ];
-            }
-
-            return $exitCode;
-        };
-
-        while ($queue !== [] || $running !== []) {
-            while (count($running) < $concurrency && $queue !== []) {
-                $finding = array_shift($queue);
-                \assert($finding instanceof \App\Entity\Finding);
-                $progressBar->setMessage(sprintf('starting %s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
-                $running[] = $startWorker($finding);
-            }
-
-            $finishedIndexes = [];
-            foreach ($running as $index => $worker) {
-                if (!\is_resource($worker['process'])) {
-                    $finishedIndexes[] = $index;
-                    continue;
-                }
-
-                try {
-                    $status = proc_get_status($worker['process']);
-                } catch (\Throwable) {
-                    $status = ['running' => false];
-                }
-
-                if (($status['running'] ?? false) === true) {
-                    continue;
-                }
-
-                try {
-                    $exitCode = $finishWorker($worker);
-                } catch (\Throwable $exception) {
-                    $exitCode = 1;
-                    $io->warning(sprintf(
-                        'Worker crashed for %s (%s): %s',
-                        substr($worker['finding']->getId(), 0, 8),
-                        $worker['finding']->getDomain()->getHostname(),
-                        $exception->getMessage(),
-                    ));
-                }
-                $finishedIndexes[] = $index;
-                $processed++;
-                $progressBar->setMessage(sprintf('%s %s', substr($worker['finding']->getId(), 0, 8), $worker['finding']->getDomain()->getHostname()));
-                $progressBar->advance();
-
-                if ($exitCode !== 0) {
-                    $io->warning(sprintf(
-                        'Worker failed for %s (%s)',
-                        substr($worker['finding']->getId(), 0, 8),
-                        $worker['finding']->getDomain()->getHostname(),
-                    ));
-                }
-            }
-
-            if ($finishedIndexes !== []) {
-                foreach (array_reverse($finishedIndexes) as $index) {
-                    unset($running[$index]);
-                }
-                $running = array_values($running);
-            }
-
-            if ($queue !== [] || $running !== []) {
-                usleep(200000);
-            }
+        foreach ($targets as $finding) {
+            $progressBar->setMessage(sprintf('%s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
+            $this->reviewService->reviewFinding($finding, $timeout);
+            $processed++;
+            $progressBar->advance();
         }
 
         $progressBar->finish();
         $io->newLine(2);
-        if ($failed !== []) {
-            $io->warning(sprintf('Review scan finished. Processed %d finding(s) with %d failure(s).', $processed, count($failed)));
-            return Command::FAILURE;
-        }
-
-        $io->success(sprintf('Review scan finished. Processed %d finding(s).', $processed));
+        $io->success(sprintf('Review scan finished. Processed %d finding(s) serially.', $processed));
 
         return Command::SUCCESS;
     }

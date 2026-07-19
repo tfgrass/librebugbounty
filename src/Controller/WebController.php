@@ -144,7 +144,6 @@ final class WebController
             $payload = trim($request->request->getString('default_payload'));
             $autoVerifyMode = $request->request->getString('auto_verify_mode');
             $timeoutMs = trim($request->request->getString('review_timeout_ms'));
-            $concurrency = trim($request->request->getString('review_concurrency'));
 
             if ($payload === '') {
                 $payload = SettingsService::DEFAULTS['intake.default_payload'];
@@ -155,15 +154,11 @@ final class WebController
             if ($timeoutMs === '' || !ctype_digit($timeoutMs) || (int) $timeoutMs < 1000) {
                 $timeoutMs = SettingsService::DEFAULTS['review.scan_timeout_ms'];
             }
-            if ($concurrency === '' || !ctype_digit($concurrency) || (int) $concurrency < 1) {
-                $concurrency = SettingsService::DEFAULTS['review.scan_concurrency'];
-            }
 
             $this->settings->save([
                 'intake.default_payload' => $payload,
                 'intake.auto_verify_mode' => $autoVerifyMode,
                 'review.scan_timeout_ms' => $timeoutMs,
-                'review.scan_concurrency' => $concurrency,
             ]);
 
             return $this->redirectMessage('Settings saved.');
@@ -548,7 +543,6 @@ final class WebController
         $defaultPayload = (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']);
         $autoVerifyMode = (string) ($settings['intake.auto_verify_mode'] ?? SettingsService::DEFAULTS['intake.auto_verify_mode']);
         $reviewTimeout = (string) ($settings['review.scan_timeout_ms'] ?? SettingsService::DEFAULTS['review.scan_timeout_ms']);
-        $reviewConcurrency = (string) ($settings['review.scan_concurrency'] ?? SettingsService::DEFAULTS['review.scan_concurrency']);
 
         ob_start();
         ?>
@@ -571,9 +565,6 @@ final class WebController
     <label>Review Timeout (ms)
       <input name="review_timeout_ms" inputmode="numeric" value="<?= $this->escape($reviewTimeout) ?>" placeholder="45000">
     </label>
-    <label>Review Concurrency
-      <input name="review_concurrency" inputmode="numeric" value="<?= $this->escape($reviewConcurrency) ?>" placeholder="4">
-    </label>
     <p class="hint">Use a lower timeout for fragile targets, and set auto verification to cron only when you want intake to stay fast.</p>
     <div class="actions">
       <button type="submit">Save settings</button>
@@ -592,7 +583,6 @@ final class WebController
     <div><dt>Default Payload</dt><dd>Used when no payload is typed in the intake form or CLI defaults.</dd></div>
     <div><dt>Auto Verification</dt><dd><code>On submit</code> retests immediately after intake, while <code>Cron only</code> leaves verification to <code>app:review:scan</code>.</dd></div>
     <div><dt>Review Timeout</dt><dd>Browser timeout for the review scan and browser retests.</dd></div>
-    <div><dt>Review Concurrency</dt><dd>How many findings the review scan may process in parallel.</dd></div>
   </div>
 </section>
 <?php

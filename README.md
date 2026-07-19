@@ -66,7 +66,7 @@ Preview which findings would be processed:
 ddev exec php bin/console app:review:scan --dry-run
 ```
 
-The command processes findings that still need attention, runs Chromium and Firefox checks, and keeps `confirmed_fixed` findings terminal.
+The command processes findings that still need attention, runs Chromium and Firefox checks, and does so serially.
 
 The overview is searchable by domain and status, and paginates after 50 findings per page.
 
