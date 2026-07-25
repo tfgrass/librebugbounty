@@ -20,7 +20,7 @@ final class ExportService
     ) {
     }
 
-    public function export(?string $domainHostname = null, ?string $status = null): array
+    public function export(?string $domainHostname = null, ?string $status = null, bool $contactedOnly = false): array
     {
         $domainFilter = null;
         if ($domainHostname !== null) {
@@ -30,6 +30,10 @@ final class ExportService
         $rows = [];
         foreach ($this->findings->findByDomainAndStatus($domainFilter, $status) as $finding) {
             \assert($finding instanceof Finding);
+            if ($contactedOnly && $finding->getContactedAt() === null) {
+                continue;
+            }
+
             $rows[] = $this->serializeFinding($finding);
         }
 

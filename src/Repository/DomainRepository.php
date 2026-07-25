@@ -40,13 +40,31 @@ class DomainRepository extends ServiceEntityRepository
     /**
      * @return list<Domain>
      */
-    public function findAllWithoutContactedFindings(bool $authorizedOnly = false): array
+    public function findAllWithoutContactedOrFixedFindings(bool $authorizedOnly = false): array
     {
         $qb = $this->createQueryBuilder('d')
             ->select('DISTINCT d')
-            ->leftJoin('d.findings', 'f', Join::WITH, 'f.contactedAt IS NOT NULL')
+            ->leftJoin('d.findings', 'f', Join::WITH, 'f.contactedAt IS NOT NULL OR f.status = :fixedStatus')
             ->andWhere('d.findings IS NOT EMPTY')
             ->andWhere('f.id IS NULL')
+            ->setParameter('fixedStatus', 'fixed')
+            ->orderBy('d.hostname', 'ASC');
+
+        if ($authorizedOnly) {
+            $qb->andWhere('d.authorized = true');
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * @return list<Domain>
+     */
+    public function findAllWithContactedFindings(bool $authorizedOnly = false): array
+    {
+        $qb = $this->createQueryBuilder('d')
+            ->select('DISTINCT d')
+            ->innerJoin('d.findings', 'f', Join::WITH, 'f.contactedAt IS NOT NULL')
             ->orderBy('d.hostname', 'ASC');
 
         if ($authorizedOnly) {

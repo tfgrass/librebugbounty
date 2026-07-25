@@ -140,6 +140,64 @@ final class ReviewServiceTest extends UnitTestCase
         self::assertSame([true, true], $browserClient->screenshotCalls);
     }
 
+    public function testReviewFindingConvertsBrowserTransportErrorsIntoErrorRuns(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Timeout fallback');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('new');
+        $finding->setUrl('https://example.com/timeout?q=test');
+        $finding->setMethod('GET');
+        $finding->setSubmittedAt(new \DateTimeImmutable('-1 day'));
+        $entityManager->persist($finding);
+
+        $browserClient = new ReviewBrowserTransportStub(
+            [RetestResult::STILL_VULNERABLE],
+            [new \RuntimeException('Idle timeout reached for "http://playwright:3000/retest".')],
+        );
+
+        $reviewService = new ReviewService(
+            $repos['findings'],
+            new RetestService(
+                $entityManager,
+                $repos['retestRuns'],
+                $browserClient,
+                new ValidationService($this->createValidator()),
+                new class implements EvidenceStorageInterface {
+                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
+                    {
+                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
+                    }
+                },
+            ),
+            $browserClient,
+            $entityManager,
+        );
+
+        $reviewService->reviewFinding($finding, 45000);
+
+        self::assertSame(['chromium', 'firefox'], $browserClient->browserCalls);
+        self::assertSame('verified', $finding->getStatus());
+        self::assertSame('manual_checking', $finding->getReviewState());
+        self::assertCount(2, $repos['retestRuns']->findAll());
+
+        $results = array_map(static fn ($run): string => $run->getResult(), $repos['retestRuns']->findAll());
+        self::assertContains(RetestResult::ERROR, $results);
+        self::assertContains(RetestResult::STILL_VULNERABLE, $results);
+    }
+
     public function testReviewScanMarksFixedAndInconclusiveResultsForManualChecking(): void
     {
         $repos = $this->createRepositories();

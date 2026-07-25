@@ -153,14 +153,34 @@ final class ReviewRefreshCommand extends Command
         $progressBar->setFormat('%current%/%max% [%bar%] %percent:3s%% %message%');
         $progressBar->start();
 
+        $processed = 0;
+        $failures = 0;
         foreach ($findings as $finding) {
             $progressBar->setMessage(sprintf('%s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
-            $this->retestService->retest($finding, true, $timeoutMs, false, false, false, $browser);
-            $progressBar->advance();
+            try {
+                $this->retestService->retest($finding, true, $timeoutMs, false, false, false, $browser);
+                $processed++;
+            } catch (\Throwable $error) {
+                $failures++;
+                $io->warning(sprintf(
+                    'Skipping %s %s after error: %s',
+                    substr($finding->getId(), 0, 8),
+                    $finding->getDomain()->getHostname(),
+                    $error->getMessage(),
+                ));
+            } finally {
+                $progressBar->advance();
+            }
         }
 
         $progressBar->finish();
         $io->newLine(2);
-        $io->success(sprintf('%s finished. Processed %d finding(s).', $title, count($findings)));
+        $message = sprintf('%s finished. Processed %d finding(s).', $title, $processed);
+        if ($failures > 0) {
+            $message .= sprintf(' %d finding(s) failed and were skipped.', $failures);
+            $io->warning(sprintf('%d finding(s) failed during %s.', $failures, $title));
+        }
+
+        $io->success($message);
     }
 }

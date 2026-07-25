@@ -22,6 +22,7 @@ final class ExportJsonCommand extends Command
         $this
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, 'Restrict to a hostname.')
             ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Restrict to a finding status.')
+            ->addOption('contacted-only', null, InputOption::VALUE_NONE, 'Only export findings that have been marked contacted.')
         ;
     }
 
@@ -30,6 +31,7 @@ final class ExportJsonCommand extends Command
         $data = $this->exportService->export(
             $input->getOption('domain') ?: null,
             $input->getOption('status') ?: null,
+            (bool) $input->getOption('contacted-only'),
         );
 
         $output->writeln(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));

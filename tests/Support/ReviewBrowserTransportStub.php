@@ -23,11 +23,15 @@ final class ReviewBrowserTransportStub implements BrowserRetestClientInterface, 
     /** @var list<string> */
     private array $results;
 
+    /** @var list<\Throwable|null> */
+    private array $requestFailures;
+
     private int $index = 0;
 
-    public function __construct(array $results)
+    public function __construct(array $results, array $requestFailures = [])
     {
         $this->results = array_values($results);
+        $this->requestFailures = array_values($requestFailures);
     }
 
     public function retest(BrowserRetestRequest $request): RetestResultData
@@ -41,8 +45,13 @@ final class ReviewBrowserTransportStub implements BrowserRetestClientInterface, 
         $this->headlessCalls[] = $request->headless;
         $this->screenshotCalls[] = $request->screenshot;
 
+        $requestFailure = $this->requestFailures[$this->index] ?? null;
         $result = $this->results[$this->index] ?? RetestResult::STILL_VULNERABLE;
         $this->index++;
+
+        if ($requestFailure instanceof \Throwable) {
+            throw $requestFailure;
+        }
 
         return new class($request, $result) implements ResponseInterface {
             public function __construct(

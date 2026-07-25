@@ -36,7 +36,7 @@ final class InMemoryDomainRepository extends DomainRepository
         return $domains;
     }
 
-    public function findAllWithoutContactedFindings(bool $authorizedOnly = false): array
+    public function findAllWithoutContactedOrFixedFindings(bool $authorizedOnly = false): array
     {
         $domains = array_values(array_filter($this->domains, static function (Domain $domain): bool {
             if ($domain->getFindings()->count() === 0) {
@@ -44,12 +44,33 @@ final class InMemoryDomainRepository extends DomainRepository
             }
 
             foreach ($domain->getFindings() as $finding) {
-                if ($finding->getContactedAt() !== null) {
+                if ($finding->getContactedAt() !== null || $finding->getStatus() === 'fixed') {
                     return false;
                 }
             }
 
             return true;
+        }));
+
+        usort($domains, static fn (Domain $a, Domain $b) => $a->getHostname() <=> $b->getHostname());
+
+        if ($authorizedOnly) {
+            $domains = array_values(array_filter($domains, static fn (Domain $domain) => $domain->isAuthorized()));
+        }
+
+        return $domains;
+    }
+
+    public function findAllWithContactedFindings(bool $authorizedOnly = false): array
+    {
+        $domains = array_values(array_filter($this->domains, static function (Domain $domain): bool {
+            foreach ($domain->getFindings() as $finding) {
+                if ($finding->getContactedAt() !== null) {
+                    return true;
+                }
+            }
+
+            return false;
         }));
 
         usort($domains, static fn (Domain $a, Domain $b) => $a->getHostname() <=> $b->getHostname());

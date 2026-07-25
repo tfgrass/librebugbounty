@@ -101,11 +101,8 @@ final class ReviewService
             browser: 'firefox',
         );
 
-        $chromiumResponse = $this->browserRetestTransport->request($chromiumRequest);
-        $firefoxResponse = $this->browserRetestTransport->request($firefoxRequest);
-
-        $chromium = $this->browserRetestTransport->decode($chromiumResponse);
-        $firefox = $this->browserRetestTransport->decode($firefoxResponse);
+        $chromium = $this->retestBrowser($chromiumRequest);
+        $firefox = $this->retestBrowser($firefoxRequest);
 
         $this->retestService->recordBrowserResult($finding, $chromium, $captureScreenshots, true);
         $this->retestService->recordBrowserResult($finding, $firefox, $captureScreenshots, true);
@@ -121,6 +118,7 @@ final class ReviewService
         $hasStillVulnerable = in_array(RetestResult::STILL_VULNERABLE, $results, true);
         $hasFixed = in_array(RetestResult::FIXED, $results, true);
         $hasInconclusive = in_array(RetestResult::INCONCLUSIVE, $results, true);
+        $hasError = in_array(RetestResult::ERROR, $results, true);
         $wasFixed = $finding->getStatus() === FindingStatus::FIXED;
 
         if ($hasStillVulnerable) {
@@ -129,12 +127,30 @@ final class ReviewService
             $finding->setStatus(FindingStatus::FIXED);
         }
 
-        if ($wasManualCheck || $hasFixed || $hasInconclusive || ($wasFixed && $hasStillVulnerable)) {
+        if ($wasManualCheck || $hasFixed || $hasInconclusive || $hasError || ($wasFixed && $hasStillVulnerable)) {
             $finding->setReviewState(ReviewState::MANUAL_CHECKING);
         } else {
             $finding->setReviewState(null);
         }
 
         $this->entityManager->flush();
+    }
+
+    private function retestBrowser(\App\Dto\BrowserRetestRequest $request): \App\Dto\RetestResultData
+    {
+        try {
+            $response = $this->browserRetestTransport->request($request);
+
+            return $this->browserRetestTransport->decode($response);
+        } catch (\Throwable $error) {
+            return new \App\Dto\RetestResultData(
+                result: RetestResult::ERROR,
+                errorMessage: $error->getMessage(),
+                raw: [
+                    'browser' => $request->browser,
+                    'exceptionClass' => $error::class,
+                ],
+            );
+        }
     }
 }

@@ -69,16 +69,34 @@ final class ReviewScanCommand extends Command
         $progressBar->start();
 
         $processed = 0;
+        $failures = 0;
         foreach ($targets as $finding) {
             $progressBar->setMessage(sprintf('%s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
-            $this->reviewService->reviewFinding($finding, $timeout);
-            $processed++;
-            $progressBar->advance();
+            try {
+                $this->reviewService->reviewFinding($finding, $timeout);
+                $processed++;
+            } catch (\Throwable $error) {
+                $failures++;
+                $io->warning(sprintf(
+                    'Skipping %s %s after error: %s',
+                    substr($finding->getId(), 0, 8),
+                    $finding->getDomain()->getHostname(),
+                    $error->getMessage(),
+                ));
+            } finally {
+                $progressBar->advance();
+            }
         }
 
         $progressBar->finish();
         $io->newLine(2);
-        $io->success(sprintf('Review scan finished. Processed %d finding(s) serially.', $processed));
+        $message = sprintf('Review scan finished. Processed %d finding(s) serially.', $processed);
+        if ($failures > 0) {
+            $message .= sprintf(' %d finding(s) failed and were skipped.', $failures);
+            $io->warning(sprintf('%d finding(s) failed during the scan.', $failures));
+        }
+
+        $io->success($message);
 
         return Command::SUCCESS;
     }
