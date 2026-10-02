@@ -6,6 +6,9 @@ const path = require('path');
 const { chromium, firefox } = require('playwright');
 
 const port = parseInt(process.env.PORT || '3000', 10);
+const DEFAULT_SCREENSHOT_SETTLE_MS = 3000;
+const DIALOG_RENDER_DELAY_MS = 400;
+const POST_CAPTURE_DIALOG_GRACE_MS = 50;
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -45,10 +48,20 @@ async function captureDesktopScreenshot() {
   const filePath = path.join(directory, 'screen.png');
 
   try {
-    await execFileAsync('import', ['-window', 'root', filePath], {
+    await execFileAsync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-nostdin',
+      '-y',
+      '-f', 'x11grab',
+      '-draw_mouse', '0',
+      '-video_size', '1440x900',
+      '-i', process.env.DISPLAY,
+      '-frames:v', '1',
+      filePath,
+    ], {
       env: {
         ...process.env,
-        DISPLAY: process.env.DISPLAY || ':99',
       },
       timeout: 10000,
     });
@@ -58,6 +71,15 @@ async function captureDesktopScreenshot() {
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+// All headed browsers share the same Xvfb desktop. This FIFO is the final
+// ownership boundary even if multiple HTTP or CLI callers reach this process.
+let displayLease = Promise.resolve();
+function withDisplayLease(operation) {
+  const current = displayLease.then(operation, operation);
+  displayLease = current.catch(() => {});
+  return current;
 }
 
 async function fetchHttpFallback(url, timeoutMs) {
@@ -126,7 +148,7 @@ async function launchBrowser(browserName, headless) {
     case 'chromium':
       return chromium.launch({
         headless,
-        args: headless ? [] : ['--window-size=1440,900', '--start-maximized'],
+        args: headless ? [] : ['--window-size=1440,900', '--window-position=0,0', '--start-maximized'],
       });
     default:
       throw new Error(`Unsupported browser "${browserName}". Use chromium or firefox.`);
@@ -143,7 +165,9 @@ async function runRetest(payload) {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const browser = await launchBrowser(browserName, headless);
-  const context = await browser.newContext({
+  let context = null;
+  try {
+  context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 900 },
   });
@@ -308,9 +332,6 @@ async function runRetest(payload) {
     }
   }
 
-  await context.close();
-  await browser.close();
-
   return {
     result,
     finalUrl,
@@ -334,6 +355,166 @@ async function runRetest(payload) {
       browserName,
     },
   };
+  } finally {
+    if (context !== null) {
+      await context.close().catch(() => {});
+    }
+    await browser.close().catch(() => {});
+  }
+}
+
+async function runScreenshot(payload, dependencies = {}) {
+  const url = String(payload.url || '');
+  const timeoutMs = Math.min(120000, Math.max(1000, Number(payload.timeoutMs || 45000)));
+  const settleValue = Number(payload.settleMs ?? DEFAULT_SCREENSHOT_SETTLE_MS);
+  const settleMs = Number.isFinite(settleValue)
+    ? Math.min(10000, Math.max(250, settleValue))
+    : DEFAULT_SCREENSHOT_SETTLE_MS;
+  const wait = dependencies.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+  const launch = dependencies.launchBrowser || launchBrowser;
+  const now = dependencies.now || (() => new Date());
+  const dialogRenderDelayMs = dependencies.dialogRenderDelayMs ?? DIALOG_RENDER_DELAY_MS;
+  const postCaptureDialogGraceMs = dependencies.postCaptureDialogGraceMs ?? POST_CAPTURE_DIALOG_GRACE_MS;
+  let browser = null;
+  let context = null;
+  let page = null;
+  let openDialog = null;
+  let dialogInfo = null;
+  let dialogTask = null;
+  let dialogHandler = null;
+  let acceptingDialogs = true;
+  let resolveDialogSeen = null;
+  let screenshotBase64 = null;
+  let capturedAt = null;
+  let captureMethod = null;
+  let normalCaptureTask = null;
+  let navigationError = null;
+  const dialogSeen = new Promise((resolve) => {
+    resolveDialogSeen = resolve;
+  });
+
+  async function captureAndStore(method) {
+    const captured = await captureDesktop();
+    screenshotBase64 = captured;
+    capturedAt = now().toISOString();
+    captureMethod = method;
+  }
+
+  function stopDialogObservation() {
+    acceptingDialogs = false;
+    if (page !== null && dialogHandler !== null) {
+      page.off('dialog', dialogHandler);
+    }
+  }
+
+  try {
+    browser = await launch('chromium', false);
+    context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: 1440, height: 900 },
+    });
+    page = await context.newPage();
+    dialogHandler = (dialog) => {
+      if (!acceptingDialogs || dialogTask !== null) {
+        dialog.dismiss().catch(() => {});
+        return;
+      }
+      openDialog = dialog;
+      dialogInfo = { type: dialog.type(), message: dialog.message() };
+      resolveDialogSeen?.();
+      resolveDialogSeen = null;
+      dialogTask = (async () => {
+        try {
+          // If the dialog arrives at the end of the normal-page settle
+          // period, let that capture finish and then replace it with an
+          // image that is guaranteed to contain the still-open dialog.
+          if (normalCaptureTask !== null) {
+            await normalCaptureTask.catch(() => {});
+          }
+          await wait(dialogRenderDelayMs);
+          await captureAndStore('desktop-dialog');
+        } finally {
+          await dialog.dismiss().catch(() => {});
+          openDialog = null;
+        }
+      })();
+      // EventEmitter does not await listener promises. Attach a rejection
+      // handler immediately so a capture error is reported by this request
+      // instead of becoming an unhandled process-level rejection.
+      dialogTask.catch(() => {});
+    };
+    page.on('dialog', dialogHandler);
+
+    let response = null;
+    try {
+      response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    } catch (error) {
+      navigationError = error.message;
+    }
+
+    await Promise.race([dialogSeen, wait(settleMs)]);
+    if (dialogTask !== null) {
+      await dialogTask;
+    }
+    if (screenshotBase64 === null) {
+      normalCaptureTask = (async () => {
+        const captured = await captureDesktop();
+        if (dialogTask === null) {
+          screenshotBase64 = captured;
+          capturedAt = now().toISOString();
+          captureMethod = 'desktop-page';
+        }
+      })();
+      await normalCaptureTask;
+      // Playwright can deliver a dialog event just after ffmpeg's child-process
+      // callback. Keep the listener alive for one short grace period so such a
+      // dialog replaces the normal image instead of racing with teardown.
+      await wait(postCaptureDialogGraceMs);
+    }
+
+    // From this point onward, no new capture task may start while the browser
+    // context is closing. A task registered before the boundary is still part
+    // of this request and must finish before its result is returned.
+    stopDialogObservation();
+    if (dialogTask !== null) {
+      await dialogTask;
+    }
+    if (screenshotBase64 === null) {
+      throw new Error('Screenshot capture completed without an image.');
+    }
+
+    return {
+      screenshotBase64,
+      capturedAt,
+      finalUrl: page.url(),
+      httpStatus: response ? response.status() : null,
+      dialogSeen: dialogInfo !== null,
+      dialogType: dialogInfo?.type || null,
+      dialogText: dialogInfo?.message || null,
+      captureMethod,
+      metadata: {
+        timeoutMs,
+        settleMs,
+        navigationError,
+        browserName: 'chromium',
+      },
+    };
+  } finally {
+    stopDialogObservation();
+    if (dialogTask !== null) {
+      await dialogTask.catch(() => {});
+    }
+    if (openDialog !== null) {
+      await openDialog.dismiss().catch(() => {});
+    }
+    if (context !== null) {
+      await context.close().catch(() => {});
+    }
+    if (browser !== null) {
+      await browser.close().catch(() => {});
+    }
+  }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -348,16 +529,36 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { errorMessage: 'Missing url.' });
       }
 
-      const result = await runRetest(payload);
+      const result = payload.headless === false
+        ? await withDisplayLease(() => runRetest(payload))
+        : await runRetest(payload);
       return sendJson(res, 200, result);
     } catch (error) {
       return sendJson(res, 500, { errorMessage: error.message, result: 'error', raw: {} });
     }
   }
 
+  if (req.method === 'POST' && req.url === '/screenshot') {
+    try {
+      const payload = await readJson(req);
+      if (!payload.url) {
+        return sendJson(res, 400, { errorMessage: 'Missing url.' });
+      }
+
+      const result = await withDisplayLease(() => runScreenshot(payload));
+      return sendJson(res, 200, result);
+    } catch (error) {
+      return sendJson(res, 500, { errorMessage: error.message });
+    }
+  }
+
   return sendJson(res, 404, { errorMessage: 'Not found.' });
 });
 
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Playwright worker listening on ${port}`);
-});
+if (require.main === module) {
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`Playwright worker listening on ${port}`);
+  });
+}
+
+module.exports = { DEFAULT_SCREENSHOT_SETTLE_MS, runScreenshot, withDisplayLease };

@@ -7,7 +7,6 @@ use App\Entity\Finding;
 use App\Repository\EvidenceRepository;
 use App\Value\EvidenceKind;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\Filesystem\Filesystem;
 
 final class EvidenceService
 {
@@ -35,8 +34,19 @@ final class EvidenceService
         $evidence->setFilePath($stored?->relativePath);
         $evidence->setSha256($stored?->sha256);
 
-        $this->entityManager->persist($evidence);
-        $this->entityManager->flush();
+        try {
+            $this->entityManager->persist($evidence);
+            $this->entityManager->flush();
+        } catch (\Throwable $error) {
+            if ($stored !== null) {
+                try {
+                    $this->storage->deleteFile($stored->relativePath);
+                } catch (\Throwable) {
+                    throw new \RuntimeException('Evidence metadata could not be saved; an unreferenced file may remain. Run app:artifacts:audit.', 0, $error);
+                }
+            }
+            throw $error;
+        }
 
         return $evidence;
     }
@@ -50,7 +60,6 @@ final class EvidenceService
 
         $this->entityManager->flush();
 
-        $filesystem = new Filesystem();
-        $filesystem->remove(dirname(__DIR__, 2).'/storage/artifacts/'.$finding->getId());
+        $this->storage->deleteForFinding($finding);
     }
 }

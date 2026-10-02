@@ -18,6 +18,7 @@ services:
 
   App\Service\BrowserRetestClientInterface: '@App\Service\PlaywrightBrowserRetestClient'
   App\Service\BrowserRetestTransportInterface: '@App\Service\PlaywrightBrowserRetestClient'
+  App\Service\BrowserScreenshotClientInterface: '@App\Service\PlaywrightBrowserScreenshotClient'
   App\Service\EvidenceStorageInterface: '@App\Service\LocalEvidenceStorage'
 
   App\Service\LocalEvidenceStorage:
@@ -25,5 +26,9 @@ services:
       $evidenceDir: '%app.evidence_storage_dir%'
 
   App\Service\PlaywrightBrowserRetestClient:
+    arguments:
+      $workerUrl: '%app.playwright_worker_url%'
+
+  App\Service\PlaywrightBrowserScreenshotClient:
     arguments:
       $workerUrl: '%app.playwright_worker_url%'

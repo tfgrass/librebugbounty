@@ -8,13 +8,11 @@ use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Service\BrowserRetestClientInterface;
 use App\Service\DomainService;
-use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
 use App\Service\RetestService;
 use App\Service\ValidationService;
 use App\Value\EvidenceKind;
 use App\Value\RetestResult;
-use Symfony\Component\Filesystem\Filesystem;
 
 final class RetestServiceTest extends UnitTestCase
 {
@@ -223,7 +221,7 @@ final class RetestServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
         $finding = $findingService->createFinding(
             hostname: 'example.com',
@@ -266,12 +264,7 @@ final class RetestServiceTest extends UnitTestCase
             $repos['retestRuns'],
             $browserRetestClient,
             new \App\Service\ValidationService($this->createValidator()),
-            new class implements EvidenceStorageInterface {
-                public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                {
-                    return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                }
-            },
+            $this->storage,
         );
     }
 }

@@ -12,6 +12,9 @@ mkcert_caroot: ~/.local/share/mkcert
 web_environment:
   - APP_ENV=dev
   - APP_DEBUG=1
+  - APP_SECRET=local-ddev-only
+  - DATABASE_URL=sqlite:////var/www/html/storage/database/app.sqlite
+  - EVIDENCE_STORAGE_DIR=/var/www/html/storage/artifacts
   - PLAYWRIGHT_WORKER_URL=http://playwright:3000
   - RETEST_DEFAULT_TIMEOUT_MS=10000
 hooks:
@@ -19,3 +22,8 @@ hooks:
     - exec: "mkdir -p storage/database storage/artifacts storage/test/database storage/test/artifacts"
     - composer: install
     - exec: "php bin/console app:db:init"
+    - exec: "supervisorctl restart webextradaemons:screenshot-queue"
+web_extra_daemons:
+  - name: screenshot-queue
+    command: "php bin/console app:screenshot:worker --sleep=2 --no-interaction"
+    directory: /var/www/html

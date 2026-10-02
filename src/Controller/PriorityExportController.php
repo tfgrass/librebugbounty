@@ -7,11 +7,15 @@ use App\Repository\FindingRepository;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 #[Route(path: '/operator-priority')]
 final class PriorityExportController
 {
-    public function __construct(private readonly FindingRepository $findings)
+    public function __construct(
+        private readonly FindingRepository $findings,
+        private readonly CsrfTokenManagerInterface $csrf,
+    )
     {
     }
 
@@ -155,6 +159,7 @@ final class PriorityExportController
                     .($target !== null ? ' · <a href="'.self::e($target).'" target="_blank" rel="noreferrer">Ziel</a>' : '')
                     .($report !== null ? ' · <a href="'.self::e($report).'" target="_blank" rel="noreferrer">externer Report</a>' : '')
                     .'<form method="post" action="/findings/'.rawurlencode($finding->getId()).'/mark-contacted" class="contact-form">'
+                    .'<input type="hidden" name="_token" value="'.self::e($this->csrf->getToken('finding_mark_contacted_'.$finding->getId())->getValue()).'">'
                     .'<input type="hidden" name="return_to" value="/operator-priority?days='.self::e((string) $days).'">'
                     .'<button type="submit">Kontakted – ausblenden</button></form>'
                     .'</li>';

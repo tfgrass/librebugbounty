@@ -1,4 +1,9 @@
 framework:
   secret: '%env(APP_SECRET)%'
   handle_all_throwables: true
+  csrf_protection: true
+  session:
+    handler_id: null
+    cookie_secure: auto
+    cookie_samesite: lax
   trusted_hosts: null

@@ -12,3 +12,9 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s

@@ -8,7 +8,6 @@ use App\Dto\RetestResultData;
 use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Service\BrowserRetestClientInterface;
-use App\Service\EvidenceStorageInterface;
 use App\Service\RetestService;
 use App\Service\ValidationService;
 use App\Tests\Support\InMemoryDomainRepository;
@@ -75,12 +74,7 @@ final class RetestAllCommandTest extends UnitTestCase
                 }
             },
             new ValidationService($this->createValidator()),
-            new class implements EvidenceStorageInterface {
-                public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                {
-                    return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                }
-            },
+            $this->storage,
         );
 
         $command = new RetestAllCommand(
@@ -93,7 +87,10 @@ final class RetestAllCommandTest extends UnitTestCase
 
         self::assertSame(Command::SUCCESS, $tester->execute(['--execute' => true, '--limit' => 2]));
 
-        $display = $tester->getDisplay();
+        // Symfony wraps styled console blocks according to the detected terminal
+        // width. Normalize whitespace so this assertion tests the message rather
+        // than the local DDEV terminal dimensions.
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
         self::assertStringContainsString('Skipping', $display);
         self::assertStringContainsString('Idle timeout reached for "http://playwright:3000/retest".', $display);
         self::assertStringContainsString(substr($successfulFinding->getId(), 0, 8).' -> still_vulnerable (chromium)', $display);

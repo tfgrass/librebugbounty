@@ -5,7 +5,6 @@ namespace App\Tests;
 use App\Service\DomainService;
 use App\Service\FindingService;
 use App\Service\ValidationService;
-use Symfony\Component\Filesystem\Filesystem;
 
 final class FindingServiceTest extends UnitTestCase
 {
@@ -24,7 +23,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(
@@ -56,7 +55,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(
@@ -90,7 +89,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $first = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -115,7 +114,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: ' https://example.com/search?q=test');
@@ -138,12 +137,12 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
 
-        $artifactDir = dirname(__DIR__, 1).'/storage/artifacts/'.$finding->getId();
+        $artifactDir = $this->artifactRoot.'/'.$finding->getId();
         if (!is_dir($artifactDir)) {
             mkdir($artifactDir, 0775, true);
         }
@@ -173,7 +172,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -199,7 +198,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -228,7 +227,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -254,7 +253,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -280,7 +279,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/contact?q=test');
@@ -305,7 +304,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test', privateNotes: 'old note');

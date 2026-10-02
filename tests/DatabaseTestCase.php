@@ -15,6 +15,14 @@ abstract class DatabaseTestCase extends KernelTestCase
         self::bootKernel();
 
         $this->entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $path = $this->entityManager->getConnection()->getParams()['path'] ?? '';
+        if ($path !== APP_TEST_ROOT.'/database.sqlite') {
+            throw new \RuntimeException('Refusing to reset a database outside the isolated test directory.');
+        }
+        if (($_SERVER['EVIDENCE_STORAGE_DIR'] ?? '') !== APP_TEST_ROOT.'/artifacts') {
+            throw new \RuntimeException('Refusing to clear artifacts outside the isolated test directory.');
+        }
+        self::getContainer()->get(\App\Service\EvidenceStorageInterface::class)->clear();
         $this->resetSchema();
     }
 

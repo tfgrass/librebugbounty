@@ -9,6 +9,7 @@ use App\Repository\DomainRepository;
 use App\Repository\FindingRepository;
 use App\Repository\RetestRunRepository;
 use App\Service\ValidationService;
+use App\Value\FindingStatus;
 
 final class ExportService
 {
@@ -28,6 +29,7 @@ final class ExportService
         }
 
         $rows = [];
+        $exportedDomains = [];
         foreach ($this->findings->findByDomainAndStatus($domainFilter, $status) as $finding) {
             \assert($finding instanceof Finding);
             if ($contactedOnly && $finding->getContactedAt() === null) {
@@ -35,10 +37,15 @@ final class ExportService
             }
 
             $rows[] = $this->serializeFinding($finding);
+            $exportedDomains[$finding->getDomain()->getId()] = $finding->getDomain();
         }
 
         $domainRows = [];
-        $selectedDomains = $domainFilter ? [$domainFilter] : $this->domains->findAllOrdered();
+        $selectedDomains = $domainFilter ? [$domainFilter] : (
+            in_array($status, [FindingStatus::DISCARDED, FindingStatus::DUPLICATE], true)
+                ? array_values($exportedDomains)
+                : $this->domains->findAllOrdered()
+        );
         foreach ($selectedDomains as $domain) {
             \assert($domain instanceof Domain);
             $domainRows[] = [

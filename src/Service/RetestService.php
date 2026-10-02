@@ -34,6 +34,13 @@ final class RetestService
         bool $headless = true,
         string $browser = 'chromium',
     ): RetestRun {
+        if ($this->entityManager->contains($finding)) {
+            $this->entityManager->refresh($finding);
+        }
+        if ($finding->isDiscarded()) {
+            throw new \LogicException('Discarded findings are ignored.');
+        }
+
         $this->validation->assertRetestMode(RetestMode::BROWSER);
 
         $run = new RetestRun();
@@ -86,12 +93,18 @@ final class RetestService
         bool $screenshot,
         bool $noStatusUpdate,
     ): void {
+        // Browser work may finish after another request has assessed this case.
+        // Reload its current assessment before applying the received observation.
+        if ($this->entityManager->contains($finding)) {
+            $this->entityManager->refresh($finding);
+        }
+
         $run->setResult($result->result);
         $run->setHttpStatus($result->httpStatus);
         $run->setFinalUrl($result->finalUrl);
         $run->setObservedEvidence($result->observedEvidence ?? $result->dialogText);
         $run->setErrorMessage($result->errorMessage);
-        $run->setRawResult($result->raw);
+        $run->setRawResult(array_merge($result->raw, ['screenshotRequested' => $screenshot]));
         $run->setFinishedAt(new \DateTimeImmutable());
 
         if ($result->screenshotBase64 !== null && $result->screenshotBase64 !== '') {
@@ -105,7 +118,7 @@ final class RetestService
 
         $finding->setLastRetestedAt(new \DateTimeImmutable());
 
-        if (!$noStatusUpdate) {
+        if (!$noStatusUpdate && !$finding->hasProtectedAssessment() && !$finding->isDiscarded()) {
             if ($result->result === RetestResult::FIXED) {
                 $finding->setStatus('fixed');
             } elseif ($result->result === RetestResult::STILL_VULNERABLE) {
@@ -113,10 +126,9 @@ final class RetestService
                     $finding->setStatus('verified');
                 }
             }
-        }
-
-        if (in_array($result->result, [RetestResult::FIXED, RetestResult::INCONCLUSIVE], true)) {
-            $finding->setReviewState(ReviewState::MANUAL_CHECKING);
+            if (in_array($result->result, [RetestResult::FIXED, RetestResult::INCONCLUSIVE], true)) {
+                $finding->setReviewState(ReviewState::MANUAL_CHECKING);
+            }
         }
 
         $this->entityManager->persist($run);
@@ -130,19 +142,14 @@ final class RetestService
             throw new \RuntimeException('Browser worker returned an invalid screenshot payload.');
         }
 
-        $directory = sprintf('storage/artifacts/%s', $finding->getId());
-        $path = $this->projectRelativePath($directory.'/retest-'.$run->getId().'.png');
-        $absolute = $this->projectRelativePath($path, absolute: true);
-        if (!is_dir(dirname($absolute))) {
-            mkdir(dirname($absolute), 0775, true);
-        }
-        file_put_contents($absolute, $binary);
+        $stored = $this->storage->storeContents($finding, $binary, 'retest-'.$run->getId().'.png');
+        $path = $stored->relativePath;
 
         $evidence = new Evidence();
         $evidence->setFinding($finding);
         $evidence->setKind(EvidenceKind::SCREENSHOT);
         $evidence->setFilePath($path);
-        $evidence->setSha256(hash('sha256', $binary));
+        $evidence->setSha256($stored->sha256);
         $this->entityManager->persist($evidence);
         $this->entityManager->flush();
 
@@ -157,15 +164,5 @@ final class RetestService
         $evidence->setValue($text);
         $this->entityManager->persist($evidence);
         $this->entityManager->flush();
-    }
-
-    private function projectRelativePath(string $path, bool $absolute = false): string
-    {
-        $root = dirname(__DIR__, 2);
-        if ($absolute) {
-            return $root.'/'.ltrim($path, '/');
-        }
-
-        return ltrim($path, '/');
     }
 }

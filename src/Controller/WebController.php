@@ -3,21 +3,31 @@
 namespace App\Controller;
 
 use App\Entity\Finding;
+use App\Entity\FindingAssessment;
 use App\Entity\Evidence;
 use App\Entity\RetestRun;
+use App\Entity\ScreenshotJob;
 use App\Repository\EvidenceRepository;
 use App\Repository\FindingRepository;
+use App\Repository\FindingAssessmentRepository;
 use App\Repository\RetestRunRepository;
+use App\Repository\ScreenshotJobRepository;
 use App\Service\FindingService;
+use App\Service\EvidenceStorageInterface;
 use App\Service\SettingsService;
 use App\Service\RetestService;
+use App\Service\ScreenshotStatusService;
+use App\Service\ScreenshotQueueService;
 use App\Value\FindingStatus;
 use App\Value\EvidenceKind;
 use App\Value\ReviewState;
+use App\Value\ScreenshotJobStatus;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 #[Route(path: '/')]
 final class WebController
@@ -29,6 +39,12 @@ final class WebController
         private readonly FindingRepository $findings,
         private readonly EvidenceRepository $evidenceRepository,
         private readonly RetestRunRepository $retestRunRepository,
+        private readonly EvidenceStorageInterface $storage,
+        private readonly ScreenshotStatusService $screenshotStatus,
+        private readonly ScreenshotQueueService $screenshotQueue,
+        private readonly ScreenshotJobRepository $screenshotJobs,
+        private readonly FindingAssessmentRepository $assessments,
+        private readonly CsrfTokenManagerInterface $csrf,
     ) {
     }
 
@@ -74,13 +90,15 @@ final class WebController
             'fixed' => $this->findings->countByBucket('fixed'),
             'manual_review' => $this->findings->countByBucket('manual_review'),
             'unchecked' => $this->findings->countByBucket('unchecked'),
+            'screenshots_queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
+            'screenshots_running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
+            'screenshots_failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
         ];
 
         return new Response($this->renderHomePage(
             findings: $findings,
             stats: $stats,
             defaultPayload: $this->settings->getDefaultPayload(),
-            autoVerifyMode: $this->settings->getAutoVerifyMode(),
             filters: [
                 'domain' => $domainQuery,
                 'status' => $statusFilter,
@@ -101,37 +119,37 @@ final class WebController
     {
         try {
             $payload = trim($request->request->getString('payload'));
+            $submittedUrl = trim($request->request->getString('url'));
+            $existing = $this->findings->findOneBy(['url' => $submittedUrl]);
             $finding = $this->findingService->createFinding(
-                url: $request->request->getString('url'),
+                url: $submittedUrl,
                 expectedEvidence: $payload !== '' ? $payload : null,
                 privateNotes: $request->request->getString('annotate') ?: null,
             );
-
-            if ($this->settings->getAutoVerifyMode() === 'submit') {
-                try {
-                    $run = $this->retestService->retest($finding, true, 120000, false, false, false);
-
-                    return $this->redirectMessage(sprintf(
-                        'Finding %s stored for %s. Auto verification: %s.',
-                        $this->shortId($finding),
-                        $finding->getDomain()->getHostname(),
-                        $run->getResult(),
-                    ));
-                } catch (\Throwable $verificationException) {
-                    return $this->redirectError(sprintf(
-                        'Finding %s stored for %s, but auto verification failed: %s',
-                        $this->shortId($finding),
-                        $finding->getDomain()->getHostname(),
-                        $verificationException->getMessage(),
-                    ));
-                }
+            if ($existing instanceof Finding) {
+                return $this->redirectMessage(sprintf(
+                    'URL not imported because it already exists as finding %s.',
+                    $this->shortId($finding),
+                ), '/findings/'.$finding->getId());
             }
+            try {
+                // Every new UI intake is checked immediately. The legacy
+                // auto_verify_mode setting no longer suppresses this headless
+                // observation; its screenshot remains a separate queued job.
+                $run = $this->retestService->retest($finding, false, 120000, false, false, true);
 
-            return $this->redirectMessage(sprintf(
-                'Finding %s stored for %s. Auto verification is set to cron only.',
-                $this->shortId($finding),
-                $finding->getDomain()->getHostname(),
-            ));
+                return $this->redirectMessage(sprintf(
+                    'Finding %s stored for %s. Auto verification: %s. Screenshot queued.',
+                    $this->shortId($finding),
+                    $finding->getDomain()->getHostname(),
+                    $run->getResult(),
+                ));
+            } catch (\Throwable $verificationException) {
+                return $this->redirectMessageAndError(
+                    sprintf('Finding %s stored for %s. Screenshot queued.', $this->shortId($finding), $finding->getDomain()->getHostname()),
+                    'Auto verification failed: '.$verificationException->getMessage(),
+                );
+            }
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -142,14 +160,10 @@ final class WebController
     {
         if ($request->isMethod('POST')) {
             $payload = trim($request->request->getString('default_payload'));
-            $autoVerifyMode = $request->request->getString('auto_verify_mode');
             $timeoutMs = trim($request->request->getString('review_timeout_ms'));
 
             if ($payload === '') {
                 $payload = SettingsService::DEFAULTS['intake.default_payload'];
-            }
-            if (!in_array($autoVerifyMode, ['submit', 'cron_only'], true)) {
-                $autoVerifyMode = SettingsService::DEFAULTS['intake.auto_verify_mode'];
             }
             if ($timeoutMs === '' || !ctype_digit($timeoutMs) || (int) $timeoutMs < 1000) {
                 $timeoutMs = SettingsService::DEFAULTS['review.scan_timeout_ms'];
@@ -157,7 +171,6 @@ final class WebController
 
             $this->settings->save([
                 'intake.default_payload' => $payload,
-                'intake.auto_verify_mode' => $autoVerifyMode,
                 'review.scan_timeout_ms' => $timeoutMs,
             ]);
 
@@ -180,13 +193,55 @@ final class WebController
     {
         try {
             $finding = $this->findingService->getFindingOrFail($id);
-            $run = $this->retestService->retest($finding, true, 120000, false, false, false);
+            if ($finding->isDiscarded()) {
+                return new Response('Verworfene Fälle werden im normalen Arbeiten ignoriert.', Response::HTTP_CONFLICT);
+            }
+            $errors = [];
+            try {
+                $queued = $this->screenshotQueue->enqueue($finding);
+                $queueResult = $queued->created ? 'queued' : 'already '.$queued->job->getStatus();
+            } catch (\Throwable $queueException) {
+                $queueResult = 'could not be queued';
+                $errors[] = 'Screenshot queue failed: '.$queueException->getMessage();
+            }
+            try {
+                $run = $this->retestService->retest($finding, false, 120000, false, false, true);
+                $retestResult = $run->getResult();
+            } catch (\Throwable $retestException) {
+                $retestResult = 'failed';
+                $errors[] = 'Retest failed: '.$retestException->getMessage();
+            }
+
+            $message = sprintf(
+                'Retest finished for %s: %s. Screenshot %s.',
+                $this->shortId($finding),
+                $retestResult,
+                $queueResult,
+            );
+
+            return $errors === []
+                ? $this->redirectMessage($message, '/findings/'.$finding->getId())
+                : $this->redirectMessageAndError($message, implode(' ', $errors), '/findings/'.$finding->getId());
+        } catch (\Throwable $exception) {
+            return $this->redirectError($exception->getMessage());
+        }
+    }
+
+    #[Route(path: 'findings/{id}/screenshots', name: 'finding_screenshot_queue', methods: ['POST'])]
+    public function queueScreenshot(string $id): Response
+    {
+        try {
+            $finding = $this->findingService->getFindingOrFail($id);
+            if ($finding->isDiscarded()) {
+                return new Response('Verworfene Fälle werden im normalen Arbeiten ignoriert.', Response::HTTP_CONFLICT);
+            }
+            $queued = $this->screenshotQueue->enqueue($finding);
 
             return $this->redirectMessage(sprintf(
-                'Retest finished for %s: %s.',
+                'Screenshot for %s %s.',
                 $this->shortId($finding),
-                $run->getResult(),
-            ));
+                $queued->created ? 'queued' : 'is already '.$queued->job->getStatus(),
+            ), '/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -197,14 +252,14 @@ final class WebController
     {
         try {
             $finding = $this->findingService->getFindingOrFail($id);
-            $evidence = $this->pruneMissingScreenshotEvidence(
-                $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC'])
-            );
+            $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC']);
 
             return new Response($this->renderFindingPage(
                 finding: $finding,
                 evidence: $evidence,
                 runs: $this->retestRunRepository->findRecentByFinding($finding, 20),
+                screenshotJobs: $this->screenshotJobs->findRecentByFinding($finding, null),
+                assessments: $this->assessments->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']),
                 message: $request->query->getString('message') ?: null,
                 error: $request->query->getString('error') ?: null,
             ));
@@ -213,17 +268,76 @@ final class WebController
         }
     }
 
-    #[Route(path: 'findings/{id}/mark-vulnerable', name: 'finding_mark_vulnerable', methods: ['POST'])]
-    public function markVulnerable(string $id): Response
+    #[Route(path: 'findings/{id}/assessment', name: 'finding_assessment', methods: ['POST'])]
+    public function assessFinding(string $id, Request $request): Response
     {
+        if (!$this->validCsrf($request, 'finding_assessment_'.$id)) {
+            return new Response('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
+        $parameters = $request->request->all();
+        foreach (['assessment', 'discard_reason', 'observation_id', 'evidence_id'] as $field) {
+            if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
+                return new Response('Ungültige Bewertungsangaben.', Response::HTTP_BAD_REQUEST);
+            }
+        }
+
+        try {
+            $finding = $this->findingService->getFindingOrFail($id);
+            $assessment = $request->request->getString('assessment');
+            $reason = trim($request->request->getString('discard_reason')) ?: null;
+            if (!in_array($assessment, ['confirmed', 'fixed', 'discarded'], true)
+                || !in_array($reason, [null, 'duplicate'], true)
+            ) {
+                return new Response('Ungültige Bewertung oder ungültiger Verwerfungsgrund.', Response::HTTP_BAD_REQUEST);
+            }
+
+            // A reference is an explicit choice by the user. Leaving either
+            // field empty must never imply that the newest run was reviewed.
+            $observationId = trim($request->request->getString('observation_id')) ?: null;
+            $evidenceId = trim($request->request->getString('evidence_id')) ?: null;
+            if ($observationId !== null) {
+                $observation = $this->retestRunRepository->find($observationId);
+                if (!$observation instanceof RetestRun || $observation->getFinding()->getId() !== $finding->getId()) {
+                    return new Response('Die gewählte Beobachtung gehört nicht zu diesem Fall.', Response::HTTP_BAD_REQUEST);
+                }
+            }
+            if ($evidenceId !== null) {
+                $evidence = $this->evidenceRepository->find($evidenceId);
+                if (!$evidence instanceof Evidence || $evidence->getFinding()->getId() !== $finding->getId()) {
+                    return new Response('Der gewählte Beleg gehört nicht zu diesem Fall.', Response::HTTP_BAD_REQUEST);
+                }
+            }
+
+            $this->findingService->assess(
+                $finding,
+                $assessment,
+                $assessment === 'discarded' ? $reason : null,
+                $observationId,
+                $evidenceId,
+            );
+
+            return $this->redirectMessage('Bewertung gespeichert: '.$this->assessmentLabel($assessment, $assessment === 'discarded' ? $reason : null).'.', '/findings/'.$finding->getId());
+        } catch (\InvalidArgumentException $exception) {
+            return new Response($exception->getMessage(), Response::HTTP_BAD_REQUEST);
+        } catch (\Throwable $exception) {
+            return $this->redirectError($exception->getMessage());
+        }
+    }
+
+    #[Route(path: 'findings/{id}/mark-vulnerable', name: 'finding_mark_vulnerable', methods: ['POST'])]
+    public function markVulnerable(string $id, Request $request): Response
+    {
+        if (!$this->validCsrf($request, 'finding_mark_vulnerable_'.$id)) {
+            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $this->findingService->markVulnerable($finding);
 
             return $this->redirectMessage(sprintf(
-                'Marked %s as vulnerable and queued it for manual review.',
+                'Befund %s manuell bestätigt.',
                 $this->shortId($finding),
-            ));
+            ), '/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -232,6 +346,9 @@ final class WebController
     #[Route(path: 'findings/{id}/mark-contacted', name: 'finding_mark_contacted', methods: ['POST'])]
     public function markContacted(string $id, Request $request): Response
     {
+        if (!$this->validCsrf($request, 'finding_mark_contacted_'.$id)) {
+            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $this->findingService->markContacted($finding);
@@ -245,23 +362,26 @@ final class WebController
                 return new RedirectResponse($returnTo.(str_contains($returnTo, '?') ? '&' : '?').'message='.rawurlencode($message));
             }
 
-            return $this->redirectMessage($message);
+            return $this->redirectMessage($message, '/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
     }
 
     #[Route(path: 'findings/{id}/confirm-fixed', name: 'finding_confirm_fixed', methods: ['POST'])]
-    public function confirmFixed(string $id): Response
+    public function confirmFixed(string $id, Request $request): Response
     {
+        if (!$this->validCsrf($request, 'finding_confirm_fixed_'.$id)) {
+            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $this->findingService->confirmFixed($finding);
 
             return $this->redirectMessage(sprintf(
-                'Confirmed %s as fixed.',
+                'Fall %s manuell als behoben bewertet.',
                 $this->shortId($finding),
-            ));
+            ), '/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -297,19 +417,15 @@ final class WebController
             return new Response('Not found', Response::HTTP_NOT_FOUND);
         }
 
-        $absolutePath = dirname(__DIR__, 2).'/storage/artifacts/'.$normalizedPath;
-        if (!is_file($absolutePath)) {
-            return new Response('Not found', Response::HTTP_NOT_FOUND);
-        }
-
-        $contents = file_get_contents($absolutePath);
-        if ($contents === false) {
-            return new Response('Not found', Response::HTTP_NOT_FOUND);
+        try {
+            $contents = $this->storage->read($normalizedPath);
+        } catch (\InvalidArgumentException|\RuntimeException $error) {
+            return new Response('Evidence file is missing or unavailable.', Response::HTTP_NOT_FOUND);
         }
 
         $mimeType = 'application/octet-stream';
-        if (preg_match('/\.(png|jpe?g|gif|webp)$/i', $absolutePath)) {
-            $mimeType = match (strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION))) {
+        if (preg_match('/\.(png|jpe?g|gif|webp)$/i', $normalizedPath)) {
+            $mimeType = match (strtolower(pathinfo($normalizedPath, PATHINFO_EXTENSION))) {
                 'png' => 'image/png',
                 'jpg', 'jpeg' => 'image/jpeg',
                 'gif' => 'image/gif',
@@ -320,12 +436,12 @@ final class WebController
 
         return new Response($contents, 200, [
             'Content-Type' => $mimeType,
-            'Content-Disposition' => 'inline; filename="'.basename($absolutePath).'"',
+            'Content-Disposition' => 'inline; filename="'.basename($normalizedPath).'"',
             'Cache-Control' => 'private, max-age=0, no-cache',
         ]);
     }
 
-    private function renderHomePage(array $findings, array $stats, string $defaultPayload, string $autoVerifyMode, array $filters, ?string $message, ?string $error): string
+    private function renderHomePage(array $findings, array $stats, string $defaultPayload, array $filters, ?string $message, ?string $error): string
     {
         $messageBox = $message ? '<div class="notice success">'.$this->escape($message).'</div>' : '';
         $errorBox = $error ? '<div class="notice error">'.$this->escape($error).'</div>' : '';
@@ -426,6 +542,9 @@ final class WebController
     <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'fixed')) ?>"><span>Fixed</span><strong><?= $this->escape($stats['fixed']) ?></strong></a>
     <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'manual_review')) ?>"><span>Manual Review</span><strong><?= $this->escape($stats['manual_review']) ?></strong></a>
     <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'unchecked')) ?>"><span>Unchecked</span><strong><?= $this->escape($stats['unchecked']) ?></strong></a>
+    <div class="stat"><span>Screenshots queued</span><strong><?= $this->escape($stats['screenshots_queued']) ?></strong></div>
+    <div class="stat"><span>Screenshots running</span><strong><?= $this->escape($stats['screenshots_running']) ?></strong></div>
+    <div class="stat"><span>Screenshots failed</span><strong><?= $this->escape($stats['screenshots_failed']) ?></strong></div>
   </div>
   <div class="section-head">
     <div>
@@ -437,7 +556,7 @@ final class WebController
     <label>Payload <input name="payload" placeholder="<?= $this->escape($defaultPayload) ?>" value="<?= $this->escape($defaultPayload) ?>"></label>
     <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token><?= $this->escape($defaultPayload) ?></code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token><?= $this->escape($defaultPayload) ?></span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token><?= $this->escape($defaultPayload) ?></span>/)&gt;</code></p>
     <label>Notes <textarea name="annotate" placeholder="Optional note."></textarea></label>
-    <button type="submit"><?= $this->escape($autoVerifyMode === 'cron_only' ? 'Save' : 'Save and Verify') ?></button>
+    <button type="submit">Save and Verify</button>
     <script>
 (() => {
   const payloadInput = document.querySelector('input[name="payload"]');
@@ -547,7 +666,6 @@ final class WebController
     private function renderSettingsPage(array $settings): string
     {
         $defaultPayload = (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']);
-        $autoVerifyMode = (string) ($settings['intake.auto_verify_mode'] ?? SettingsService::DEFAULTS['intake.auto_verify_mode']);
         $reviewTimeout = (string) ($settings['review.scan_timeout_ms'] ?? SettingsService::DEFAULTS['review.scan_timeout_ms']);
 
         ob_start();
@@ -562,16 +680,10 @@ final class WebController
     <label>Default Payload
       <input name="default_payload" value="<?= $this->escape($defaultPayload) ?>" placeholder="OPENBUGBOUNTY">
     </label>
-    <label>Auto Verification
-      <select name="auto_verify_mode">
-        <option value="submit"<?= $autoVerifyMode === 'submit' ? ' selected' : '' ?>>On submit</option>
-        <option value="cron_only"<?= $autoVerifyMode === 'cron_only' ? ' selected' : '' ?>>Cron only</option>
-      </select>
-    </label>
     <label>Review Timeout (ms)
       <input name="review_timeout_ms" inputmode="numeric" value="<?= $this->escape($reviewTimeout) ?>" placeholder="45000">
     </label>
-    <p class="hint">Use a lower timeout for fragile targets, and set auto verification to cron only when you want intake to stay fast.</p>
+    <p class="hint">New URLs are verified headlessly immediately. Their screenshots are queued separately and captured in the background.</p>
     <div class="actions">
       <button type="submit">Save settings</button>
       <a class="button ghost" href="/">Back to overview</a>
@@ -587,7 +699,7 @@ final class WebController
   </div>
   <div class="detail-list">
     <div><dt>Default Payload</dt><dd>Used when no payload is typed in the intake form or CLI defaults.</dd></div>
-    <div><dt>Auto Verification</dt><dd><code>On submit</code> retests immediately after intake, while <code>Cron only</code> leaves verification to <code>app:review:scan</code>.</dd></div>
+    <div><dt>Intake Verification</dt><dd>Every newly stored URL is checked headlessly before the intake response returns. Screenshot capture remains asynchronous.</dd></div>
     <div><dt>Review Timeout</dt><dd>Browser timeout for the review scan and browser retests.</dd></div>
   </div>
 </section>
@@ -616,7 +728,7 @@ final class WebController
       <p class="about-note">If you like photography, check my <a href="https://www.flickr.com/photos/tkoschka/" target="_blank" rel="noreferrer">Flickr</a>. If you want to build a Raspi DSLM checkout <a href="https://github.com/openDSLM/" target="_blank" rel="noreferrer">openDSLM</a>. My former OpenBugBounty profile was <a href="https://www.openbugbounty.org/researchers/MitRauch/" target="_blank" rel="noreferrer">MitRauch</a>; my current one is <a href="https://www.openbugbounty.org/researchers/tomkoschka/" target="_blank" rel="noreferrer">tomkoschka</a>. If you feel like donating, a <a href="https://www.whitewall.com/us/photo-gifts/gift-certificates" target="_blank" rel="noreferrer">WhiteWall photo lab gift card</a> would be lovely.</p>
       <p class="about-note">v1.0.1 is focused on making the local verification loop feel dependable and repeatable.</p>
       <ul class="about-changelog">
-        <li>Evidence refresh now wipes screenshots, retest runs, and stored evidence before rebuilding them.</li>
+        <li>Evidence refresh preserves existing screenshots, notes, contact history, and stored records.</li>
         <li>Chromium and Firefox retests run in parallel, with better timeout handling for slow targets.</li>
         <li>Finding reports link screenshots directly, and the UI gained a cleaner back path from report views.</li>
         <li>Cron hardening is part of the current direction so repeated scans stay predictable instead of noisy.</li>
@@ -634,11 +746,20 @@ final class WebController
     /**
      * @param list<Evidence> $evidence
      * @param list<RetestRun> $runs
+     * @param list<ScreenshotJob> $screenshotJobs
+     * @param list<FindingAssessment> $assessments
      */
-    private function renderFindingPage(Finding $finding, array $evidence, array $runs, ?string $message, ?string $error): string
+    private function renderFindingPage(Finding $finding, array $evidence, array $runs, array $screenshotJobs, array $assessments, ?string $message, ?string $error): string
     {
         $messageBox = $message ? '<div class="notice success">'.$this->escape($message).'</div>' : '';
         $errorBox = $error ? '<div class="notice error">'.$this->escape($error).'</div>' : '';
+
+        $jobsByPath = [];
+        foreach ($screenshotJobs as $job) {
+            if ($job->getScreenshotPath() !== null) {
+                $jobsByPath[$job->getScreenshotPath()] = $job;
+            }
+        }
 
         $screenshotCards = [];
         foreach ($evidence as $item) {
@@ -646,15 +767,43 @@ final class WebController
                 continue;
             }
 
+            if (!$this->storage->exists($item->getFilePath())) {
+                $screenshotCards[] = '<figure class="shot-card"><p class="notice error">Screenshot file is missing or unavailable. The evidence record has been retained.</p>'
+                    .'<figcaption>Stored: '.$this->escape($item->getCreatedAt()->format(DATE_ATOM)).'<br><code>'.$this->escape($item->getFilePath()).'</code></figcaption></figure>';
+                continue;
+            }
+
+            $captureJob = $jobsByPath[$item->getFilePath()] ?? null;
+            $captureTime = $captureJob instanceof ScreenshotJob && $captureJob->getCapturedAt() !== null
+                ? 'Captured: '.$captureJob->getCapturedAt()->format(DATE_ATOM)
+                : 'Stored: '.$item->getCreatedAt()->format(DATE_ATOM).' (capture time unavailable)';
             $screenshotCards[] = sprintf(
                 '<figure class="shot-card">'
                 .'<a href="/artifacts/%s" target="_blank" rel="noreferrer"><img src="/artifacts/%s" alt="Screenshot for %s"></a>'
-                .'<figcaption><code>%s</code></figcaption>'
+                .'<figcaption>%s<br><code>%s</code></figcaption>'
                 .'</figure>',
                 $this->escape($this->artifactRelativeUrl($item->getFilePath() ?? '')),
                 $this->escape($this->artifactRelativeUrl($item->getFilePath() ?? '')),
                 $this->escape($finding->getId()),
+                $this->escape($captureTime),
                 $this->escape($item->getFilePath()),
+            );
+        }
+
+        $screenshotJobRows = [];
+        foreach (array_slice($screenshotJobs, 0, 20) as $job) {
+            $errorDetails = $job->getErrorMessage() !== null
+                ? '<details><summary>Failure details</summary><p>'.$this->escape($job->getErrorMessage()).'</p></details>'
+                : '';
+            $screenshotJobRows[] = sprintf(
+                '<tr><td><code>%s</code></td><td>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td></tr>',
+                $this->escape(substr($job->getId(), 0, 8)),
+                $this->escape($job->getStatus()),
+                $errorDetails,
+                $this->escape($job->getRequestedAt()->format(DATE_ATOM)),
+                $this->escape($job->getStartedAt()?->format(DATE_ATOM) ?? 'n/a'),
+                $this->escape($job->getCapturedAt()?->format(DATE_ATOM) ?? 'n/a'),
+                $job->getAttempts(),
             );
         }
 
@@ -671,13 +820,21 @@ final class WebController
                 $this->escape(substr($item->getId(), 0, 8)),
                 $this->escape($item->getKind()),
                 $this->escape($item->getValue() ?? 'n/a'),
-                $this->escape($item->getFilePath() ?? 'n/a'),
+                $this->escape($item->getFilePath() ?? 'n/a').($item->getFilePath() !== null ? '<br><span class="hint">'.($this->storage->exists($item->getFilePath()) ? 'Available' : 'Missing or unavailable — record retained').'</span>' : ''),
                 $this->escape($item->getCreatedAt()->format(DATE_ATOM)),
             );
         }
 
         $runRows = [];
         foreach ($runs as $run) {
+            $capture = $this->screenshotStatus->forRun($run);
+            $captureHtml = '<span'.($capture->isProblem() ? ' class="notice error"' : '').'>'.$this->escape($capture->label).'</span>';
+            if ($capture->detail !== null) {
+                $captureHtml .= '<details><summary>Capture details</summary><p>'.$this->escape($capture->detail).'</p></details>';
+            }
+            if ($run->getScreenshotPath() !== null) {
+                $captureHtml .= '<br><code>'.$this->escape($run->getScreenshotPath()).'</code>';
+            }
             $runRows[] = sprintf(
                 '<tr>'
                 .'<td><code>%s</code></td>'
@@ -689,10 +846,10 @@ final class WebController
                 .'</tr>',
                 $this->escape(substr($run->getId(), 0, 8)),
                 $this->escape($run->getMode()),
-                $this->escape($run->getResult()),
+                $this->escape($run->getResult()).($run->getErrorMessage() !== null ? '<details><summary>Operation error</summary><p>'.$this->escape($run->getErrorMessage()).'</p></details>' : ''),
                 $this->escape((string) ($run->getHttpStatus() ?? 'n/a')),
                 $this->escape($run->getStartedAt()->format(DATE_ATOM)),
-                $this->escape($run->getScreenshotPath() ?? 'n/a'),
+                $captureHtml,
             );
         }
 
@@ -709,12 +866,13 @@ final class WebController
   </div>
   <div class="detail-grid">
     <div>
-      <?= $this->statusCell($finding) ?>
+      <?= $this->renderAssessmentCard($finding, $runs, $evidence, $assessments[0] ?? null) ?>
       <dl class="detail-list">
         <div><dt>Title</dt><dd><?= $this->escape($finding->getTitle()) ?></dd></div>
         <div><dt>URL</dt><dd><code><?= $this->escape($finding->getUrl()) ?></code></dd></div>
         <div><dt>Payload</dt><dd><code><?= $this->escape($finding->getExpectedEvidence() ?? 'n/a') ?></code></dd></div>
         <div><dt>Submitted</dt><dd><?= $this->escape($finding->getSubmittedAt()?->format(DATE_ATOM) ?? 'n/a') ?></dd></div>
+        <div><dt>Notes</dt><dd><?= nl2br($this->escape($finding->getPrivateNotes() ?? 'n/a')) ?></dd></div>
         <div><dt>Contacted</dt><dd><?= $this->escape($finding->getContactedAt()?->format(DATE_ATOM) ?? 'n/a') ?></dd></div>
         <div><dt>Last Recheck</dt><dd><?= $this->escape($finding->getLastRetestedAt()?->format(DATE_ATOM) ?? 'n/a') ?></dd></div>
       </dl>
@@ -724,12 +882,40 @@ final class WebController
     </div>
     <div>
       <h3>Screenshots</h3>
+      <p class="hint">Stored images may belong to an earlier observation. Storage time is not the capture time.</p>
+      <?php if ($screenshotJobs !== []): ?>
+        <p class="<?= $screenshotJobs[0]->getStatus() === ScreenshotJobStatus::FAILED ? 'notice error' : 'hint' ?>">Latest screenshot job: <?= $this->escape($screenshotJobs[0]->getStatus()) ?></p>
+      <?php endif; ?>
+      <?php if ($runs !== []): ?>
+        <?php $latestCapture = $this->screenshotStatus->forRun($runs[0]); ?>
+        <p class="<?= $latestCapture->isProblem() ? 'notice error' : 'hint' ?>">Latest recorded run: <?= $this->escape($latestCapture->label) ?></p>
+      <?php endif; ?>
       <?php if ($screenshotCards === []): ?>
         <p class="hint">No screenshots yet.</p>
       <?php else: ?>
         <div class="shot-grid"><?= implode('', $screenshotCards) ?></div>
       <?php endif; ?>
     </div>
+  </div>
+</section>
+
+<?= $this->renderAssessmentHistory($assessments) ?>
+
+<section class="panel wide">
+  <div class="section-head">
+    <div>
+      <h2>Screenshot Queue</h2>
+      <p class="hint">Screenshots run serially in the background and never change the finding assessment.</p>
+    </div>
+    <?php if (!$finding->isDiscarded()): ?>
+      <form method="post" action="/findings/<?= $this->escape($finding->getId()) ?>/screenshots" class="inline-form"><button type="submit">Queue Screenshot</button></form>
+    <?php endif; ?>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Status</th><th>Requested</th><th>Started</th><th>Captured</th><th>Attempts</th></tr></thead>
+      <tbody><?= $this->rowsOrEmpty($screenshotJobRows, 6, 'No screenshot job yet') ?></tbody>
+    </table>
   </div>
 </section>
 
@@ -771,36 +957,182 @@ final class WebController
 
     private function findingActions(Finding $finding): string
     {
-        $decisionActions = '';
-        $canMarkVulnerable = $finding->getReviewState() === ReviewState::MANUAL_CHECKING
-            || $finding->getStatus() !== FindingStatus::VERIFIED;
-        $canConfirmFixed = $finding->getReviewState() === ReviewState::MANUAL_CHECKING
-            || $finding->getStatus() !== FindingStatus::FIXED;
+        $id = $this->escape($finding->getId());
+        $actions = '';
+        if ($finding->getContactedAt() === null) {
+            $actions .= '<form method="post" action="/findings/'.$id.'/mark-contacted" class="inline-form">'
+                .$this->csrfField('finding_mark_contacted_'.$finding->getId())
+                .'<button type="submit" class="secondary">Kontaktiert</button></form>';
+        }
+        if (!$finding->isDiscarded()) {
+            $actions .= '<form method="post" action="/findings/'.$id.'/retest" class="inline-form"><button type="submit">Recheck + Queue Screenshot</button></form>';
+        }
+        $actions .= '<form method="post" action="/findings/'.$id.'/delete" class="inline-form"><button type="submit" class="danger">Delete</button></form>';
 
-        if ($canMarkVulnerable) {
-            $decisionActions .= sprintf(
-                '<form method="post" action="/findings/%s/mark-vulnerable" class="inline-form"><button type="submit" class="secondary">Mark Vulnerable</button></form>',
-                $this->escape($finding->getId()),
+        return $actions;
+    }
+
+    /**
+     * @param list<RetestRun> $runs
+     * @param list<Evidence> $evidence
+     */
+    private function renderAssessmentCard(Finding $finding, array $runs, array $evidence, ?FindingAssessment $newestAssessment): string
+    {
+        $assessment = $finding->getManualAssessment();
+        $latestRun = $runs[0] ?? null;
+        $latestAt = $latestRun?->getFinishedAt() ?? $latestRun?->getStartedAt();
+        $newerObservation = $assessment !== null && $latestAt !== null
+            && $finding->getAssessedAt() !== null && $latestAt > $finding->getAssessedAt();
+        if ($assessment !== null && $newestAssessment !== null) {
+            // This boundary records which runs existed when the decision was
+            // saved, without claiming that any of them was actually reviewed.
+            // It also distinguishes observations within the same SQLite second.
+            $newerObservation = $this->retestRunRepository->hasObservationAfterAssessment(
+                $finding,
+                $newestAssessment->getKnownObservationIds(),
             );
         }
-        if ($canConfirmFixed) {
-            $decisionActions .= sprintf(
-                '<form method="post" action="/findings/%s/confirm-fixed" class="inline-form"><button type="submit" class="ghost">Confirm Fixed</button></form>',
-                $this->escape($finding->getId()),
-            );
+        $needsConfirmation = ($assessment === null || $newerObservation)
+            && ($latestRun?->getResult() === 'inconclusive'
+                || ($assessment === null && $finding->getReviewState() === ReviewState::MANUAL_CHECKING));
+        // Manual protection must still permit an explicit correction from fixed
+        // to confirmed. Only technical activity is prevented from changing it.
+        $canConfirm = $needsConfirmation || $assessment === 'fixed' || $finding->isDiscarded()
+            || ($assessment === null && $finding->getStatus() === FindingStatus::FIXED);
+
+        ob_start();
+        ?>
+<div class="assessment-card" id="assessment">
+  <h3>Bewertung</h3>
+  <?php if ($assessment !== null): ?>
+    <p><strong><?= $this->escape($this->assessmentLabel($assessment, $finding->getDiscardReason())) ?></strong><br>
+      <span class="hint">Manuell · <?= $this->escape($finding->getAssessedAt()?->format(DATE_ATOM) ?? 'Zeitpunkt unbekannt') ?></span>
+    </p>
+  <?php else: ?>
+    <p>Keine aufgezeichnete manuelle Bewertung.</p>
+    <?php if ($finding->hasProtectedAssessment() || ($latestRun === null && $finding->getStatus() !== FindingStatus::NEW)): ?>
+      <p class="hint">Altbestand · Herkunft unklar: Status <code><?= $this->escape($finding->getStatus()) ?></code>, Review <code><?= $this->escape($finding->getReviewState() ?? 'unbekannt') ?></code>. Zeitpunkt und Entscheidungsgrundlage unbekannt.</p>
+    <?php endif; ?>
+  <?php endif; ?>
+  <?php if ($finding->isDiscarded()): ?>
+    <p class="hint">Dieser Fall wird im normalen Arbeiten ignoriert. Neue technische Beobachtungen reaktivieren ihn nicht.</p>
+  <?php endif; ?>
+  <h4>Letzte technische Beobachtung</h4>
+  <?php if ($latestRun !== null): ?>
+    <p><code><?= $this->escape($latestRun->getResult()) ?></code> · <?= $this->escape($latestAt?->format(DATE_ATOM)) ?><br>
+      <span class="hint">Technischer Lauf · <?= $this->escape($latestRun->getMode()) ?> · <code><?= $this->escape($latestRun->getId()) ?></code></span>
+    </p>
+    <?php if ($needsConfirmation): ?>
+      <p class="hint">Manuelle Beurteilung erforderlich. Ein uneindeutiges Ergebnis bedeutet keine Behebung.</p>
+    <?php endif; ?>
+    <?php if ($assessment !== null): ?>
+      <p class="notice success"><?= $newerObservation ? 'Neue technische' : 'Technische' ?> Beobachtung vom <?= $this->escape($latestAt?->format(DATE_ATOM)) ?>. Deine Bewertung bleibt erhalten.</p>
+    <?php endif; ?>
+  <?php else: ?>
+    <p class="hint">Keine technische Beobachtung aufgezeichnet.</p>
+  <?php endif; ?>
+  <form method="post" action="/findings/<?= $this->escape($finding->getId()) ?>/assessment" id="assessment-form">
+    <?= $this->csrfField('finding_assessment_'.$finding->getId()) ?>
+    <details>
+      <summary>Bewertungsgrundlage auswählen (optional)</summary>
+      <p class="hint">Nur auswählen, wenn du diese Beobachtung oder diesen Beleg tatsächlich beurteilt hast. Ohne Auswahl bleibt die Grundlage unbekannt.</p>
+      <label>Beurteilte Beobachtung
+        <select name="observation_id">
+          <option value="">Unbekannt / keine konkrete Beobachtung</option>
+          <?php foreach ($runs as $run): ?>
+            <option value="<?= $this->escape($run->getId()) ?>"><?= $this->escape(($run->getFinishedAt() ?? $run->getStartedAt())->format(DATE_ATOM).' · '.$run->getResult().' · '.$run->getMode().' · '.substr($run->getId(), 0, 8)) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+      <label>Beurteilter Beleg
+        <select name="evidence_id">
+          <option value="">Unbekannt / kein konkreter Beleg</option>
+          <?php foreach ($evidence as $item): ?>
+            <option value="<?= $this->escape($item->getId()) ?>"><?= $this->escape($item->getCreatedAt()->format(DATE_ATOM).' · '.$item->getKind().' · '.substr($item->getId(), 0, 8)) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+    </details>
+    <label>Grund für Verwerfen
+      <select name="discard_reason"><option value="">Ohne besonderen Grund</option><option value="duplicate">Duplikat</option></select>
+    </label>
+    <div class="row-actions">
+      <?php if ($canConfirm): ?>
+        <button type="submit" name="assessment" value="confirmed" class="secondary">Bestätigen</button>
+      <?php endif; ?>
+      <?php if ($assessment !== 'fixed'): ?>
+        <button type="submit" name="assessment" value="fixed" class="ghost">Behoben</button>
+      <?php endif; ?>
+      <?php if ($assessment !== 'discarded' || $finding->getDiscardReason() !== 'duplicate'): ?>
+        <button type="submit" name="assessment" value="discarded" class="ghost">Verwerfen</button>
+      <?php endif; ?>
+    </div>
+  </form>
+</div>
+<?php
+        return ob_get_clean();
+    }
+
+    /** @param list<FindingAssessment> $assessments */
+    private function renderAssessmentHistory(array $assessments): string
+    {
+        $rows = [];
+        foreach ($assessments as $assessment) {
+            $basis = [];
+            $snapshot = $assessment->getReferenceSnapshot() ?? [];
+            $observationId = $assessment->getObservationId();
+            $evidenceId = $assessment->getEvidenceId();
+            if ($observationId !== null) {
+                $basis[] = 'Beobachtung: <code>'.$this->escape($observationId).'</code>';
+                if (isset($snapshot['observation'])) {
+                    $observation = $snapshot['observation'];
+                    $basis[] = $this->escape(($observation['finishedAt'] ?? $observation['startedAt'] ?? 'Zeitpunkt unbekannt')
+                        .' · '.($observation['result'] ?? 'Ergebnis unbekannt').' · '.($observation['mode'] ?? 'Herkunft unbekannt'));
+                }
+            } else {
+                $basis[] = 'Beobachtungsbezug unbekannt.';
+            }
+            if ($evidenceId !== null) {
+                $basis[] = 'Beleg: <code>'.$this->escape($evidenceId).'</code>';
+                if (isset($snapshot['evidence'])) {
+                    $item = $snapshot['evidence'];
+                    $basis[] = 'Ablagezeit: '.$this->escape($item['storedAt'] ?? 'unbekannt').' · '.$this->escape($item['kind'] ?? 'Art unbekannt');
+                }
+            } else {
+                $basis[] = 'Belegbezug unbekannt.';
+            }
+            $rows[] = '<tr><td>'.$this->escape($this->assessmentLabel($assessment->getAssessment(), $assessment->getDiscardReason())).'</td>'
+                .'<td>'.$this->escape($assessment->getAssessedAt()->format(DATE_ATOM)).'</td>'
+                .'<td>'.$this->escape($assessment->getSource() === 'manual' ? 'Manuell' : $assessment->getSource()).'</td>'
+                .'<td>'.implode('<br>', $basis).'</td></tr>';
         }
 
-        return sprintf(
-            '<div class="row-actions">'
-            .$decisionActions
-            .'<form method="post" action="/findings/%s/mark-contacted" class="inline-form"><button type="submit" class="secondary">Mark Contacted</button></form>'
-            .'<form method="post" action="/findings/%s/retest" class="inline-form"><button type="submit">Recheck + Screenshot</button></form>'
-            .'<form method="post" action="/findings/%s/delete" class="inline-form"><button type="submit" class="danger">Delete</button></form>'
-            .'</div>',
-            $this->escape($finding->getId()),
-            $this->escape($finding->getId()),
-            $this->escape($finding->getId()),
-        );
+        return '<section class="panel wide" id="assessment-history"><h2>Bewertungshistorie</h2>'
+            .'<p class="hint">Ausdrückliche Bewertungsänderungen. Historische Entscheidungen mit unbekannter Herkunft werden nicht nachträglich erfunden.</p>'
+            .'<div class="table-wrap"><table><thead><tr><th>Bewertung</th><th>Zeitpunkt</th><th>Herkunft</th><th>Grundlage</th></tr></thead>'
+            .'<tbody>'.$this->rowsOrEmpty($rows, 4, 'Noch keine Bewertungsänderung aufgezeichnet.').'</tbody></table></div></section>';
+    }
+
+    private function assessmentLabel(string $assessment, ?string $reason = null): string
+    {
+        return match ($assessment) {
+            'confirmed' => 'Befund bestätigt',
+            'fixed' => 'Behoben',
+            'discarded' => $reason === 'duplicate' ? 'Verworfen · Duplikat' : 'Verworfen',
+            default => $assessment,
+        };
+    }
+
+    private function csrfField(string $tokenId): string
+    {
+        return '<input type="hidden" name="_token" value="'.$this->escape($this->csrf->getToken($tokenId)->getValue()).'">';
+    }
+
+    private function validCsrf(Request $request, string $tokenId): bool
+    {
+        $token = $request->request->all()['_token'] ?? null;
+
+        return is_string($token) && $this->csrf->isTokenValid(new CsrfToken($tokenId, $token));
     }
 
     private function statusCell(Finding $finding): string
@@ -877,9 +1209,27 @@ final class WebController
         };
     }
 
-    private function redirectMessage(string $message): RedirectResponse
+    private function redirectMessage(string $message, string $path = '/'): RedirectResponse
     {
-        return new RedirectResponse('/?message='.rawurlencode($message));
+        return new RedirectResponse($path.'?message='.rawurlencode($message));
+    }
+
+    private function redirectMessageAndError(string $message, string $error, string $path = '/'): RedirectResponse
+    {
+        return new RedirectResponse($path.'?'.http_build_query(['message' => $message, 'error' => $error], '', '&', PHP_QUERY_RFC3986));
+    }
+
+    private function redirectRunResult(RetestRun $run, string $message): RedirectResponse
+    {
+        $capture = $this->screenshotStatus->forRun($run);
+        $params = ['message' => $message.' '.$capture->label.'.'];
+        if ($capture->isProblem()) {
+            // Keep the successful save distinct from the failed capture. Raw
+            // diagnostics stay on the detail page instead of entering the URL.
+            $params['error'] = $capture->label.'. See the finding details for capture information.';
+        }
+
+        return new RedirectResponse('/?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
     }
 
     private function redirectError(string $error): RedirectResponse
@@ -905,41 +1255,6 @@ final class WebController
     {
         $normalized = ltrim(str_replace('\\', '/', $filePath), '/');
         return preg_replace('#^storage/artifacts/#', '', $normalized) ?: $normalized;
-    }
-
-    /**
-     * @param list<Evidence> $evidence
-     * @return list<Evidence>
-     */
-    private function pruneMissingScreenshotEvidence(array $evidence): array
-    {
-        $entityManager = $this->evidenceRepository->getEntityManager();
-        $projectRoot = dirname(__DIR__, 2);
-        $kept = [];
-        $removed = false;
-
-        foreach ($evidence as $item) {
-            if (!$item instanceof Evidence) {
-                continue;
-            }
-
-            if ($item->getKind() === EvidenceKind::SCREENSHOT && $item->getFilePath() !== null) {
-                $absolutePath = $projectRoot.'/'.ltrim(str_replace('\\', '/', $item->getFilePath()), '/');
-                if (!is_file($absolutePath)) {
-                    $entityManager->remove($item);
-                    $removed = true;
-                    continue;
-                }
-            }
-
-            $kept[] = $item;
-        }
-
-        if ($removed) {
-            $entityManager->flush();
-        }
-
-        return $kept;
     }
 
     private function escape(mixed $value): string

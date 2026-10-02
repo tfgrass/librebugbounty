@@ -2,7 +2,6 @@
 /var/
 /storage/
 /playwright-worker/node_modules/
-/playwright-worker/package-lock.json
 /.phpunit.result.cache
 /.phpunit.cache/
 /.idea/

@@ -6,7 +6,6 @@ use App\Dto\BrowserRetestRequest;
 use App\Dto\RetestResultData;
 use App\Entity\Domain;
 use App\Entity\Finding;
-use App\Service\EvidenceStorageInterface;
 use App\Service\RetestService;
 use App\Service\ReviewService;
 use App\Service\ValidationService;
@@ -63,12 +62,7 @@ final class ReviewServiceTest extends UnitTestCase
                 $repos['retestRuns'],
                 $browserClient,
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             $browserClient,
             $entityManager,
@@ -122,12 +116,7 @@ final class ReviewServiceTest extends UnitTestCase
                 $repos['retestRuns'],
                 $browserClient,
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             $browserClient,
             $entityManager,
@@ -175,12 +164,7 @@ final class ReviewServiceTest extends UnitTestCase
                 $repos['retestRuns'],
                 $browserClient,
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             $browserClient,
             $entityManager,
@@ -233,12 +217,7 @@ final class ReviewServiceTest extends UnitTestCase
                 $repos['retestRuns'],
                 $browserClient,
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             $browserClient,
             $entityManager,
@@ -289,12 +268,7 @@ final class ReviewServiceTest extends UnitTestCase
                 $repos['retestRuns'],
                 $browserClient,
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             $browserClient,
             $entityManager,
@@ -353,12 +327,7 @@ final class ReviewServiceTest extends UnitTestCase
                     RetestResult::STILL_VULNERABLE,
                 ]),
                 new ValidationService($this->createValidator()),
-                new class implements EvidenceStorageInterface {
-                    public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                    {
-                        return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                    }
-                },
+                $this->storage,
             ),
             new ReviewBrowserTransportStub([
                 RetestResult::STILL_VULNERABLE,

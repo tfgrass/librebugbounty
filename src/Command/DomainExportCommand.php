@@ -66,7 +66,7 @@ final class DomainExportCommand extends Command
                 'hostname' => $domain->getHostname(),
                 'scheme' => $domain->getScheme(),
                 'authorized' => $domain->isAuthorized(),
-                'findings' => $domain->getFindings()->count(),
+                'findings' => $domain->getFindings()->filter(static fn ($finding): bool => !$finding->isDiscarded())->count(),
             ], $domains);
 
             $output->writeln(json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
@@ -105,7 +105,7 @@ final class DomainExportCommand extends Command
         ];
 
         foreach ($domains as $domain) {
-            if ($domain->getFindings()->count() === 0) {
+            if ($domain->getFindings()->filter(static fn ($finding): bool => !$finding->isDiscarded())->isEmpty()) {
                 continue;
             }
 
@@ -144,7 +144,7 @@ final class DomainExportCommand extends Command
     private function hasFixedFinding(Domain $domain): bool
     {
         foreach ($domain->getFindings() as $finding) {
-            if ($finding->getStatus() === 'fixed') {
+            if (!$finding->isDiscarded() && $finding->getStatus() === 'fixed') {
                 return true;
             }
         }
@@ -155,7 +155,7 @@ final class DomainExportCommand extends Command
     private function hasContactedFinding(Domain $domain): bool
     {
         foreach ($domain->getFindings() as $finding) {
-            if ($finding->getContactedAt() !== null) {
+            if (!$finding->isDiscarded() && $finding->getContactedAt() !== null) {
                 return true;
             }
         }

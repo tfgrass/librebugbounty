@@ -5,7 +5,7 @@ namespace App\Command;
 use App\Entity\Finding;
 use App\Repository\FindingRepository;
 use App\Service\ReviewService;
-use App\Service\RetestService;
+use App\Service\ScreenshotQueueService;
 use App\Service\SettingsService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -15,13 +15,13 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:review:refresh', description: 'Review pending findings serially and then generate missing screenshots.')]
+#[AsCommand(name: 'app:review:refresh', description: 'Review pending findings serially and then queue missing screenshots.')]
 final class ReviewRefreshCommand extends Command
 {
     public function __construct(
         private readonly ReviewService $reviewService,
         private readonly FindingRepository $findings,
-        private readonly RetestService $retestService,
+        private readonly ScreenshotQueueService $screenshotQueue,
         private readonly SettingsService $settings,
     ) {
         parent::__construct();
@@ -33,8 +33,6 @@ final class ReviewRefreshCommand extends Command
             ->addOption('review-limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings to review.', PHP_INT_MAX)
             ->addOption('screenshot-limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings to screenshot.', PHP_INT_MAX)
             ->addOption('review-timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in milliseconds for the review phase.')
-            ->addOption('screenshot-timeout', null, InputOption::VALUE_OPTIONAL, 'Timeout in milliseconds for the screenshot phase.', 120000)
-            ->addOption('browser', null, InputOption::VALUE_REQUIRED, 'Browser engine to use for screenshots (chromium or firefox).', 'chromium')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be processed without running browsers.')
         ;
     }
@@ -47,8 +45,6 @@ final class ReviewRefreshCommand extends Command
         $reviewTimeout = $input->getOption('review-timeout') !== null
             ? max(1000, (int) $input->getOption('review-timeout'))
             : $this->settings->getReviewScanTimeoutMs();
-        $screenshotTimeout = max(1000, (int) $input->getOption('screenshot-timeout'));
-        $browser = (string) $input->getOption('browser');
         $dryRun = (bool) $input->getOption('dry-run');
 
         $reviewTargets = $this->reviewService->getPendingFindings($reviewLimit);
@@ -88,8 +84,8 @@ final class ReviewRefreshCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->runReviewPhase($reviewTargets, $reviewTimeout, $output, $io, 'Review phase', true, false);
-        $this->runScreenshotPhase($screenshotTargets, $screenshotTimeout, $browser, $output, $io, 'Screenshot phase');
+        $this->runReviewPhase($reviewTargets, $reviewTimeout, $output, $io, 'Review phase', false, true);
+        $this->runScreenshotPhase($screenshotTargets, $output, $io, 'Screenshot phase');
 
         return Command::SUCCESS;
     }
@@ -136,7 +132,7 @@ final class ReviewRefreshCommand extends Command
     /**
      * @param list<Finding> $findings
      */
-    private function runScreenshotPhase(array $findings, int $timeoutMs, string $browser, OutputInterface $output, SymfonyStyle $io, string $title): void
+    private function runScreenshotPhase(array $findings, OutputInterface $output, SymfonyStyle $io, string $title): void
     {
         if ($findings === []) {
             $io->success(sprintf('%s finished. No screenshots were missing.', $title));
@@ -144,10 +140,9 @@ final class ReviewRefreshCommand extends Command
         }
 
         $io->writeln(sprintf(
-            '%s: generating screenshots for %d finding(s) with %s.',
+            '%s: queueing screenshots for %d finding(s).',
             $title,
             count($findings),
-            $browser,
         ));
         $progressBar = new ProgressBar($output, count($findings));
         $progressBar->setFormat('%current%/%max% [%bar%] %percent:3s%% %message%');
@@ -158,7 +153,7 @@ final class ReviewRefreshCommand extends Command
         foreach ($findings as $finding) {
             $progressBar->setMessage(sprintf('%s %s', substr($finding->getId(), 0, 8), $finding->getDomain()->getHostname()));
             try {
-                $this->retestService->retest($finding, true, $timeoutMs, false, false, false, $browser);
+                $this->screenshotQueue->enqueue($finding);
                 $processed++;
             } catch (\Throwable $error) {
                 $failures++;

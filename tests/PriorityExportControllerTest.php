@@ -7,6 +7,8 @@ use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Repository\FindingRepository;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Security\Csrf\CsrfToken;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 final class PriorityExportControllerTest extends UnitTestCase
 {
@@ -32,12 +34,15 @@ final class PriorityExportControllerTest extends UnitTestCase
             ->method('findForPriorityExport')
             ->willReturn([$finding]);
 
-        $response = (new PriorityExportController($repository))(Request::create('/operator-priority?days=14'));
+        $csrf = $this->createMock(CsrfTokenManagerInterface::class);
+        $csrf->method('getToken')->willReturn(new CsrfToken('fixture', 'fixture-token'));
+        $response = (new PriorityExportController($repository, $csrf))(Request::create('/operator-priority?days=14'));
 
         self::assertSame(200, $response->getStatusCode());
         self::assertStringContainsString('Live Betreiber-Priorität', $response->getContent());
         self::assertStringContainsString('example.com', $response->getContent());
         self::assertStringContainsString('/findings/'.$finding->getId().'/mark-contacted', $response->getContent());
+        self::assertStringContainsString('name="_token" value="fixture-token"', $response->getContent());
         self::assertStringContainsString('https://example.com/security', $response->getContent());
     }
 }

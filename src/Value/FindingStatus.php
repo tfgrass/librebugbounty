@@ -10,6 +10,7 @@ final class FindingStatus
     public const FIXED = 'fixed';
     public const WONTFIX = 'wontfix';
     public const DUPLICATE = 'duplicate';
+    public const DISCARDED = 'discarded';
 
     public static function values(): array
     {
@@ -20,6 +21,7 @@ final class FindingStatus
             self::FIXED,
             self::WONTFIX,
             self::DUPLICATE,
+            self::DISCARDED,
         ];
     }
 
