@@ -18,9 +18,10 @@ Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
   ScreenshotJob und kehrt dann ohne automatischen Retest zurück. Die nächste URL
   lässt sich sofort erfassen; Sitzungsverlauf und unbestätigte Eingaben bleiben
   im aktuellen Tab erreichbar.
-- Zuerst werden vorhandene Abläufe in der aktuellen Ansicht stabilisiert und
-  schrittweise erweitert. Die Resolve-artige Oberfläche übernimmt später zwei
-  bis drei oder mehr bereits brauchbare Arbeitsbereiche.
+- Vorhandene Abläufe wurden zuerst in der aktuellen Ansicht stabilisiert. Nach
+  dem schnellen Eingang wird jetzt ein schmaler paralleler Studio-Eingang als
+  erster echter Arbeitsbereich vorbereitet; der vollständige Resolve-Umbau folgt
+  weiterhin erst mit weiteren brauchbaren Arbeitsbereichen.
 
 ## Umgesetzter Stand
 
@@ -151,12 +152,19 @@ Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
-**Nächste Ausbaurichtung:** Nach dem schnellen Eingang kann Eingang und Bestand in
-einer parallelen Resolve-/Studio-Ansicht angeordnet werden. Beide Oberflächen
-verwenden dieselbe Fallverwaltung und dieselben schmalen Anwendungs- und
-Leseregeln. Frameworkwahl, genaue Navigation und Auswahlkontext der Studio-Ansicht
-bleiben offen; Review und Meldungen behalten ihre eigenen offenen Fachregeln.
-[Entscheidung und Zuschnitt](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
+**Nächstes vorbereitetes Vorhaben:** Der Nutzer bewertet die klassische Gesamtseite
+für den Eingang als zu überladen. Studio-Ingest v1 stellt deshalb den bereits
+funktionierenden schnellen Eingang parallel unter `/studio` bereit: dunkle,
+reduzierte Arbeitsfläche, dominante Einzeleingabe und kompakter Sitzungsverlauf,
+optimiert für 640 bis 960 CSS-Pixel breite Fenster. Die klassische Oberfläche
+bleibt bestehen; Bestand, Inspector, Review und Meldungen gehören nicht in diesen
+ersten Studio-Abschnitt.
+
+Beide Oberflächen verwenden dieselbe Fallverwaltung und die vorhandenen schmalen
+Intake-/Statusgrenzen. Empfohlen sind ein eigenes Symfony-Template und isolierte
+Styles statt einer neuen SPA. Kennzeichen und Notiz liegen im ersten Entwurf unter
+„Details hinzufügen“. [Umsetzungsplan und Abnahmevertrag](plan-studio-ingest.md),
+[Entscheidungsweg](ui-workflow.md#nächstes-vorhaben-studio-ingest-v1--half-screen).
 
 Weitere bekannte Grenzen:
 
@@ -205,6 +213,7 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme Arbeitsabschnitt 3a](abnahme-abschnitt-3a.md)
 - [Abnahme Arbeitsabschnitt 3b](abnahme-abschnitt-3b.md)
 - [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md)
+- [Umsetzungsplan Studio-Ingest v1 / Half-Screen](plan-studio-ingest.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

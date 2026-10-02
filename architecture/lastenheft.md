@@ -16,8 +16,9 @@ umgesetzt: [Bewertung, Kontaktzeitpunkt, Verwerfen und Historie](abnahme-abschni
 Abschnitt 3b wurde danach ebenfalls ausdrücklich beauftragt und umgesetzt:
 [Bestand konsistent lesen und filtern](abnahme-abschnitt-3b.md).
 Am 2026-10-03 wurde außerdem der [schnelle Einzeleingang](abnahme-schneller-eingang.md)
-ausdrücklich beauftragt. Das spätere Review-Paket und die parallele Studio-Ansicht
-bleiben separate Arbeit.
+ausdrücklich beauftragt und umgesetzt. Danach wurde der schmale erste Studio-
+Arbeitsbereich als nächstes vorzubereitendes Vorhaben gewählt. Das spätere
+Review-Paket und der vollständige Studio-Ausbau bleiben separate Arbeit.
 
 ## 1. Zweck und Verbindlichkeit
 
@@ -47,6 +48,11 @@ erfassen, nach bestätigter Speicherung das Formular sofort wieder verwenden und
 den Verlauf der aktuellen Tabsitzung über Reload erhalten. Toasts erscheinen nur
 im fokussierten Tab. Backend/API bedienen zunächst die klassische und die spätere
 Studio-Oberfläche, nicht beliebige weitere Clients.
+Nach der praktischen Nutzung des schnellen Eingangs wurde ergänzt: Die klassische
+Gesamtseite ist für diesen Arbeitsfall zu überladen. Eine parallele, einfache
+Studio-Eingabemaske soll bei halber Fensterbreite das Kopieren von ungefähr fünf
+einzelnen URLs aus einem Nachbarfenster unterstützen. Die klassische Oberfläche
+bleibt dabei erhalten.
 
 **Aus der Analyse abgeleiteter Vorschlag:** Die übrigen Muss-Anforderungen sind
 die vorgeschlagene Baseline dieses Lastenhefts. Ihre Bezeichnung als Muss beschreibt
@@ -384,6 +390,11 @@ Vorhaben beauftragt.
    Sitzungsverlauf erhält bestätigte, fehlgeschlagene und nicht bestätigte
    Eingaben; ein lesender Statusabruf meldet ausschließlich persistierte Zustände.
    Beauftragt am 2026-10-03; [Abnahme und Grenzen](abnahme-schneller-eingang.md).
+6. **Studio-Ingest v1 / Half-Screen:** Den bereits funktionierenden Eingang unter
+   einer parallelen, reduzierten Studio-Oberfläche anbieten. URL-Eingabe und
+   kompakter Sitzungsverlauf bleiben bei 640 bis 960 CSS-Pixeln gut nutzbar; die
+   klassische Oberfläche bleibt erreichbar. Für diesen Abschnitt vorbereitet,
+   aber noch nicht umgesetzt: [Umsetzungsplan](plan-studio-ingest.md).
 
 Abschnitt 3 verbessert die vorhandene Darstellung; er setzt keinen vollständigen
 UI-Neubau voraus. Sicherung und Wiederherstellungsnachweis aus N03 gelten bereits
@@ -445,9 +456,12 @@ automatischen Retest. Eine mögliche spätere, ausdrücklich sichtbare automatis
 Prüfstrategie wäre ein neues Vorhaben; sie ist keine offene Implementierungsfrage
 des schnellen Eingangs.
 
-Für die parallele Studio-Ansicht bleiben Framework, Navigation und Auswahlkontext
-offen. Festgelegt sind nur dieselbe Fallverwaltung wie in der klassischen Ansicht
-und ein API-Umfang zunächst für diese beiden Oberflächen.
+Für den vollständigen späteren Studio-Ausbau bleiben Navigation und gemeinsamer
+Auswahlkontext offen. Für Studio-Ingest v1 ist die Richtung enger: eigener
+Symfony-Screen unter `/studio`, isolierte dunkle Styles und Wiederverwendung der
+vorhandenen Intake-/Statusgrenzen werden empfohlen. Ein neues SPA-Framework ist
+keine Voraussetzung. Bestand, Inspector, Review und Meldungen sind nicht Teil
+dieses ersten Studio-Abschnitts.
 
 Mehrbenutzerbetrieb, öffentliche Bereitstellung und automatische Kommunikation
 sind spätere mögliche Vorhaben und keine Blocker für die lokale Stabilisierung.

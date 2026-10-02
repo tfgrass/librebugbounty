@@ -23,6 +23,13 @@ vielen Dialogaufrufen, bei denen sie nicht rechtzeitig zum Abschluss kommt.
 Bestätigte Speicherung hat im Eingang Vorrang. Details und Grenzen stehen im
 [UI-Arbeitsmodell](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
 
+**UI-Fortschreibung vom 2026-10-03:** Nach der Umsetzung bewertet der Nutzer die
+klassische Gesamtseite für den Eingang als zu überladen. Als nächster begrenzter
+Abschnitt wird deshalb ein paralleler Studio-Eingang für halbbreite Fenster
+vorbereitet. Das revidiert nicht die Reihenfolge für den vollständigen
+Resolve-Umbau: Zunächst wird nur der bereits funktionierende Intake übernommen;
+Bestand, Review, Inspector und Meldungen bleiben spätere Arbeitsbereiche.
+
 ## Bestätigte Anforderungen
 
 Grundlage: Nutzerauftrag und Antworten in den Architekturgesprächen vom
@@ -47,6 +54,10 @@ Grundlage: Nutzerauftrag und Antworten in den Architekturgesprächen vom
   Arbeitsbereichen zur Resolve-artigen Gestaltung wechseln und die erarbeiteten
   Funktionen übernehmen. Der Nutzer hat diese Reihenfolge im weiteren Sparring
   ausdrücklich präzisiert.
+- Nach Umsetzung des schnellen Eingangs als begrenzte Revision einen einfachen
+  parallelen Studio-Eingang vorbereiten. Er soll besonders bei halber
+  Fensterbreite das Kopieren mehrerer einzelner URLs aus einem Nachbarfenster
+  erleichtern; die klassische Oberfläche bleibt bestehen.
 - Häufig mehrere URLs als einzelne Eingaben nacheinander erfassen; nach bestätigter
   Speicherung wird das Formular sofort wieder nutzbar. Sitzungsverlauf und Entwurf
   bleiben im aktuellen Tab über Reload erhalten, Toasts erscheinen nur im
@@ -64,7 +75,8 @@ Rückmeldung überspringen, Sichtung mit Notizen und Bildvergleich bei Änderung
 bearbeitbare Meldungen mit Codex-CLI-Mailentwürfen, Gruppierung auch anhand
 gemeinsamer Entwickler sowie Bestand/Dashboard/Statistiken. Entscheidungen,
 Lösungsvorschläge und offene Regeln stehen im [UI-Arbeitsmodell](ui-workflow.md).
-Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt;
+Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt und
+umgesetzt. Studio-Ingest v1 ist als nächster Abschnitt vorbereitet; vollständige
 Studio-Ansicht, Review und Meldungen bleiben getrennte spätere Vorhaben.
 
 ## Beobachteter Aufbau
@@ -329,9 +341,10 @@ vermischt werden.
 Neue UI-Richtung: [Arbeitsbereiche und Duplikatbehandlung](ui-workflow.md).
 Resolve-artige Pages für Erfassen, Sichten und Mailvorbereitung bleiben das
 spätere Ziel. Bestätigt ist der Vorrang funktionierender Abläufe in der aktuellen
-Ansicht; der schnelle Eingang ist der erste dafür beauftragte Arbeitsbereich.
-Die konkreten Seiten-, Navigations- und Modellvorschläge für die parallele
-Studio-Ansicht bleiben Vorschläge.
+Ansicht; der schnelle Eingang ist der erste dafür umgesetzte Arbeitsbereich. Seine
+parallele Half-Screen-Studioansicht ist als nächster begrenzter Abschnitt
+vorbereitet. Weitergehende Seiten-, Navigations- und Modellvorschläge für Bestand,
+Review und Meldungen bleiben Vorschläge.
 
 - **Geklärt:** Eine neue technische Beobachtung hebt eine manuelle Entscheidung
   nicht auf. Entscheidung erhalten und neue Beobachtung als Hinweis zeigen;

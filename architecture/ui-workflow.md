@@ -1,9 +1,10 @@
 # Arbeitsbereiche und UI – Diskussionsstand
 
 Stand: 2026-10-03. Fortgeschriebener Diskussions- und Entscheidungsstand aus dem
-Architektur-Sparring. Der schnelle Einzeleingang ist beauftragt; andere als solche
-gekennzeichnete Ideen bleiben Vorschläge. Geltender Stand: [Index](index.md),
-[Lastenheft](lastenheft.md).
+Architektur-Sparring. Der schnelle Einzeleingang ist umgesetzt; als nächster
+Abschnitt wird ein paralleler, halbbreitentauglicher Studio-Eingang vorbereitet.
+Andere als solche gekennzeichnete Ideen bleiben Vorschläge. Geltender Stand:
+[Index](index.md), [Lastenheft](lastenheft.md).
 
 ## Bestätigte Nutzerrichtung
 
@@ -35,6 +36,14 @@ ergänzen. Wenn zwei bis drei brauchbare Arbeitsbereiche entstanden sind, soll d
 Resolve-artige Oberfläche diese übernehmen. Der bisherige Vorschlag, zunächst
 einen klickbaren Resolve-Prototyp zu bauen, ist damit zurückgestellt. Grund:
 Jeder Zwischenschritt soll bereits praktisch nutzbare Funktion liefern.
+
+**Begrenzte Revision vom 2026-10-03:** Nach Umsetzung des schnellen Eingangs hat
+der Nutzer die klassische Gesamtseite als zu überladen bewertet und den
+Resolve-artigen Eingang als nächsten vorzubereitenden Abschnitt gewählt. Damit
+wird kein vollständiger UI-Prototyp vorgezogen. Der bereits funktionierende Intake
+wird als erster echter paralleler Studio-Arbeitsbereich angeordnet und für ein
+halbbreites Fenster optimiert; Review, Meldungen und ein Studio-Bestand bleiben
+eigenständige spätere Vorhaben.
 
 ## Beobachteter Ausgangspunkt
 
@@ -389,8 +398,8 @@ Nach bestätigter Speicherung werden unveränderte URL und Notiz geleert und das
 URL-Feld für die nächste Eingabe fokussiert. Wurde der nächste Entwurf bereits
 bearbeitet, bleiben seine Werte und das aktive Feld erhalten. Eine sichtbare
 Verlaufszeile je Eingabe unterscheidet Speichern, gespeichert, exaktes Duplikat,
-Eingabefehler, unbekannten
-Requestausgang und den persistierten Screenshotzustand. Ein Transportabbruch gilt
+Eingabefehler, unbekannten Requestausgang und den persistierten Screenshotzustand.
+Ein Transportabbruch gilt
 nicht als Beleg, dass der Server nicht gespeichert hat: Die Eingabe bleibt als
 „nicht bestätigt“ erhalten und wird nur nach einem bewussten Klick wieder ins
 Formular übernommen. Dadurch verursacht ein Timeout keinen automatischen Doppel-POST.
@@ -405,8 +414,10 @@ ScreenshotJobs, Bewertungen und Beobachtungen bleiben serverseitige Wahrheit.
 
 Für parallele Oberflächen bietet sich dasselbe Symfony-Backend mit derselben
 Datenbasis, denselben Anwendungsfällen und Leseregeln an. Klassische Ansicht und
-eine mögliche Studio-Ansicht hätten eigene Layouts, Navigation und Clientzustände.
-Änderungen eines Falls wären anschließend in beiden sichtbar. Eine separate
+eine mögliche Studio-Ansicht hätten eigene Layouts und Navigation. Der tablokale
+Intake-Verlauf kann beim Wechsel derselben Tabsitzung gemeinsam bleiben;
+arbeitsbereichsspezifische Auswahlzustände bleiben getrennt. Änderungen eines
+Falls wären anschließend in beiden sichtbar. Eine separate
 Frontend-Anwendung ist eine mögliche Ausbaustufe; Symfony-Templates mit kleinen
 JavaScript-Komponenten und passenden JSON-Schnittstellen bleiben als einfachere
 Alternative erhalten. "Headless" bezeichnet hier die Trennung von Backend/API und
@@ -418,8 +429,9 @@ einer parallelen Resolve-Ansicht dargestellt werden. Vorläufiges Layout: Fallli
 Arbeitsfläche beziehungsweise vorhandener Bildbeleg in der Mitte, ausgewählter
 Fall mit Notizen/Bewertung rechts; Arbeitsbereichwechsel unten. Review und Meldungen
 folgen mit ihren eigenen noch offenen Fachregeln. Der schnelle Eingang wurde nach
-einer erneuten beobachteten Blockade ausdrücklich zur Umsetzung beauftragt. Die
-Studio-Ansicht bleibt ein folgendes Vorhaben und ist damit noch nicht beauftragt.
+einer erneut beobachteten Blockade ausdrücklich zur Umsetzung beauftragt. Zu diesem
+Zeitpunkt blieb die Studio-Ansicht noch ein folgendes Vorhaben; die anschließende
+Vorbereitung des schmalen ersten Studio-Abschnitts ist unten fortgeschrieben.
 
 **Geklärter API-Umfang:** Zunächst zwei Oberflächen. Eine umfassende API für weitere
 Clients ist deshalb keine Voraussetzung. Die konkrete Frameworkwahl der
@@ -435,6 +447,33 @@ gespeicherte Fälle, exakte Duplikate, Eingabefehler und nicht bestätigte Reque
 bleiben unterscheidbar. Die Eingabe darf bei fehlgeschlagener oder unbestätigter
 Speicherung nicht verloren gehen. Die fokussierte Abnahme steht in
 [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md).
+
+## Nächstes Vorhaben: Studio-Ingest v1 / Half-Screen
+
+**Neue Nutzerpriorität vom 2026-10-03:** Die klassische Gesamtseite ist für den
+alltäglichen Eingang zu dicht. Als nächster Abschnitt soll eine einfache,
+Resolve-artige Eingabemaske vorbereitet werden, die besonders im halbbreiten
+Fenster neben einer Liste mit etwa fünf zu kopierenden URLs funktioniert. Die
+klassische Oberfläche bleibt parallel erhalten.
+
+Empfohlen ist deshalb kein früher Nachbau des späteren Drei-Paneel-Reviews, sondern
+eine eigene Route `/studio` mit dunkler Studio-Shell, dominantem URL-Feld und
+kompaktem Sitzungsverlauf. Kennzeichen und Notiz liegen standardmäßig unter
+„Details hinzufügen“. Bei 640 bis 960 CSS-Pixeln bleibt die Arbeitsfläche
+einspaltig; URL-Eingabe und Verlauf beanspruchen nicht gemeinsam dieselbe schmale
+Zeile. Die untere Navigation enthält zunächst nur funktionierende Ziele.
+
+Die vorhandenen Intake- und Statusendpunkte reichen aus. Eine separate SPA oder
+ein neuer Build-Stack wird für diesen ersten Arbeitsbereich nicht empfohlen.
+Stattdessen erhält Symfony ein eigenes Studio-Template und isolierte Styles; die
+bewährte Session-, Transport-, Retry- und Pollinglogik wird aus ihrer Bindung an
+die klassische Kartendarstellung gelöst und von beiden Oberflächen verwendet.
+
+Der vollständige Zuschnitt, die Half-Screen-Skizze, technische Reihenfolge und
+prüfbare Abnahme stehen im [Umsetzungsplan Studio-Ingest v1](plan-studio-ingest.md).
+Vorbereitet ist damit der nächste begrenzte Abschnitt, nicht der gesamte spätere
+Studio-Ausbau. Bestand, Inspector, Review und Meldungen erweitern diesen Umfang
+nicht stillschweigend.
 
 ## Szenarien für die jeweiligen Funktionspakete
 
