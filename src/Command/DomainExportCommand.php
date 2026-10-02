@@ -105,6 +105,10 @@ final class DomainExportCommand extends Command
         ];
 
         foreach ($domains as $domain) {
+            if ($domain->getFindings()->count() === 0) {
+                continue;
+            }
+
             if ($this->hasFixedFinding($domain)) {
                 $groups['marked fixed'][] = $domain;
 

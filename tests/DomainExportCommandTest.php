@@ -146,11 +146,11 @@ final class DomainExportCommandTest extends UnitTestCase
     {
         $domains = new InMemoryDomainRepository();
 
-        $uncontactedEmpty = new Domain();
-        $uncontactedEmpty->setHostname('alpha.example.com');
-        $uncontactedEmpty->setScheme('https');
-        $uncontactedEmpty->setAuthorized(true);
-        $domains->add($uncontactedEmpty);
+        $uncontacted = new Domain();
+        $uncontacted->setHostname('alpha.example.com');
+        $uncontacted->setScheme('https');
+        $uncontacted->setAuthorized(true);
+        $domains->add($uncontacted);
 
         $contacted = new Domain();
         $contacted->setHostname('beta.example.com');
@@ -169,6 +169,22 @@ final class DomainExportCommandTest extends UnitTestCase
         $uncontactedFindingDomain->setScheme('https');
         $uncontactedFindingDomain->setAuthorized(true);
         $domains->add($uncontactedFindingDomain);
+
+        $uncontactedFinding = new Finding();
+        $uncontactedFinding->setDomain($uncontacted);
+        $uncontactedFinding->setTitle('Open');
+        $uncontactedFinding->setType(self::DEFAULT_FINDING_TYPE);
+        $uncontactedFinding->setSeverity('medium');
+        $uncontactedFinding->setStatus('verified');
+        $uncontactedFinding->setUrl('https://alpha.example.com/?q=test');
+        $uncontactedFinding->setMethod('GET');
+        $uncontacted->getFindings()->add($uncontactedFinding);
+
+        $deletedLike = new Domain();
+        $deletedLike->setHostname('epsilon.example.com');
+        $deletedLike->setScheme('https');
+        $deletedLike->setAuthorized(true);
+        $domains->add($deletedLike);
 
         $contactedFinding = new Finding();
         $contactedFinding->setDomain($contacted);
@@ -214,5 +230,6 @@ final class DomainExportCommandTest extends UnitTestCase
         self::assertStringContainsString('== uncontacted (2) ==', $display);
         self::assertStringContainsString("alpha.example.com\n", $display);
         self::assertStringContainsString("delta.example.com\n", $display);
+        self::assertStringNotContainsString('epsilon.example.com', $display);
     }
 }

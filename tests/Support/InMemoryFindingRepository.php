@@ -162,6 +162,29 @@ final class InMemoryFindingRepository extends FindingRepository
         return array_slice($results, 0, $limit);
     }
 
+    public function findAllForBrowserRetest(?Domain $domain = null, ?string $status = null, int $limit = 1000): array
+    {
+        $results = array_values(array_filter($this->findings, static function (Finding $finding) use ($domain, $status): bool {
+            if ($domain !== null && $finding->getDomain()->getHostname() !== $domain->getHostname()) {
+                return false;
+            }
+            if ($status !== null && $finding->getStatus() !== $status) {
+                return false;
+            }
+
+            return true;
+        }));
+
+        usort($results, static function (Finding $a, Finding $b): int {
+            $aDate = $a->getSubmittedAt() ?? $a->getCreatedAt();
+            $bDate = $b->getSubmittedAt() ?? $b->getCreatedAt();
+
+            return $aDate <=> $bDate;
+        });
+
+        return array_slice($results, 0, $limit);
+    }
+
     public function findOpenFindingsWithoutEvidence(int $limit = 20): array
     {
         $results = [];

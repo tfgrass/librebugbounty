@@ -230,16 +230,22 @@ final class WebController
     }
 
     #[Route(path: 'findings/{id}/mark-contacted', name: 'finding_mark_contacted', methods: ['POST'])]
-    public function markContacted(string $id): Response
+    public function markContacted(string $id, Request $request): Response
     {
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $this->findingService->markContacted($finding);
 
-            return $this->redirectMessage(sprintf(
+            $message = sprintf(
                 'Marked %s as contacted.',
                 $this->shortId($finding),
-            ));
+            );
+            $returnTo = trim($request->request->getString('return_to'));
+            if ($returnTo !== '' && str_starts_with($returnTo, '/') && !str_starts_with($returnTo, '//')) {
+                return new RedirectResponse($returnTo.(str_contains($returnTo, '?') ? '&' : '?').'message='.rawurlencode($message));
+            }
+
+            return $this->redirectMessage($message);
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -531,7 +537,7 @@ final class WebController
             .'</style>'
             .'</head>'
             .'<body>'
-            .'<div class="utility-nav"><a href="/">Overview</a><a href="/settings">Settings</a><a href="#about-modal">About</a></div>'
+            .'<div class="utility-nav"><a href="/">Overview</a><a href="/operator-priority">Operator-Priorität</a><a href="/settings">Settings</a><a href="#about-modal">About</a></div>'
             .'<main>'.$body.'</main>'
             .$this->renderAboutModal()
             .'</body>'

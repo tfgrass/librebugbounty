@@ -77,10 +77,29 @@ final class RetestAllCommand extends Command
             return Command::SUCCESS;
         }
 
+        $processed = 0;
+        $failures = 0;
         foreach ($findings as $finding) {
-            $run = $this->retestService->retest($finding, $screenshot, $timeout, false, false, !$screenshot, $browser);
-            $io->writeln(sprintf('%s -> %s (%s)', substr($finding->getId(), 0, 8), $run->getResult(), $browser));
+            try {
+                $run = $this->retestService->retest($finding, $screenshot, $timeout, false, false, !$screenshot, $browser);
+                $processed++;
+                $io->writeln(sprintf('%s -> %s (%s)', substr($finding->getId(), 0, 8), $run->getResult(), $browser));
+            } catch (\Throwable $error) {
+                $failures++;
+                $io->warning(sprintf(
+                    'Skipping %s %s after error: %s',
+                    substr($finding->getId(), 0, 8),
+                    $finding->getDomain()->getHostname(),
+                    $error->getMessage(),
+                ));
+            }
         }
+
+        $io->success(sprintf(
+            'Retest batch finished. Processed %d finding(s). %d finding(s) failed and were skipped.',
+            $processed,
+            $failures,
+        ));
 
         return Command::SUCCESS;
     }
