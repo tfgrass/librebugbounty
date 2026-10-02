@@ -115,6 +115,16 @@ Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
+**Aktuelles Sparring nach 3b:** Der Nutzer möchte häufig fünf einzelne URLs
+nacheinander eingeben können, mit sofort wieder nutzbarem Formular. Der aktuelle
+Eingangsrequest wartet trotz bereits eingereihtem Screenshot noch auf die technische
+Rückmeldung. Diskutiert werden eine getrennte Eingangsbestätigung und Ergebnisanzeige
+sowie eine parallele Resolve-Ansicht auf derselben Fallverwaltung. Bestätigter
+API-Umfang: zunächst zwei Oberflächen. Die Frontendwahl bleibt offen;
+dies beauftragt noch keine Umsetzung und ersetzt den
+offenen Betriebsnachweis aus Abschnitt 4 nicht.
+[Bedarf, beobachtete Grenze und vorläufiger Vorschlag](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
+
 Weitere bekannte Grenzen:
 
 - Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet;

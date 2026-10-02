@@ -334,6 +334,66 @@ Die genaue Auswahl der Vergleichsreferenz ist ebenfalls noch ein Vorschlag.
   Neue Navigation, Auswahlkontext und Bedienung benötigen trotzdem eigene Prüfung;
   der Umbau ist nicht automatisch auf CSS beschränkt.
 
+## Schneller Eingang und parallele Resolve-Ansicht – Sparring nach 3b
+
+**Nutzerbedarf:** Häufig fünf URLs nacheinander erfassen, ohne wegen wartender
+Rückmeldungen mehrere Tabs zu benötigen. Auf konkrete Nachfrage bestätigt:
+einzelne Eingaben, Formular anschließend sofort wieder nutzbar. Ein gemeinsamer
+Mehrfachimport ist damit kein Bestandteil des zunächst gewünschten Ergebnisses.
+Die bestehende Gestaltung erhalten und daneben eine schönere Resolve-artige
+Ansicht anbieten ist die neu eingebrachte Ausbaumöglichkeit. Auf weitere Nachfrage
+bestätigt: Die API soll zunächst die beiden Oberflächen unterstützen; weitere
+eigenständige Clients sind kein aktuelles Ziel. Eine API und spätere Toasts wurden
+als mögliche Lösung vorgeschlagen, noch kein neuer Abschnitt beauftragt.
+
+**Beobachteter Stand bei `a8ae19d`:** Der Screenshot-Auftrag wird bereits mit dem
+neuen Finding gespeichert. Der Eingangscontroller wartet danach auf den synchronen
+technischen Vorgang und antwortet erst mit dessen Ergebnis. Die Bildaufnahme selbst
+ist bereits entkoppelt. Eine neue Darstellung oder eine JSON-Antwort allein ändern
+diese Antwortgrenze nicht. Ein laufender technischer Vorgang ist im derzeitigen
+Lesemodell zudem nicht als dauerhafter Zwischenstand abrufbar; sein `pending`-Objekt
+wird erst bei Ergebnisübernahme gespeichert.
+
+**Vorläufige Empfehlung:** Eingangsbestätigung und späteren Ergebnisstand getrennt
+behandeln. Die Oberfläche soll die nächste URL unabhängig vom späteren Ergebnis
+aufnehmen können. „Gespeichert“ darf sich auf eine bestätigte Server-Speicherung
+beziehen; bis dahin muss eine ausstehende Eingabe als solche erkennbar und bei
+Fehlern wieder erreichbar bleiben. Ein bloßes Freigeben des Formulars während eines
+langen Requests verbessert die Bedienung, beantwortet aber Speicherbestätigung,
+Reload und nachvollziehbaren Bearbeitungsstand noch nicht vollständig.
+
+Eine sichtbare Zeile je Eingabe mit URL, Falllink und Ergebnisstand würde Toasts
+ergänzen. Rückmeldungen können in anderer Reihenfolge eintreffen; ein Fehler der
+späteren Verarbeitung darf einen gespeicherten Fall nicht als ungespeichert
+darstellen. Exakte Duplikate bleiben ein verständlich benanntes Ergebnis. Die
+bereits festgelegte Trennung von manuellem Urteil und technischer Beobachtung gilt
+auch für diese Rückmeldungen.
+
+Für parallele Oberflächen bietet sich dasselbe Symfony-Backend mit derselben
+Datenbasis, denselben Anwendungsfällen und Leseregeln an. Klassische Ansicht und
+eine mögliche Studio-Ansicht hätten eigene Layouts, Navigation und Clientzustände.
+Änderungen eines Falls wären anschließend in beiden sichtbar. Eine separate
+Frontend-Anwendung ist eine mögliche Ausbaustufe; Symfony-Templates mit kleinen
+JavaScript-Komponenten und passenden JSON-Schnittstellen bleiben als einfachere
+Alternative erhalten. "Headless" bezeichnet hier die Trennung von Backend/API und
+Darstellung; der bereits vorhandene Browsermodus ist davon unabhängig.
+
+**Vorgeschlagener Zuschnitt:** Zuerst den schnellen Eingang in der vorhandenen
+Ansicht praktisch nutzbar machen; anschließend Eingang und Bestand in einer
+parallelen Resolve-Ansicht darstellen. Vorläufiges Layout: Fallliste links,
+Arbeitsfläche beziehungsweise vorhandener Bildbeleg in der Mitte, ausgewählter
+Fall mit Notizen/Bewertung rechts; Arbeitsbereichwechsel unten. Review und Meldungen
+folgen mit ihren eigenen noch offenen Fachregeln. Dies ist ein Vorschlag und kein
+Implementierungsauftrag oder fertiger Übergabeplan.
+
+**Geklärter API-Umfang:** Zunächst zwei Oberflächen. Eine umfassende API für weitere
+Clients ist deshalb keine Voraussetzung dieses Vorschlags. Die konkrete
+Frameworkwahl folgt dem benötigten Auswahl-/Bearbeitungszustand. Vor einer
+belastbaren Umsetzung sind außerdem die Wiederherstellbarkeit des Eingabeverlaufs
+und das Verhalten von Benachrichtigungen bei mehreren offenen Tabs festzulegen.
+Für die Grundrichtung reichen zunächst Fallverwaltung und Rückmeldungen; eine neue
+automatische Meldungs-/Versandfunktion ist damit nicht beschlossen.
+
 ## Szenarien für die jeweiligen Funktionspakete
 
 Die früher für einen frühen UI-Prototyp vorgeschlagenen Szenarien bleiben als
