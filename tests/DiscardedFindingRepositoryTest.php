@@ -179,7 +179,7 @@ final class DiscardedFindingRepositoryTest extends DatabaseTestCase
         self::assertSame('active.local', $rows[0]['hostname']);
         self::assertSame(1, $rows[0]['findings']);
         self::assertSame(Command::SUCCESS, $tester->execute(['--overview' => true]));
-        self::assertStringContainsString('== marked fixed (0) ==', $tester->getDisplay());
+        self::assertStringContainsString('== Altstatus fixed (0) ==', $tester->getDisplay());
         self::assertStringContainsString('== marked contacted (1) ==', $tester->getDisplay());
         self::assertStringContainsString('== uncontacted (1) ==', $tester->getDisplay());
         self::assertStringNotContainsString('ignored.local', $tester->getDisplay());

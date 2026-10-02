@@ -100,9 +100,19 @@ Arbeiten einschließlich wartender Screenshot-Aufträge ignoriert.
 930 Assertions erfolgreich; Bestandskopie und anschließende lokale Migration
 erhielten alle ursprünglichen Anwendungsdaten und Artefakte.
 
-**Nächster vorgeschlagener Abschnitt: 3b**, Bestand konsistent lesen und filtern.
+**Arbeitsabschnitt 3b wurde anschließend ausdrücklich beauftragt und umgesetzt:**
+Übersicht und CLI unterscheiden aufgezeichnetes manuelles Urteil, letzte gespeicherte
+technische Beobachtung und Kontaktzeitpunkt. Die kombinierbaren Filter und globalen
+Zähler verwenden dieselbe lesende Projektion; ihre Links führen zu der jeweils
+gezählten Menge. Alte Status-/Gruppenfilter bleiben als Diagnose erkennbar, das
+Archiv umfasst auch historische Duplikat-/Verwerfungswerte.
+[Abnahme von 3b](abnahme-abschnitt-3b.md) dokumentiert Mischbestands-, Paging- und
+Leseprüfungen sowie lokale HTTP-/Browserabnahme. Keine Migration war nötig.
+
+Als nächster vorgeschlagener Abschnitt bleibt **4: Betriebsnachweise abschließen**,
+einschließlich des frischen isolierten DDEV-Aufbaus. Die Regeln zum Abarbeiten von
+Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
-Die Regeln zum Abarbeiten von Hinweisen folgen vor dem späteren Review-Paket.
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
 Weitere bekannte Grenzen:
@@ -150,6 +160,7 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme Arbeitsabschnitt 1](abnahme-abschnitt-1.md)
 - [Abnahme Arbeitsabschnitt 2](abnahme-abschnitt-2.md)
 - [Abnahme Arbeitsabschnitt 3a](abnahme-abschnitt-3a.md)
+- [Abnahme Arbeitsabschnitt 3b](abnahme-abschnitt-3b.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

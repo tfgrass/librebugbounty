@@ -3,8 +3,8 @@
 namespace App\Command;
 
 use App\Repository\DomainRepository;
-use App\Repository\FindingRepository;
-use App\Value\FindingStatus;
+use App\Dto\FindingReadFilter;
+use App\Repository\FindingReadRepository;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -12,12 +12,12 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:domain:list', description: 'List stored domains and their retest/finding status.')]
+#[AsCommand(name: 'app:domain:list', description: 'List stored domains with separate active, manual-assessment and contact counts.')]
 final class DomainListCommand extends Command
 {
     public function __construct(
         private readonly DomainRepository $domains,
-        private readonly FindingRepository $findings,
+        private readonly FindingReadRepository $findings,
     ) {
         parent::__construct();
     }
@@ -34,26 +34,21 @@ final class DomainListCommand extends Command
 
         $rows = [];
         foreach ($this->domains->findAllOrdered($authorizedOnly) as $domain) {
-            $findings = $domain->getFindings();
-            $lastRetest = null;
-            foreach ($findings as $finding) {
-                $retestedAt = $finding->getLastRetestedAt();
-                if ($retestedAt !== null && ($lastRetest === null || $retestedAt > $lastRetest)) {
-                    $lastRetest = $retestedAt;
-                }
-            }
+            $hostname = $domain->getHostname();
 
             $rows[] = [
-                $domain->getHostname(),
+                $hostname,
                 $domain->getScheme() ?? 'n/a',
                 $domain->isAuthorized() ? 'yes' : 'no',
-                (string) count($findings),
-                (string) $this->findings->countOpenFindingsForDomain($domain),
-                $lastRetest?->format(DATE_ATOM) ?? 'n/a',
+                (string) $this->findings->count(new FindingReadFilter(domain: $hostname, exactDomain: true)),
+                (string) $this->findings->count(new FindingReadFilter(domain: $hostname, assessment: 'confirmed', exactDomain: true)),
+                (string) $this->findings->count(new FindingReadFilter(domain: $hostname, assessment: 'fixed', exactDomain: true)),
+                (string) $this->findings->count(new FindingReadFilter(domain: $hostname, assessment: 'unknown', exactDomain: true)),
+                (string) $this->findings->count(new FindingReadFilter(domain: $hostname, contact: 'yes', exactDomain: true)),
             ];
         }
 
-        $io->table(['hostname', 'scheme', 'authorized', 'findings', 'open findings', 'last retest'], $rows);
+        $io->table(['hostname', 'scheme', 'authorized', 'active findings', 'manually confirmed', 'manually fixed', 'no recorded manual assessment', 'contacted'], $rows);
 
         return Command::SUCCESS;
     }

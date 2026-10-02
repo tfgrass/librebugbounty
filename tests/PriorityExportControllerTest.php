@@ -6,6 +6,7 @@ use App\Controller\PriorityExportController;
 use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Repository\FindingRepository;
+use App\Value\FindingReadLabels;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
@@ -44,5 +45,9 @@ final class PriorityExportControllerTest extends UnitTestCase
         self::assertStringContainsString('/findings/'.$finding->getId().'/mark-contacted', $response->getContent());
         self::assertStringContainsString('name="_token" value="fixture-token"', $response->getContent());
         self::assertStringContainsString('https://example.com/security', $response->getContent());
+        self::assertStringContainsString('Fälle in der Auswahl', $response->getContent());
+        self::assertStringContainsString('Altstatus: verified', $response->getContent());
+        self::assertStringContainsString(FindingReadLabels::assessment(null), $response->getContent());
+        self::assertStringContainsString('mit Altstatus ungleich fixed', $response->getContent());
     }
 }

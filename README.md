@@ -158,6 +158,39 @@ Optional `--observation-id` and `--evidence-id` record an explicitly considered
 basis. Assessment and contact forms require CSRF tokens; reload an expired form
 before trying again. This protection is provided by Symfony's session/CSRF services.
 
+## Read and filter the inventory
+
+The overview and `app:finding:list` distinguish the recorded manual assessment,
+latest technical observation and contact timestamp. A technical `fixed` result is
+displayed as “Kein Nachweis (fixed)”; only an explicit manual assessment is
+displayed as “Behoben”. “Keine aufgezeichnete manuelle Bewertung” also includes
+legacy records whose historical decision source and time remain unknown.
+
+Filters combine with AND. `assessment` accepts `confirmed`, `fixed`, `discarded`
+or `unknown`; `observation` accepts `still_vulnerable`, `fixed`, `inconclusive`,
+`error`, `pending` or `none`; `contact` accepts `yes` or `no`. `none` means there
+is no stored observation, regardless of an old last-retest timestamp. The latest
+stored run is selected by finish time, falling back to start time, with insertion
+order breaking equal-second ties. Overview, detail and CLI use this same order.
+
+`scope=active` is the default and excludes discarded cases. Choose `discarded`,
+`duplicates` or `all` explicitly to read archived cases, including legacy ones.
+Scope and the manual assessment filter are separate: an old duplicate can still
+have an unknown manual assessment. Dashboard links reset other filters and show
+exactly the cases counted by that indicator.
+
+```bash
+ddev exec php bin/console app:finding:list --assessment=fixed --observation=inconclusive --contact=yes
+ddev exec php bin/console app:finding:list --scope=duplicates --assessment=unknown
+ddev exec php bin/console app:finding:list --observation=none
+```
+
+Old `status`/`bucket` overview links remain diagnostic legacy filters; they do not
+imply a manual judgment. The CLI retains `--status`, `--domain`, `--type` and
+`--severity`. `app:domain:list` counts active cases with separate manual and
+contact columns. Domain exports and operator priority still use their existing
+selection rules and explicitly describe their stored-status criterion.
+
 ## Technical review commands
 
 Run the existing technical review scan:
@@ -173,9 +206,10 @@ Run pending reviews and then queue missing screenshots:
 ddev exec php bin/console app:review:refresh
 ```
 
-The review phase still uses the existing status/review rules. The broader
-separation between all technical observations and manual assessments belongs to
-the next architecture section. The screenshot worker itself is neutral.
+The review phase still uses the existing technical work-selection rules and
+preserves manual decisions. Inventory filters do not define a review backlog;
+acknowledging or deferring hints and image comparison belong to a later package.
+The screenshot worker itself is neutral.
 
 The generic `app:retest:* --screenshot` options still use the older direct
 retest/capture path. Use `app:screenshot:*` for the persistent background queue.
@@ -290,5 +324,11 @@ in [the section 2 acceptance report](architecture/abnahme-abschnitt-2.md).
 The accepted section 2 revision completed 69 PHPUnit tests with 395 assertions,
 10 backup tests, and 7 Node tests. Full PHP and Node syntax checks, Symfony
 container lint, and `npm ci --dry-run` also passed.
+
+After section 3b, the full DDEV suite passes 142 tests with 1,284 assertions,
+including independent assessment/observation/contact filters, legacy/archive
+records, exact dashboard targets and filter-preserving pagination. Local desktop
+and mobile browser checks passed; all stored data and artifacts remained unchanged.
+See the [section 3b acceptance report](architecture/abnahme-abschnitt-3b.md).
 
 Requirements and current implementation scope: [architecture/index.md](architecture/index.md).

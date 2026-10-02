@@ -2,6 +2,8 @@
 
 namespace App\Controller;
 
+use App\Dto\FindingReadFilter;
+use App\Dto\FindingReadView;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
 use App\Entity\Evidence;
@@ -10,6 +12,7 @@ use App\Entity\ScreenshotJob;
 use App\Repository\EvidenceRepository;
 use App\Repository\FindingRepository;
 use App\Repository\FindingAssessmentRepository;
+use App\Repository\FindingReadRepository;
 use App\Repository\RetestRunRepository;
 use App\Repository\ScreenshotJobRepository;
 use App\Service\FindingService;
@@ -19,6 +22,7 @@ use App\Service\RetestService;
 use App\Service\ScreenshotStatusService;
 use App\Service\ScreenshotQueueService;
 use App\Value\FindingStatus;
+use App\Value\FindingReadLabels;
 use App\Value\EvidenceKind;
 use App\Value\ReviewState;
 use App\Value\ScreenshotJobStatus;
@@ -45,65 +49,54 @@ final class WebController
         private readonly ScreenshotJobRepository $screenshotJobs,
         private readonly FindingAssessmentRepository $assessments,
         private readonly CsrfTokenManagerInterface $csrf,
+        private readonly FindingReadRepository $findingRead,
     ) {
     }
 
     #[Route(name: 'home', methods: ['GET'])]
     public function home(Request $request): Response
     {
-        $domainQuery = trim($request->query->getString('domain'));
-        $statusSelection = trim($request->query->getString('status'));
-        $bucketFilter = trim($request->query->getString('bucket'));
-        $page = max(1, $request->query->getInt('page', 1));
-        $pageSizeSelection = strtolower(trim($request->query->getString('pageSize', '10')));
-        if (!in_array($pageSizeSelection, ['10', '25', '50', '100', 'all'], true)) {
-            $pageSizeSelection = '10';
+        try {
+            [$filter, $page, $pageSizeSelection] = $this->readFilter($request);
+        } catch (\InvalidArgumentException $exception) {
+            return new Response('Ungültiger Filter: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, ['Content-Type' => 'text/plain; charset=UTF-8']);
         }
 
-        if ($bucketFilter === '' && in_array($statusSelection, ['open', 'manual_review', 'unchecked'], true)) {
-            $bucketFilter = $statusSelection;
-            $statusSelection = '';
-        }
-
-        $statusFilter = in_array($statusSelection, ['new', 'verified', 'fixed'], true) ? $statusSelection : '';
-
-        $totalFiltered = $this->findings->countByDomainAndStatus(
-            $domainQuery !== '' ? $domainQuery : null,
-            $statusFilter !== '' ? $statusFilter : null,
-            $bucketFilter !== '' ? $bucketFilter : null,
-        );
+        $totalFiltered = $this->findingRead->count($filter);
         $pageSize = $pageSizeSelection === 'all' ? max(1, $totalFiltered) : (int) $pageSizeSelection;
         $totalPages = max(1, (int) ceil($totalFiltered / $pageSize));
         $page = min($page, $totalPages);
         $offset = ($page - 1) * $pageSize;
 
-        $findings = $this->findings->findPageByDomainAndStatus(
-            $domainQuery !== '' ? $domainQuery : null,
-            $statusFilter !== '' ? $statusFilter : null,
-            $bucketFilter !== '' ? $bucketFilter : null,
-            $pageSize,
-            $offset,
-        );
+        $findings = $this->findingRead->findPage($filter, $pageSize, $offset);
         $stats = [
-            'total' => $this->findings->countAllFindings(),
-            'open' => $this->findings->countByBucket('open'),
-            'fixed' => $this->findings->countByBucket('fixed'),
-            'manual_review' => $this->findings->countByBucket('manual_review'),
-            'unchecked' => $this->findings->countByBucket('unchecked'),
-            'screenshots_queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
-            'screenshots_running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
-            'screenshots_failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
+            'active' => ['label' => 'Aktiver Bestand', 'filter' => new FindingReadFilter()],
+            'confirmed' => ['label' => 'Manuell bestätigt', 'filter' => new FindingReadFilter(assessment: 'confirmed')],
+            'fixed' => ['label' => 'Manuell behoben', 'filter' => new FindingReadFilter(assessment: 'fixed')],
+            'unknown' => ['label' => 'Ohne aufgezeichnete manuelle Bewertung', 'filter' => new FindingReadFilter(assessment: 'unknown')],
+            'inconclusive' => ['label' => 'Technisch uneindeutig', 'filter' => new FindingReadFilter(observation: 'inconclusive')],
+            'unobserved' => ['label' => 'Ohne technische Beobachtung', 'filter' => new FindingReadFilter(observation: 'none')],
+            'contacted' => ['label' => 'Kontaktiert', 'filter' => new FindingReadFilter(contact: 'yes')],
+            'discarded' => ['label' => 'Archiv: Verworfen', 'filter' => new FindingReadFilter(scope: 'discarded')],
+            'duplicates' => ['label' => 'Archiv: Duplikate', 'filter' => new FindingReadFilter(scope: 'duplicates')],
         ];
+        foreach ($stats as &$stat) {
+            $stat['count'] = $this->findingRead->count($stat['filter']);
+            $stat['url'] = '/?'.http_build_query($this->filterQuery($stat['filter']));
+        }
+        unset($stat);
 
         return new Response($this->renderHomePage(
             findings: $findings,
             stats: $stats,
+            screenshotStats: [
+                'queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
+                'running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
+                'failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
+            ],
             defaultPayload: $this->settings->getDefaultPayload(),
-            filters: [
-                'domain' => $domainQuery,
-                'status' => $statusFilter,
-                'bucket' => $bucketFilter,
-                'selection' => $bucketFilter !== '' ? $bucketFilter : $statusFilter,
+            filter: $filter,
+            pagination: [
                 'page' => $page,
                 'pageSize' => $pageSizeSelection,
                 'totalFiltered' => $totalFiltered,
@@ -441,190 +434,111 @@ final class WebController
         ]);
     }
 
-    private function renderHomePage(array $findings, array $stats, string $defaultPayload, array $filters, ?string $message, ?string $error): string
+    /** @return array{FindingReadFilter, int, string} */
+    private function readFilter(Request $request): array
     {
-        $messageBox = $message ? '<div class="notice success">'.$this->escape($message).'</div>' : '';
-        $errorBox = $error ? '<div class="notice error">'.$this->escape($error).'</div>' : '';
-        $currentPage = max(1, (int) ($filters['page'] ?? 1));
-        $pageSize = max(1, (int) ($filters['pageSize'] ?? 50));
-        $totalFiltered = max(0, (int) ($filters['totalFiltered'] ?? 0));
-        $totalPages = max(1, (int) ($filters['totalPages'] ?? 1));
-        $domainFilter = (string) ($filters['domain'] ?? '');
-        $statusFilter = (string) ($filters['status'] ?? '');
-        $bucketFilter = (string) ($filters['bucket'] ?? '');
-        $selectedFilter = (string) ($filters['selection'] ?? '');
-        $selectedPageSize = (string) ($filters['pageSize'] ?? '10');
-        if (!in_array($selectedPageSize, ['10', '25', '50', '100', 'all'], true)) {
-            $selectedPageSize = '10';
+        $query = $request->query->all();
+        foreach (['domain', 'assessment', 'observation', 'contact', 'scope', 'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket', 'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain', 'page', 'pageSize', 'message', 'error'] as $field) {
+            if (array_key_exists($field, $query) && !is_string($query[$field])) {
+                throw new \InvalidArgumentException('Filterangaben müssen einzelne Textwerte sein.');
+            }
         }
-        $firstItem = $totalFiltered === 0 ? 0 : (($currentPage - 1) * $pageSize) + 1;
-        $lastItem = min($totalFiltered, $currentPage * $pageSize);
-
-        $buildPageUrl = function (int $page, ?string $bucketOverride = null) use ($domainFilter, $statusFilter, $bucketFilter, $selectedPageSize): string {
-            $query = ['page' => $page];
-            if ($domainFilter !== '') {
-                $query['domain'] = $domainFilter;
+        $get = static fn (string $name, string $default = ''): string => trim($query[$name] ?? $default);
+        $pick = static function (array $names) use ($query, $get): string {
+            $values = [];
+            foreach ($names as $name) {
+                if (array_key_exists($name, $query)) {
+                    $values[] = $get($name);
+                }
             }
-            if ($statusFilter !== '') {
-                $query['status'] = $statusFilter;
-            }
-            $effectiveBucket = $bucketOverride ?? $bucketFilter;
-            if ($effectiveBucket !== '') {
-                $query['bucket'] = $effectiveBucket;
-            }
-            if (in_array($selectedPageSize, ['10', '25', '50', '100', 'all'], true)) {
-                $query['pageSize'] = $selectedPageSize;
+            if (count(array_unique($values)) > 1) {
+                throw new \InvalidArgumentException('Widersprüchliche Angaben für denselben Filter.');
             }
 
-            return '/?'.http_build_query($query);
+            return $values[0] ?? '';
         };
-
-        $findingRows = [];
-        foreach ($findings as $finding) {
-            \assert($finding instanceof Finding);
-            $findingRows[] = sprintf(
-                '<tr>'
-                .'<td><a class="row-link" href="/findings/%s"><code>%s</code></a></td>'
-                .'<td><a class="row-link" href="/findings/%s"><code>%s</code></a></td>'
-                .'<td>%s</td>'
-                .'<td>%s</td>'
-                .'<td>%s</td>'
-                .'</tr>',
-                $this->escape($finding->getId()),
-                $this->escape($this->shortId($finding)),
-                $this->escape($finding->getId()),
-                $this->escape($finding->getDomain()->getHostname()),
-                $this->statusCell($finding),
-                $this->escape($finding->getSubmittedAt()?->format(DATE_ATOM) ?? 'n/a'),
-                $this->escape($finding->getLastRetestedAt()?->format(DATE_ATOM) ?? 'n/a'),
-            );
+        $legacyStatus = $pick(['legacy_status', 'legacyStatus']);
+        $legacyBucket = $pick(['legacy_bucket', 'legacyBucket', 'bucket']);
+        $oldStatus = $get('status');
+        if ($oldStatus !== '') {
+            if (in_array($oldStatus, ['open', 'manual_review', 'unchecked'], true)) {
+                if ($legacyBucket !== '' && $legacyBucket !== $oldStatus) {
+                    throw new \InvalidArgumentException('Widersprüchliche Altgruppenfilter.');
+                }
+                $legacyBucket = $oldStatus;
+            } else {
+                if ($legacyStatus !== '' && $legacyStatus !== $oldStatus) {
+                    throw new \InvalidArgumentException('Widersprüchliche Altstatusfilter.');
+                }
+                $legacyStatus = $oldStatus;
+            }
         }
-
-        $findingTableRows = $this->rowsOrEmpty($findingRows, 5, 'No findings yet');
-        $pagination = '';
-        $prevDisabled = $currentPage <= 1 ? ' aria-disabled="true" class="button ghost"' : '';
-        $nextDisabled = $currentPage >= $totalPages ? ' aria-disabled="true" class="button ghost"' : '';
-        $pageSizeForm = '<form method="get" action="/#findings" class="per-page-form">'
-            .($domainFilter !== '' ? '<input type="hidden" name="domain" value="'.$this->escape($domainFilter).'">' : '')
-            .($statusFilter !== '' ? '<input type="hidden" name="status" value="'.$this->escape($statusFilter).'">' : '')
-            .($bucketFilter !== '' ? '<input type="hidden" name="bucket" value="'.$this->escape($bucketFilter).'">' : '')
-            .'<input type="hidden" name="page" value="1">'
-            .'<label class="sr-only" for="page-size-select">Rows per page</label>'
-            .'<select id="page-size-select" name="pageSize" onchange="this.form.submit()">'
-            .'<option value="10"'.($selectedPageSize === '10' ? ' selected' : '').'>10</option>'
-            .'<option value="25"'.($selectedPageSize === '25' ? ' selected' : '').'>25</option>'
-            .'<option value="50"'.($selectedPageSize === '50' ? ' selected' : '').'>50</option>'
-            .'<option value="all"'.($selectedPageSize === 'all' ? ' selected' : '').'>All</option>'
-            .'</select>'
-            .'</form>';
-        $showingLine = sprintf(
-            '<div class="pagination-summary">Showing %s of %d findings</div>',
-            $pageSizeForm,
-            $totalFiltered,
+        $scope = $get('scope', 'active');
+        if (!array_key_exists('scope', $query)) {
+            $scope = match ($legacyStatus) {
+                'duplicate' => 'duplicates',
+                'discarded' => 'discarded',
+                default => 'active',
+            };
+        }
+        $exactDomain = $pick(['exact_domain', 'exactDomain']);
+        if (!in_array($exactDomain, ['', '0', '1'], true)) {
+            throw new \InvalidArgumentException('Der exakte Domainfilter muss 0 oder 1 sein.');
+        }
+        $page = filter_var($get('page', '1'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $pageSize = strtolower($get('pageSize', '10'));
+        if ($page === false || !in_array($pageSize, ['10', '25', '50', '100', 'all'], true)) {
+            throw new \InvalidArgumentException('Ungültige Seite oder Seitengröße.');
+        }
+        $filter = new FindingReadFilter(
+            domain: $get('domain'),
+            assessment: $get('assessment'),
+            observation: $get('observation'),
+            contact: $get('contact'),
+            scope: $scope,
+            legacyStatus: $legacyStatus,
+            legacyBucket: $legacyBucket,
+            type: $get('type'),
+            severity: $get('severity'),
+            exactDomain: $exactDomain === '1',
         );
-        if ($selectedPageSize !== 'all' && $totalPages > 1) {
-            $pagination = '<div class="pagination">'
-                .'<div class="pagination-actions">'
-                .($totalPages > 1 ? '<a href="'.$this->escape($currentPage > 1 ? $buildPageUrl($currentPage - 1) : '#').'#findings"'.$prevDisabled.'>Previous</a>' : '')
-                .($totalPages > 1 ? '<a href="'.$this->escape($currentPage < $totalPages ? $buildPageUrl($currentPage + 1) : '#').'#findings"'.$nextDisabled.'>Next</a>' : '')
-                .'</div>'
-                .'</div>';
-        }
 
+        return [$filter, $page, $pageSize];
+    }
+
+    /** @return array<string, string> */
+    private function filterQuery(FindingReadFilter $filter): array
+    {
+        return array_filter([
+            'scope' => $filter->scope,
+            'domain' => $filter->domain,
+            'assessment' => $filter->assessment,
+            'observation' => $filter->observation,
+            'contact' => $filter->contact,
+            'legacy_status' => $filter->legacyStatus,
+            'legacy_bucket' => $filter->legacyBucket,
+            'type' => $filter->type,
+            'severity' => $filter->severity,
+            'exact_domain' => $filter->exactDomain ? '1' : '',
+        ], static fn (string $value): bool => $value !== '');
+    }
+
+    /** @param list<FindingReadView> $findings */
+    private function renderHomePage(array $findings, array $stats, array $screenshotStats, string $defaultPayload, FindingReadFilter $filter, array $pagination, ?string $message, ?string $error): string
+    {
+        $escape = fn (mixed $value): string => $this->escape($value);
+        $filterQuery = $this->filterQuery($filter);
+        $pageUrl = static fn (int $page): string => '/?'.http_build_query($filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $page]).'#findings';
         ob_start();
-        ?>
-<section class="panel">
-  <?= $messageBox ?>
-  <?= $errorBox ?>
-  <div class="stats">
-    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, '')) ?>"><span>Total</span><strong><?= $this->escape($stats['total']) ?></strong></a>
-    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'open')) ?>"><span>Open</span><strong><?= $this->escape($stats['open']) ?></strong></a>
-    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'fixed')) ?>"><span>Fixed</span><strong><?= $this->escape($stats['fixed']) ?></strong></a>
-    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'manual_review')) ?>"><span>Manual Review</span><strong><?= $this->escape($stats['manual_review']) ?></strong></a>
-    <a class="stat stat-link" href="<?= $this->escape($buildPageUrl(1, 'unchecked')) ?>"><span>Unchecked</span><strong><?= $this->escape($stats['unchecked']) ?></strong></a>
-    <div class="stat"><span>Screenshots queued</span><strong><?= $this->escape($stats['screenshots_queued']) ?></strong></div>
-    <div class="stat"><span>Screenshots running</span><strong><?= $this->escape($stats['screenshots_running']) ?></strong></div>
-    <div class="stat"><span>Screenshots failed</span><strong><?= $this->escape($stats['screenshots_failed']) ?></strong></div>
-  </div>
-  <div class="section-head">
-    <div>
-      <h2>Intake</h2>
-    </div>
-  </div>
-  <form method="post" action="/findings">
-    <label>URL <input name="url" placeholder="https://example.com/search?q=%3Csvg%20onload=alert(1)%3E" required></label>
-    <label>Payload <input name="payload" placeholder="<?= $this->escape($defaultPayload) ?>" value="<?= $this->escape($defaultPayload) ?>"></label>
-    <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token><?= $this->escape($defaultPayload) ?></code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token><?= $this->escape($defaultPayload) ?></span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token><?= $this->escape($defaultPayload) ?></span>/)&gt;</code></p>
-    <label>Notes <textarea name="annotate" placeholder="Optional note."></textarea></label>
-    <button type="submit">Save and Verify</button>
-    <script>
-(() => {
-  const payloadInput = document.querySelector('input[name="payload"]');
-  const tokens = document.querySelectorAll('[data-payload-token]');
-  const fallback = <?= json_encode($defaultPayload) ?>;
-  const update = () => {
-    const value = (payloadInput && payloadInput.value ? payloadInput.value.trim() : '') || fallback;
-    tokens.forEach((token) => {
-      token.textContent = value;
-    });
-  };
-  if (payloadInput) {
-    payloadInput.addEventListener('input', update);
-  }
-  update();
-})();
-    </script>
-  </form>
-</section>
+        try {
+            require dirname(__DIR__, 2).'/templates/home.php';
+            $body = ob_get_clean();
+        } catch (\Throwable $exception) {
+            ob_end_clean();
+            throw $exception;
+        }
 
-<section class="panel wide" id="findings">
-  <div class="section-head">
-    <div>
-      <h2>Findings</h2>
-      <p class="hint">Compact overview for intake and rechecks.</p>
-    </div>
-  </div>
-  <form method="get" action="/#findings" class="filters">
-    <div class="split">
-      <label>Domain <input name="domain" value="<?= $this->escape($domainFilter) ?>" placeholder="example.com"></label>
-      <label>Status / Bucket
-        <select name="status" onchange="this.form.submit()">
-          <option value="">Any status</option>
-          <optgroup label="Buckets">
-            <?php foreach (['open' => 'Open', 'manual_review' => 'Manual Review', 'unchecked' => 'Unchecked'] as $value => $label): ?>
-              <option value="<?= $this->escape($value) ?>"<?= $selectedFilter === $value ? ' selected' : '' ?>><?= $this->escape($label) ?></option>
-            <?php endforeach; ?>
-          </optgroup>
-          <optgroup label="Statuses">
-            <?php foreach (['new' => 'New', 'verified' => 'Verified', 'fixed' => 'Fixed'] as $value => $label): ?>
-              <option value="<?= $this->escape($value) ?>"<?= $selectedFilter === $value ? ' selected' : '' ?>><?= $this->escape($label) ?></option>
-            <?php endforeach; ?>
-          </optgroup>
-        </select>
-      </label>
-    </div>
-    <input type="hidden" name="pageSize" value="<?= $this->escape($selectedPageSize) ?>">
-    <div class="filter-actions">
-      <button type="submit">Search</button>
-      <a class="button ghost" href="/">Reset</a>
-    </div>
-  </form>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>ID</th><th>Domain</th><th>Status</th><th>Submitted</th><th>Last Recheck</th></tr></thead>
-      <tbody><?= $findingTableRows ?></tbody>
-    </table>
-  </div>
-  <div class="pagination-footer">
-    <?= $showingLine ?>
-    <?= $pagination ?>
-  </div>
-</section>
-<?php
-        return $this->renderLayout(
-            title: 'LibreBugBounty UI',
-            body: ob_get_clean(),
-        );
+        return $this->renderLayout(title: 'LibreBugBounty UI', body: $body);
     }
 
     private function renderLayout(string $title, string $body): string
@@ -650,6 +564,7 @@ final class WebController
             .'button.danger,.button.danger{background:#b91c1c;color:#fff}'
             .'.actions,.filter-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.inline-form{display:inline-block}.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row-actions button,.row-actions .button{padding:8px 12px;min-height:36px;font-size:.86rem}.section-head{display:grid;gap:10px;margin-bottom:14px;grid-template-columns:1fr auto;align-items:end}.hint{color:var(--muted);font-size:.9rem}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:.95rem}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.row-link{display:inline-flex;align-items:center;gap:8px;text-decoration:none}.row-link:hover code{text-decoration:underline}.detail-grid{display:grid;gap:18px;grid-template-columns:1.1fr .9fr;align-items:start}.detail-list{display:grid;gap:12px;margin:16px 0 0}.detail-list>div{display:grid;gap:4px;padding:10px 0;border-bottom:1px solid var(--border)}.detail-list dt{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.detail-list dd{margin:0;font-size:.98rem}.shot-grid{display:grid;gap:12px}.shot-card{margin:0;padding:12px;border:1px solid var(--border);border-radius:16px;background:rgba(255,255,255,.6)}.shot-card img{display:block;width:100%;height:auto;border-radius:12px}.shot-card figcaption{margin-top:8px;font-size:.82rem;color:var(--muted)}.pagination-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 0}.pagination-summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.per-page-form{display:inline-flex;align-items:center;gap:8px}.per-page-form select{width:auto;min-width:76px}.pagination{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap}.pagination-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pagination-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 16px;border-radius:999px;border:1px solid rgba(15,109,72,.22);text-decoration:none;color:var(--accent);font-weight:700}.pagination-actions a[aria-disabled=\"true\"]{pointer-events:none;opacity:.45}.badge{display:inline-flex;align-items:center;padding:5px 11px;border-radius:999px;font-size:.8rem;font-weight:800;letter-spacing:.01em;border:1px solid transparent;text-transform:none;width:max-content;max-width:100%}.status-pills{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.14);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.14);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.16);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.16);color:#0b4d34}.badge.meta.contacted{background:rgba(37,99,235,.12);color:#1d4ed8}.badge.bucket.open{background:rgba(30,64,175,.10);color:#1e40af}.badge.bucket.fixed{background:rgba(15,109,72,.10);color:#0b4d34}.badge.bucket.manual_review{background:rgba(217,119,6,.12);color:#b45309}.badge.bucket.unchecked{background:rgba(107,114,128,.10);color:#4b5563}.utility-nav{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding:16px 24px 0}.utility-nav a{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:8px 14px;border-radius:999px;border:1px solid rgba(15,109,72,.18);text-decoration:none;color:var(--accent);font-weight:700;background:rgba(255,255,255,.55)}.about-dialog{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(32,22,12,.42);backdrop-filter:blur(8px);z-index:50}.about-dialog:target{display:flex}.about-dialog__panel{width:min(720px,100%);background:var(--panel);border:1px solid var(--border);border-radius:24px;box-shadow:var(--shadow);padding:24px;position:relative}.about-dialog__close{position:absolute;top:16px;right:16px;display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:8px 12px;border-radius:999px;text-decoration:none;border:1px solid rgba(15,109,72,.18);background:rgba(255,255,255,.72);color:var(--accent);font-weight:700}.about-hero{display:grid;gap:10px;padding-right:92px}.about-title{display:grid;gap:4px}.about-title h1{margin:0;font-size:clamp(2rem,5vw,3.2rem);line-height:1.02;letter-spacing:-.03em}.about-version{font-size:1rem;font-weight:700;color:var(--muted)}.about-subtitle{margin:0;font-size:1.02rem;color:var(--muted)}.about-section{display:grid;gap:12px}.about-section p{margin:0;line-height:1.55}.about-section a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}.about-section a:hover{text-decoration-thickness:2px}.about-note{color:var(--muted);font-size:.96rem}.about-changelog{display:grid;gap:8px;margin:4px 0 0;padding-left:18px;color:var(--text)}.about-changelog li{line-height:1.45}.about-actions{justify-content:center}.about-actions .button{min-width:min(100%,320px);background:var(--accent);color:#f4fff8;box-shadow:0 10px 22px rgba(15,109,72,.18);text-decoration:none}.about-actions .button:hover{filter:brightness(1.04)}'
             .'.notice{padding:12px 14px;border-radius:14px;margin-bottom:16px;border:1px solid transparent}.notice.success{background:rgba(15,109,72,.10);color:#0b4d34;border-color:rgba(15,109,72,.16)}.notice.error{background:rgba(185,28,28,.10);color:#7f1d1d;border-color:rgba(185,28,28,.16)}'
+            .'.panel{min-width:0}.table-wrap{max-width:100%}'
             .'.badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:.82rem;font-weight:700;text-transform:lowercase;letter-spacing:.02em;border:1px solid transparent}.badge-stack{display:grid;gap:6px}.badge.status.new{background:rgba(59,130,246,.10);color:#1d4ed8}.badge.status.verified{background:rgba(245,158,11,.12);color:#92400e}.badge.status.reported{background:rgba(140,92,246,.12);color:#6d28d9}.badge.status.fixed{background:rgba(15,109,72,.12);color:#0b4d34}.badge.status.wontfix,.badge.status.duplicate{background:rgba(107,114,128,.12);color:#374151}.badge.review.manual_checking{background:rgba(245,158,11,.14);color:#92400e}.badge.review.confirmed_fixed{background:rgba(15,109,72,.14);color:#0b4d34}.badge.meta.contacted{background:rgba(37,99,235,.12);color:#1d4ed8}'
             .'@media (max-width:720px){main{padding-left:16px;padding-right:16px}.section-head{grid-template-columns:1fr}.split{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'
             .'@media (max-width:540px){.stats{grid-template-columns:1fr}}'
@@ -1009,8 +924,8 @@ final class WebController
       <span class="hint">Manuell · <?= $this->escape($finding->getAssessedAt()?->format(DATE_ATOM) ?? 'Zeitpunkt unbekannt') ?></span>
     </p>
   <?php else: ?>
-    <p>Keine aufgezeichnete manuelle Bewertung.</p>
-    <?php if ($finding->hasProtectedAssessment() || ($latestRun === null && $finding->getStatus() !== FindingStatus::NEW)): ?>
+    <p><?= $this->escape(FindingReadLabels::assessment(null)) ?>.</p>
+    <?php if ($finding->getStatus() !== FindingStatus::NEW || $finding->getReviewState() !== null): ?>
       <p class="hint">Altbestand · Herkunft unklar: Status <code><?= $this->escape($finding->getStatus()) ?></code>, Review <code><?= $this->escape($finding->getReviewState() ?? 'unbekannt') ?></code>. Zeitpunkt und Entscheidungsgrundlage unbekannt.</p>
     <?php endif; ?>
   <?php endif; ?>
@@ -1019,7 +934,7 @@ final class WebController
   <?php endif; ?>
   <h4>Letzte technische Beobachtung</h4>
   <?php if ($latestRun !== null): ?>
-    <p><code><?= $this->escape($latestRun->getResult()) ?></code> · <?= $this->escape($latestAt?->format(DATE_ATOM)) ?><br>
+    <p><?= $this->escape(FindingReadLabels::observation($latestRun->getResult())) ?> · <?= $this->escape($latestAt?->format(DATE_ATOM)) ?><br>
       <span class="hint">Technischer Lauf · <?= $this->escape($latestRun->getMode()) ?> · <code><?= $this->escape($latestRun->getId()) ?></code></span>
     </p>
     <?php if ($needsConfirmation): ?>
@@ -1029,7 +944,7 @@ final class WebController
       <p class="notice success"><?= $newerObservation ? 'Neue technische' : 'Technische' ?> Beobachtung vom <?= $this->escape($latestAt?->format(DATE_ATOM)) ?>. Deine Bewertung bleibt erhalten.</p>
     <?php endif; ?>
   <?php else: ?>
-    <p class="hint">Keine technische Beobachtung aufgezeichnet.</p>
+    <p class="hint"><?= $this->escape(FindingReadLabels::observation(null)) ?>.</p>
   <?php endif; ?>
   <form method="post" action="/findings/<?= $this->escape($finding->getId()) ?>/assessment" id="assessment-form">
     <?= $this->csrfField('finding_assessment_'.$finding->getId()) ?>
@@ -1115,12 +1030,7 @@ final class WebController
 
     private function assessmentLabel(string $assessment, ?string $reason = null): string
     {
-        return match ($assessment) {
-            'confirmed' => 'Befund bestätigt',
-            'fixed' => 'Behoben',
-            'discarded' => $reason === 'duplicate' ? 'Verworfen · Duplikat' : 'Verworfen',
-            default => $assessment,
-        };
+        return FindingReadLabels::assessment($assessment, $reason);
     }
 
     private function csrfField(string $tokenId): string
@@ -1133,80 +1043,6 @@ final class WebController
         $token = $request->request->all()['_token'] ?? null;
 
         return is_string($token) && $this->csrf->isTokenValid(new CsrfToken($tokenId, $token));
-    }
-
-    private function statusCell(Finding $finding): string
-    {
-        $pills = [];
-        $review = match ($finding->getReviewState()) {
-            ReviewState::MANUAL_CHECKING => $this->badge('review manual_checking', 'Manual checking'),
-            ReviewState::MANUALLY_CHECKED => $this->badge('review manual_checking', 'Manually checked'),
-            ReviewState::CONFIRMED_FIXED => $this->badge('review confirmed_fixed', 'Confirmed fixed'),
-            default => '',
-        };
-
-        if ($review !== '') {
-            $pills[] = $review;
-        }
-
-        $pills[] = $this->badge('status '.$finding->getStatus(), $this->humanizeBadgeLabel($finding->getStatus()));
-
-        if ($finding->getContactedAt() !== null) {
-            $pills[] = $this->badge('meta contacted', 'Contacted');
-        }
-
-        $bucket = $this->bucketForFinding($finding);
-        if ($bucket !== null && $bucket !== $finding->getStatus()) {
-            $pills[] = $this->badge('bucket '.$bucket, $this->humanizeBadgeLabel($bucket));
-        }
-
-        return '<div class="status-pills">'.implode('', $pills).'</div>';
-    }
-
-    private function badge(string $class, string $label): string
-    {
-        return sprintf('<span class="badge %s">%s</span>', $this->escape($class), $this->escape($label));
-    }
-
-    private function bucketForFinding(Finding $finding): ?string
-    {
-        if ($finding->getReviewState() === ReviewState::MANUAL_CHECKING) {
-            return 'manual_review';
-        }
-
-        if ($finding->getStatus() === 'fixed') {
-            return 'fixed';
-        }
-
-        if ($finding->getLastRetestedAt() === null) {
-            return 'unchecked';
-        }
-
-        if (in_array($finding->getStatus(), ['new', 'verified', 'reported'], true)
-            && in_array($finding->getReviewState(), [null, ReviewState::MANUALLY_CHECKED], true)
-        ) {
-            return 'open';
-        }
-
-        return null;
-    }
-
-    private function humanizeBadgeLabel(string $value): string
-    {
-        return match ($value) {
-            'manual_review' => 'Manual review',
-            'manual_checking' => 'Manual checking',
-            'confirmed_fixed' => 'Confirmed fixed',
-            'new' => 'New',
-            'verified' => 'Verified',
-            'reported' => 'Reported',
-            'fixed' => 'Fixed',
-            'wontfix' => 'Wontfix',
-            'duplicate' => 'Duplicate',
-            'open' => 'Open',
-            'unchecked' => 'Unchecked',
-            default => ucfirst(str_replace('_', ' ', $value)),
-        };
     }
 
     private function redirectMessage(string $message, string $path = '/'): RedirectResponse

@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Finding;
 use App\Repository\FindingRepository;
+use App\Value\FindingReadLabels;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
@@ -156,31 +157,32 @@ final class PriorityExportController
                     .'<span class="severity '.self::e($finding->getSeverity()).'">'.self::e($finding->getSeverity()).'</span> '
                     .'<a href="/findings/'.rawurlencode($finding->getId()).'">Reportseite</a> '
                     .'<span class="muted">'.self::e($finding->getTitle()).' · '.self::e($date).'</span>'
+                    .'<span class="muted"> · Altstatus: '.self::e($finding->getStatus()).' · Manuelle Bewertung: '.self::e(FindingReadLabels::assessment($finding->getManualAssessment(), $finding->getDiscardReason())).'</span>'
                     .($target !== null ? ' · <a href="'.self::e($target).'" target="_blank" rel="noreferrer">Ziel</a>' : '')
                     .($report !== null ? ' · <a href="'.self::e($report).'" target="_blank" rel="noreferrer">externer Report</a>' : '')
                     .'<form method="post" action="/findings/'.rawurlencode($finding->getId()).'/mark-contacted" class="contact-form">'
                     .'<input type="hidden" name="_token" value="'.self::e($this->csrf->getToken('finding_mark_contacted_'.$finding->getId())->getValue()).'">'
                     .'<input type="hidden" name="return_to" value="/operator-priority?days='.self::e((string) $days).'">'
-                    .'<button type="submit">Kontakted – ausblenden</button></form>'
+                    .'<button type="submit">Kontaktiert – ausblenden</button></form>'
                     .'</li>';
             }
 
             $rows .= '<tr data-domain="'.self::e(strtolower($hostname)).'" data-country="'.self::e($country).'" data-size="'.self::e(strtolower((string) $research['size'])).'">'
                 .'<td class="rank">'.$rank.'</td>'
-                .'<td><a class="domain" href="'.self::e($domainUrl).'" target="_blank" rel="noreferrer">'.self::e($hostname).'</a><div class="muted">'.self::e($country).' · '.count($group['findings']).' Findings</div></td>'
+                .'<td><a class="domain" href="'.self::e($domainUrl).'" target="_blank" rel="noreferrer">'.self::e($hostname).'</a><div class="muted">'.self::e($country).' · '.count($group['findings']).' Fälle in der Auswahl</div></td>'
                 .'<td>'.self::e((string) $research['operator']).'<div class="muted">'.self::e((string) $research['seat']).'</div></td>'
                 .'<td><strong>'.self::e((string) $research['size']).'</strong><div class="facts">'.self::e((string) $research['facts']).'</div>'.$this->sourceLinks((string) $research['evidence']).'</td>'
                 .'<td><ul class="finding-list">'.$findingRows.'</ul></td>'
                 .'</tr>';
         }
 
-        $noRows = $rows === '' ? '<tr><td colspan="5" class="empty">Keine offenen, nicht kontaktierten Findings im gewählten Zeitraum.</td></tr>' : '';
+        $noRows = $rows === '' ? '<tr><td colspan="5" class="empty">Keine nicht kontaktierten Fälle mit Altstatus ungleich fixed im gewählten Zeitraum.</td></tr>' : '';
         $title = 'Live Betreiber-Priorität';
 
         return '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             .'<title>'.self::e($title).'</title><style>'.$this->css().'</style></head><body><main>'
-            .'<header><div><p class="eyebrow">LibreBugBounty · dynamischer HTML-Export</p><h1>'.self::e($title).'</h1><p class="intro">Beim Reload werden Datenbankänderungen übernommen. Kontaktierte oder gefixte Findings verschwinden automatisch aus dieser Ansicht.</p></div><nav><a href="/">Dashboard</a><button type="button" onclick="location.reload()">Neu laden</button></nav></header>'
-            .'<section class="stats"><div><strong>'.self::e((string) $findingCount).'</strong><span>offene Findings</span></div><div><strong>'.self::e((string) count($groups)).'</strong><span>Betreiber-Domains</span></div><div><strong>'.self::e((string) $deCount).'</strong><span>Deutschland</span></div><div><strong>'.self::e((string) (count($groups) - $deCount)).'</strong><span>EU / sonstige</span></div></section>'
+            .'<header><div><p class="eyebrow">LibreBugBounty · dynamischer HTML-Export</p><h1>'.self::e($title).'</h1><p class="intro">Die Auswahl zeigt Fälle ohne Kontaktzeitpunkt und mit Altstatus ungleich fixed. Verworfene Fälle sind ausgeblendet. Beim Neuladen werden Datenbankänderungen übernommen.</p></div><nav><a href="/">Dashboard</a><button type="button" onclick="location.reload()">Neu laden</button></nav></header>'
+            .'<section class="stats"><div><strong>'.self::e((string) $findingCount).'</strong><span>Fälle in der Auswahl</span></div><div><strong>'.self::e((string) count($groups)).'</strong><span>Domains in der Auswahl</span></div><div><strong>'.self::e((string) $deCount).'</strong><span>Deutschland</span></div><div><strong>'.self::e((string) (count($groups) - $deCount)).'</strong><span>EU / sonstige</span></div></section>'
             .'<section class="meta"><span>Zeitraum: '.self::e($from->format('Y-m-d')).' bis '.self::e($until->modify('-1 day')->format('Y-m-d')).' ('.$days.' Tage)</span><span>Stand: '.self::e($generated).'</span><a href="/operator-priority?days=14">14 Tage</a><a href="/operator-priority?days=30">30 Tage</a></section>'
             .'<section class="filters"><label>Suche <input id="search" type="search" placeholder="Domain oder Betreiber"></label><label>Gebiet <select id="country"><option value="">alle</option><option>Deutschland</option><option>EU / sonstige</option></select></label><label>Größe <select id="size"><option value="">alle</option><option value="large">large</option><option value="medium">medium</option><option value="small">small</option><option value="micro">micro</option><option value="unknown">unknown</option></select></label><label class="check"><input id="unknown" type="checkbox"> unknown ausblenden</label></section>'
             .'<div class="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>Betreiber</th><th>Größe / Evidenz</th><th>Findings und Aktionen</th></tr></thead><tbody id="rows">'.$rows.$noRows.'</tbody></table></div>'

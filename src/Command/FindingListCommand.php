@@ -3,10 +3,10 @@
 namespace App\Command;
 
 use App\Repository\DomainRepository;
-use App\Repository\FindingRepository;
+use App\Dto\FindingReadFilter;
+use App\Repository\FindingReadRepository;
 use App\Service\ValidationService;
-use App\Value\FindingSeverity;
-use App\Value\FindingStatus;
+use App\Value\FindingReadLabels;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,7 +19,7 @@ final class FindingListCommand extends Command
 {
     public function __construct(
         private readonly DomainRepository $domains,
-        private readonly FindingRepository $findings,
+        private readonly FindingReadRepository $findings,
         private readonly ValidationService $validation,
     ) {
         parent::__construct();
@@ -29,7 +29,11 @@ final class FindingListCommand extends Command
     {
         $this
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, 'Filter by hostname.')
-            ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Filter by status.')
+            ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Filter by stored legacy status; does not imply a manual assessment.')
+            ->addOption('assessment', null, InputOption::VALUE_REQUIRED, 'Manual assessment: confirmed, fixed, discarded or unknown; discarded requires an archive scope.')
+            ->addOption('observation', null, InputOption::VALUE_REQUIRED, 'Latest technical result: still_vulnerable, fixed, inconclusive, error, pending or none.')
+            ->addOption('contact', null, InputOption::VALUE_REQUIRED, 'Contact timestamp present: yes or no.')
+            ->addOption('scope', null, InputOption::VALUE_REQUIRED, 'Scope: active (default), discarded, duplicates or all.')
             ->addOption('type', null, InputOption::VALUE_REQUIRED, 'Filter by finding type.')
             ->addOption('severity', null, InputOption::VALUE_REQUIRED, 'Filter by severity.')
         ;
@@ -47,37 +51,53 @@ final class FindingListCommand extends Command
             }
         }
 
-        $status = $input->getOption('status') ?: null;
-        $type = $input->getOption('type') ?: null;
-        $severity = $input->getOption('severity') ?: null;
+        $status = (string) ($input->getOption('status') ?? '');
+        // Preserve explicit legacy archive reads, while ordinary reads ignore them.
+        $scope = (string) ($input->getOption('scope') ?? match ($status) {
+            'discarded' => 'discarded',
+            'duplicate' => 'duplicates',
+            default => 'active',
+        });
+        try {
+            $filter = new FindingReadFilter(
+                domain: $domain?->getHostname() ?? '',
+                assessment: (string) ($input->getOption('assessment') ?? ''),
+                observation: (string) ($input->getOption('observation') ?? ''),
+                contact: (string) ($input->getOption('contact') ?? ''),
+                scope: $scope,
+                legacyStatus: $status,
+                type: (string) ($input->getOption('type') ?? ''),
+                severity: (string) ($input->getOption('severity') ?? ''),
+                exactDomain: $domain !== null,
+            );
+        } catch (\InvalidArgumentException $error) {
+            $io->error($error->getMessage());
 
-        if ($status !== null) {
-            if (!in_array($status, FindingStatus::values(), true)) {
-                throw new \InvalidArgumentException('Invalid --status value.');
-            }
-        }
-
-        if ($severity !== null) {
-            if (!in_array($severity, FindingSeverity::values(), true)) {
-                throw new \InvalidArgumentException('Invalid --severity value.');
-            }
+            return Command::INVALID;
         }
 
         $rows = [];
-        foreach ($this->findings->findByDomainAndStatus($domain, $status, $type, $severity) as $finding) {
+        foreach ($this->findings->findPage($filter, max(1, $this->findings->count($filter))) as $finding) {
             $rows[] = [
-                substr($finding->getId(), 0, 8),
-                $finding->getDomain()->getHostname(),
-                $finding->getType(),
-                $finding->getSeverity(),
-                $finding->getStatus(),
-                $finding->getTitle(),
-                $finding->getSubmittedAt()?->format(DATE_ATOM) ?? 'n/a',
-                $finding->getLastRetestedAt()?->format(DATE_ATOM) ?? 'n/a',
+                substr($finding->id, 0, 8),
+                $finding->domain,
+                $finding->type,
+                $finding->severity,
+                FindingReadLabels::assessment($finding->assessment, $finding->discardReason),
+                $finding->assessedAt?->format(DATE_ATOM) ?? 'unbekannt',
+                FindingReadLabels::observation($finding->observationResult),
+                $finding->observationAt?->format(DATE_ATOM) ?? 'unbekannt',
+                $finding->observationMode ?? 'unbekannt',
+                FindingReadLabels::contact($finding->contactedAt),
+                $finding->contactedAt?->format(DATE_ATOM) ?? 'unbekannt',
+                $finding->legacyStatus.' / '.($finding->legacyReviewState ?? 'unbekannt'),
+                $finding->title,
+                $finding->submittedAt?->format(DATE_ATOM) ?? 'n/a',
             ];
         }
 
-        $io->table(['id', 'domain', 'type', 'severity', 'status', 'title', 'submittedAt', 'lastRetestedAt'], $rows);
+        $io->note('Bewertung, technische Beobachtung und Kontakt sind unabhängig. Altstatus / Review belegt keine frühere manuelle Entscheidung; deren Herkunft kann unklar sein.');
+        $io->table(['id', 'domain', 'type', 'severity', 'Bewertung', 'Bewertet am', 'Letzte Beobachtung', 'Beobachtet am', 'Modus', 'Kontakt', 'Kontaktiert am', 'Altstatus / Review', 'title', 'submittedAt'], $rows);
 
         return Command::SUCCESS;
     }

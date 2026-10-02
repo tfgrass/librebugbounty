@@ -142,7 +142,7 @@ final class DomainExportCommandTest extends UnitTestCase
         self::assertStringContainsString('"hostname": "gamma.example.com"', $tester->getDisplay());
     }
 
-    public function testOverviewGroupsDomainsByFixedContactedAndUncontacted(): void
+    public function testOverviewGroupsDomainsByLegacyFixedContactedAndUncontacted(): void
     {
         $domains = new InMemoryDomainRepository();
 
@@ -223,7 +223,7 @@ final class DomainExportCommandTest extends UnitTestCase
         self::assertSame(Command::SUCCESS, $tester->execute(['--overview' => true]));
 
         $display = $tester->getDisplay();
-        self::assertStringContainsString('== marked fixed (1) ==', $display);
+        self::assertStringContainsString('== Altstatus fixed (1) ==', $display);
         self::assertStringContainsString("gamma.example.com\n", $display);
         self::assertStringContainsString('== marked contacted (1) ==', $display);
         self::assertStringContainsString("beta.example.com\n", $display);

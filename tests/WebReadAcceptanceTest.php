@@ -89,7 +89,7 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         self::assertSame(200, $response->getStatusCode());
         preg_match_all('#href="/findings/([a-f0-9-]+)"#', $response->getContent(), $links);
         self::assertCount(10, array_unique($links[1]));
-        self::assertStringContainsString('of 5500 findings', $response->getContent());
+        self::assertStringContainsString('data-total-filtered="5500"', $response->getContent());
         $next = $this->get('/?pageSize=10&page=2&status=new&domain=localhost');
         preg_match_all('#href="/findings/([a-f0-9-]+)"#', $next->getContent(), $nextLinks);
         self::assertCount(10, array_unique($nextLinks[1]));

@@ -288,12 +288,13 @@ verworfener Fälle bleibt ein möglicher gesonderter Bedienweg.
 
 **Vorläufiger Paketzuschnitt auf Nachfrage des Nutzers:** Abschnitt 3 in zwei
 einzeln bewertbare Ergebnisse teilen. 3a wurde anschließend beauftragt und umgesetzt;
-3b und weitere Erweiterungen bleiben Vorschläge.
+3b wurde danach ebenfalls ausdrücklich beauftragt. Weitere Erweiterungen bleiben
+Vorschläge.
 
 | Paket | Nutzbares Ergebnis und Grenze |
 | --- | --- |
 | 3a – Einen Fall verlässlich bewerten | **Umgesetzt und abgenommen:** In der bestehenden Detailansicht bei `inconclusive` bestätigen, als behoben markieren oder verwerfen; Duplikatkennzeichnung und unabhängiger Kontaktzeitpunkt. Verworfene Fälle werden im normalen Arbeiten ignoriert. Spätere technische Beobachtungen erhalten das manuelle Urteil. Unklare Altwerte bleiben erkennbar. |
-| 3b – Bestand konsistent lesen und filtern | Übersicht, bestehende Filter und Zähler unterscheiden manuelles Urteil, letzte technische Beobachtung und Kontaktstand. Begriffe und Ergebnisse stimmen überein. Neue Sichtungsgründe und deren Zähler entstehen erst im Review-Paket. |
+| 3b – Bestand konsistent lesen und filtern | **Beauftragt und umgesetzt:** Übersicht, Filter und Zähler unterscheiden aufgezeichnetes manuelles Urteil, letzte gespeicherte technische Beobachtung und Kontaktstand; Web und CLI verwenden dieselben Leseregeln. Altwerte und Archiv bleiben ausdrücklich auffindbar. Neue Sichtungsgründe und deren Zähler entstehen erst im Review-Paket. [Abnahme](abnahme-abschnitt-3b.md). |
 | Abschnitt 4 – Betriebsnachweise abschließen | Frischen isolierten DDEV-Aufbau und die verbleibende Betriebs-/Übernahmeabnahme nachweisen. Sicherung, Restore-Prüfung und Übernahmeprüfung vor schreibenden Änderungen gelten bereits für jedes betroffene Paket. |
 | Späteres Review-Paket | Sichtungsarbeitsliste, bearbeitbare Notizen, Bildvergleich und gezieltes Erledigen beziehungsweise Zurückstellen von Hinweisen. Die genauen Arbeitsregeln werden vor diesem Paket geklärt. |
 | Spätere Meldungspakete | Zuerst eine bearbeitbare Meldung aus ausgewählten Fällen; Codex-Entwürfe und Gruppierung bleiben gesonderte Erweiterungen. |

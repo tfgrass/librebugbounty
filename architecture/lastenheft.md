@@ -1,6 +1,6 @@
 # Lastenheft: LibreBugBounty stabilisieren und strukturieren
 
-Stand: 2026-10-02 · Version 0.7 · Arbeitsfassung für die Umsetzung mit Codex
+Stand: 2026-10-02 · Version 0.8 · Arbeitsfassung für die Umsetzung mit Codex
 
 Umsetzungsstand: Arbeitsabschnitte 1 und 2 wurden ausdrücklich beauftragt und
 umgesetzt. [Abnahme Abschnitt 1](abnahme-abschnitt-1.md),
@@ -13,7 +13,9 @@ Abschnitte sind nicht automatisch beauftragt oder abgenommen.
 
 Anschließend wurde der geklärte Teilabschnitt 3a ausdrücklich beauftragt und
 umgesetzt: [Bewertung, Kontaktzeitpunkt, Verwerfen und Historie](abnahme-abschnitt-3a.md).
-Der vorgeschlagene Abschnitt 3b und das spätere Review-Paket bleiben separate Arbeit.
+Abschnitt 3b wurde danach ebenfalls ausdrücklich beauftragt und umgesetzt:
+[Bestand konsistent lesen und filtern](abnahme-abschnitt-3b.md).
+Das spätere Review-Paket bleibt separate Arbeit.
 
 ## 1. Zweck und Verbindlichkeit
 
@@ -108,6 +110,13 @@ Initialauftrag aufrufbar und zeigt den Ausfall getrennt an.
 - Ein Seitenaufruf verändert keine fachlichen Daten und löscht keine Belegverweise.
 - Fallbewertung, technische Fehler, Belegverfügbarkeit und Kontaktinformationen
   sind unterscheidbar. Anzeige und Filter verwenden dieselbe Bedeutung.
+- **Konkretisierung in 3b:** Aufgezeichnetes manuelles Urteil, letzte gespeicherte
+  technische Beobachtung und Kontaktzeitpunkt sind getrennte, kombinierbare
+  Filterdimensionen. Zähler und ihre Ziellisten verwenden dieselben Abfragen.
+  Ein Rohstatus `fixed` ist keine nachträglich nachgewiesene manuelle Behebung.
+  Keine Beobachtung bedeutet keine gespeicherte Laufzeile, unabhängig von alten
+  Retest-Zeitstempeln. Archivscope umfasst neue und historisch verworfene Fälle;
+  deren explizites Wiederfinden erfindet keine manuelle Herkunft.
 - Bei mindestens 5.500 synthetischen Fällen bleibt die Übersicht paginiert;
   eine einzelne Seite lädt nicht sämtliche Belegdateien des Bestands.
 
@@ -333,8 +342,9 @@ Abnahmeprotokollen.
    gemeinsame Begriffe/Filter und Controller-/Template-Trennung. Mehrdeutige
    Altdaten separat kennzeichnen, statt historische Entscheidungen zu erfinden.
    Der konkretisierte Teil **3a – einen Fall verlässlich bewerten** ist umgesetzt
-   und abgenommen. **3b – Bestand konsistent lesen und filtern** bleibt der nächste
-   Vorschlag; [Zuschnitt](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
+   und abgenommen. **3b – Bestand konsistent lesen und filtern** wurde anschließend
+   beauftragt und umgesetzt; [Abnahme](abnahme-abschnitt-3b.md) und
+   [Zuschnitt](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 4. **Bestand übernehmen und Übergabe abschließen:** Migration und Wiederherstellung
    an Kopien prüfen, Dokumentation aktualisieren und Abnahmeprotokoll erstellen.
 
