@@ -590,7 +590,7 @@ final class WebController
     <label>Review Timeout (ms)
       <input name="review_timeout_ms" inputmode="numeric" value="<?= $this->escape($reviewTimeout) ?>" placeholder="45000">
     </label>
-    <p class="hint">New URLs are verified headlessly immediately. Their screenshots are queued separately and captured in the background.</p>
+    <p class="hint">New URLs are stored immediately with a queued screenshot. Intake does not run a headless verification; explicit review and retest actions use the timeout below.</p>
     <div class="actions">
       <button type="submit">Save settings</button>
       <a class="button ghost" href="/">Back to overview</a>
@@ -606,7 +606,7 @@ final class WebController
   </div>
   <div class="detail-list">
     <div><dt>Default Payload</dt><dd>Used when no payload is typed in the intake form or CLI defaults.</dd></div>
-    <div><dt>Intake Verification</dt><dd>Every newly stored URL is checked headlessly before the intake response returns. Screenshot capture remains asynchronous.</dd></div>
+    <div><dt>Intake processing</dt><dd>Intake confirms durable storage without running a headless check. Screenshot capture remains asynchronous.</dd></div>
     <div><dt>Review Timeout</dt><dd>Browser timeout for the review scan and browser retests.</dd></div>
   </div>
 </section>
