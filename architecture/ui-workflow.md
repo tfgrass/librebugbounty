@@ -343,8 +343,10 @@ Mehrfachimport ist damit kein Bestandteil des zunächst gewünschten Ergebnisses
 Die bestehende Gestaltung erhalten und daneben eine schönere Resolve-artige
 Ansicht anbieten ist die neu eingebrachte Ausbaumöglichkeit. Auf weitere Nachfrage
 bestätigt: Die API soll zunächst die beiden Oberflächen unterstützen; weitere
-eigenständige Clients sind kein aktuelles Ziel. Eine API und spätere Toasts wurden
-als mögliche Lösung vorgeschlagen, noch kein neuer Abschnitt beauftragt.
+eigenständige Clients sind kein aktuelles Ziel. Der Nutzer hat die vorgeschlagene
+Richtung aus schnellem Eingang, späteren Rückmeldungen und paralleler Oberfläche
+anschließend befürwortet und fragt nach dem nächsten Arbeitspaket. Noch kein neuer
+Implementierungsabschnitt beauftragt.
 
 **Beobachteter Stand bei `a8ae19d`:** Der Screenshot-Auftrag wird bereits mit dem
 neuen Finding gespeichert. Der Eingangscontroller wartet danach auf den synchronen
@@ -393,6 +395,22 @@ belastbaren Umsetzung sind außerdem die Wiederherstellbarkeit des Eingabeverlau
 und das Verhalten von Benachrichtigungen bei mehreren offenen Tabs festzulegen.
 Für die Grundrichtung reichen zunächst Fallverwaltung und Rückmeldungen; eine neue
 automatische Meldungs-/Versandfunktion ist damit nicht beschlossen.
+
+**Nächstes vorgeschlagenes Vorhaben: schneller Einzeleingang.** Die vorhandene
+Ansicht bleibt der erste nutzbare Arbeitsbereich. Zielabnahme: fünf kontrollierte
+lokale Beispiel-URLs nacheinander in einem Tab erfassen, ohne auf die späteren
+Ergebnisse zu warten. Jede Eingabe erhält ihren eigenen Fallbezug; gespeicherte
+Fälle, exakte Duplikate, Eingabefehler und später fehlgeschlagene Vorgänge bleiben
+unterscheidbar. Die Eingabe darf bei fehlgeschlagener Speicherung nicht verloren
+gehen. Damit entsteht die gemeinsame Grundlage für die folgende Studio-Ansicht.
+
+Als Startvorschlag für die verbleibenden Bedienungsdetails: Eingabeverlauf der
+aktuellen Sitzung nach Reload wieder sichtbar, einschließlich fehlgeschlagener
+Eingaben; Toasts nur im fokussierten Tab und beim Reload keine erneute Meldung
+sämtlicher alter Ergebnisse. Die dauerhaft serverseitig gespeicherten Fall- und
+Ergebnisstände bleiben in beiden Oberflächen lesbar. Ein zwischen Tabs geteilter,
+dauerhafter Eingangsverlauf wäre ein weitergehender Produktumfang. Diese Defaults
+sind Empfehlungen, noch keine gesondert bestätigten Produktentscheidungen.
 
 ## Szenarien für die jeweiligen Funktionspakete
 

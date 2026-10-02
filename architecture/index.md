@@ -109,20 +109,22 @@ Archiv umfasst auch historische Duplikat-/Verwerfungswerte.
 [Abnahme von 3b](abnahme-abschnitt-3b.md) dokumentiert Mischbestands-, Paging- und
 Leseprüfungen sowie lokale HTTP-/Browserabnahme. Keine Migration war nötig.
 
-Als nächster vorgeschlagener Abschnitt bleibt **4: Betriebsnachweise abschließen**,
+Weiter offen bleibt **4: Betriebsnachweise abschließen**,
 einschließlich des frischen isolierten DDEV-Aufbaus. Die Regeln zum Abarbeiten von
 Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
-**Aktuelles Sparring nach 3b:** Der Nutzer möchte häufig fünf einzelne URLs
+**Befürwortete Ausbaurichtung nach 3b:** Der Nutzer möchte häufig fünf einzelne URLs
 nacheinander eingeben können, mit sofort wieder nutzbarem Formular. Der aktuelle
 Eingangsrequest wartet trotz bereits eingereihtem Screenshot noch auf die technische
 Rückmeldung. Diskutiert werden eine getrennte Eingangsbestätigung und Ergebnisanzeige
 sowie eine parallele Resolve-Ansicht auf derselben Fallverwaltung. Bestätigter
-API-Umfang: zunächst zwei Oberflächen. Die Frontendwahl bleibt offen;
-dies beauftragt noch keine Umsetzung und ersetzt den
-offenen Betriebsnachweis aus Abschnitt 4 nicht.
+API-Umfang: zunächst zwei Oberflächen. Der Nutzer hat die Richtung befürwortet.
+Nächstes vorgeschlagenes Vorhaben ist der schnelle Eingang in der bisherigen
+Ansicht, danach die parallele Studio-Ansicht mit Eingang und Bestand. Die
+Frontendwahl bleibt offen. Die aktuelle Frage zum nächsten Paket beauftragt
+noch keine Implementierung; Abschnitt 4 bleibt als Betriebsnachweis offen.
 [Bedarf, beobachtete Grenze und vorläufiger Vorschlag](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
 
 Weitere bekannte Grenzen:
