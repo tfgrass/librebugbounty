@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const {
+  DEFAULT_CHALLENGE_WAIT_MS,
   DEFAULT_SCREENSHOT_SETTLE_MS,
+  challengeSnapshotIsActive,
   runScreenshot,
   withDisplayLease,
 } = require('./server');
@@ -24,10 +26,21 @@ function createScreenshotHarness(options = {}) {
   const page = new EventEmitter();
   let captureCount = 0;
   let dialogListenersAtContextClose = null;
+  let initScriptCount = 0;
 
-  page.url = () => 'https://fixture.test/final';
+  page.url = () => options.finalUrl || 'https://fixture.test/final';
+  page.frames = () => [];
+  page.getByRole = () => ({
+    first: () => ({ isVisible: async () => false }),
+  });
+  page.addInitScript = async () => {
+    initScriptCount += 1;
+  };
   page.goto = async () => {
     options.onGoto?.(page);
+    if (options.goto) {
+      return options.goto(page);
+    }
     return { status: () => 200 };
   };
 
@@ -60,6 +73,7 @@ function createScreenshotHarness(options = {}) {
       postCaptureDialogGraceMs: options.postCaptureDialogGraceMs ?? 0,
     },
     captureCount: () => captureCount,
+    initScriptCount: () => initScriptCount,
     dialogListenersAtContextClose: () => dialogListenersAtContextClose,
   };
 }
@@ -107,6 +121,89 @@ test('screenshots use a dialog observation window that covers common delayed pay
   assert.equal(result.captureMethod, 'desktop-page');
 });
 
+test('known browser-protection pages are recognized without matching ordinary pages', () => {
+  assert.equal(challengeSnapshotIsActive({ title: 'Just a moment…', bodyText: '' }), true);
+  assert.equal(challengeSnapshotIsActive({ title: 'Store', bodyText: 'Checking your browser before accessing the site' }), true);
+  assert.equal(challengeSnapshotIsActive({ title: 'Shop', bodyText: 'Products and checkout', selectorMatched: true }), true);
+  assert.equal(challengeSnapshotIsActive({ title: 'Shop', bodyText: 'Products and checkout' }), false);
+  assert.equal(DEFAULT_CHALLENGE_WAIT_MS, 30000);
+});
+
+test('a detected challenge gets another full dialog window after it clears', async () => {
+  const dialog = createDialog('dialog after challenge');
+  let settleWindows = 0;
+  const harness = createScreenshotHarness({
+    wait: async (milliseconds) => {
+      if (milliseconds === 250) {
+        settleWindows += 1;
+        if (settleWindows === 2) {
+          harness.page.emit('dialog', dialog);
+        }
+      }
+    },
+    capture: async () => dialog.isDismissed() ? 'dialog-was-dismissed' : 'dialog-after-challenge-image',
+  });
+  harness.dependencies.inspectChallengePage = async () => ({
+    active: true,
+    snapshot: { title: 'Just a moment…' },
+  });
+  harness.dependencies.responseIsChallenge = async () => true;
+  harness.dependencies.waitForChallengeToClear = async () => ({
+    cleared: true,
+    waitedMs: 4200,
+    snapshot: { title: 'Target page' },
+  });
+
+  const result = await runScreenshot({
+    url: 'https://fixture.test',
+    settleMs: 250,
+  }, harness.dependencies);
+
+  assert.equal(settleWindows, 2);
+  assert.equal(result.captureMethod, 'desktop-dialog');
+  assert.equal(result.dialogText, 'dialog after challenge');
+  assert.equal(result.metadata.challengeDetected, true);
+  assert.equal(result.metadata.challengeCleared, true);
+  assert.equal(result.metadata.challengeWaitedMs, 4200);
+});
+
+test('an unresolved challenge is captured and identified in metadata', async () => {
+  const harness = createScreenshotHarness();
+  harness.dependencies.inspectChallengePage = async () => ({
+    active: true,
+    snapshot: { title: 'Checking your browser' },
+  });
+  harness.dependencies.responseIsChallenge = async () => false;
+  harness.dependencies.waitForChallengeToClear = async () => ({
+    cleared: false,
+    waitedMs: 30000,
+    snapshot: { title: 'Checking your browser' },
+  });
+
+  const result = await runScreenshot({ url: 'https://fixture.test' }, harness.dependencies);
+
+  assert.equal(result.captureMethod, 'desktop-page');
+  assert.equal(result.dialogSeen, false);
+  assert.equal(result.metadata.challengeDetected, true);
+  assert.equal(result.metadata.challengeCleared, false);
+  assert.equal(result.metadata.challengeWaitedMs, 30000);
+});
+
+test('a navigation failure that leaves about:blank is not stored as a valid page image', async () => {
+  const harness = createScreenshotHarness({
+    finalUrl: 'about:blank',
+    goto: async () => {
+      throw new Error('fixture navigation timeout');
+    },
+  });
+
+  await assert.rejects(
+    runScreenshot({ url: 'https://fixture.test' }, harness.dependencies),
+    /Navigation did not reach the target page: fixture navigation timeout/,
+  );
+  assert.equal(harness.captureCount(), 0);
+});
+
 test('a dialog observed during the settle window stays open for the desktop capture', async () => {
   const dialog = createDialog('delayed fixture dialog');
   const harness = createScreenshotHarness({
@@ -128,6 +225,28 @@ test('a dialog observed during the settle window stays open for the desktop capt
   assert.equal(result.dialogText, 'delayed fixture dialog');
   assert.equal(dialog.isDismissed(), true);
   assert.equal(harness.captureCount(), 1);
+});
+
+test('a dialog during navigation is captured without waiting for domcontentloaded', async () => {
+  const dialog = createDialog('navigation-loop dialog');
+  let navigationFinished = false;
+  const harness = createScreenshotHarness({
+    onGoto: (page) => setImmediate(() => page.emit('dialog', dialog)),
+    goto: async () => {
+      await new Promise(() => {});
+      navigationFinished = true;
+    },
+    capture: async () => dialog.isDismissed() ? 'dialog-was-dismissed' : 'navigation-dialog-image',
+  });
+
+  const result = await runScreenshot({ url: 'https://fixture.test' }, harness.dependencies);
+
+  assert.equal(navigationFinished, false);
+  assert.equal(result.screenshotBase64, 'navigation-dialog-image');
+  assert.equal(result.captureMethod, 'desktop-dialog');
+  assert.equal(result.dialogText, 'navigation-loop dialog');
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(harness.initScriptCount(), 1);
 });
 
 test('a dialog racing with the normal capture replaces that image', async () => {
@@ -174,7 +293,7 @@ test('a failed dialog capture is returned as the request failure', async () => {
   }, harness.dependencies), /fixture capture failed/);
 
   assert.equal(dialog.isDismissed(), true);
-  assert.equal(harness.dialogListenersAtContextClose(), 0);
+  assert.equal(harness.dialogListenersAtContextClose(), 1);
 });
 
 test('dialog observation ends before browser teardown can start another capture', async () => {
@@ -191,5 +310,5 @@ test('dialog observation ends before browser teardown can start another capture'
   assert.equal(result.captureMethod, 'desktop-page');
   assert.equal(result.dialogSeen, false);
   assert.equal(harness.captureCount(), 1);
-  assert.equal(harness.dialogListenersAtContextClose(), 0);
+  assert.equal(harness.dialogListenersAtContextClose(), 1);
 });

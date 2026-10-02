@@ -309,8 +309,30 @@ das spätere Einreihen über diese veraltete Entity-Referenz keinen Job erzeugt.
   Allgemeine Retests können die bestehenden Status-/Review-Felder weiterhin
   verändern. Die vollständige F06-Trennung bleibt Arbeitsabschnitt 3.
 - Der Dialog wird standardmäßig drei Sekunden nach `domcontentloaded` beobachtet.
-  Später ausgelöste Dialoge führen zu einer normalen Seitenaufnahme. Die kurze
-  Grace-Phase schützt nur den Übergang zwischen Capture und Teardown.
+  Seit der Nachbesserung vom 2026-10-03 werden typische Browser-Schutzseiten
+  anhand von Header, Titel, Text und DOM-Merkmalen erkannt. Sie erhalten bis zu
+  30 Sekunden zum Auflösen; anschließend beginnt ein neues vollständiges
+  Dialogfenster. Bleibt der Schutz aktiv, kennzeichnen Auftragsmetadaten und
+  Fallansicht den aufgenommenen Schutzschirm ausdrücklich. Die kurze Grace-Phase
+  schützt weiterhin den Übergang zwischen Capture und Teardown. Ein erster echter
+  Dialog während der Navigation wird ohne Warten auf `domcontentloaded`
+  aufgenommen; erst danach werden weitere Dialoge desselben Dokuments begrenzt,
+  damit eine Alert-Schleife Aufnahme und Teardown nicht blockiert.
+  Bleibt eine fehlgeschlagene Navigation auf `about:blank`, wird kein leerer
+  Beleg mehr als verfügbar gespeichert. Der pro Aufnahme kontrollierte
+  Browserprozess erhält ein kurzes geordnetes Teardown-Fenster und wird danach
+  beendet, sodass nachfolgende Queue-Aufträge weiterlaufen können. Ein zusätzlicher
+  Prozess-Watchdog erzwingt das Navigationslimit auch dann, wenn Chromium die
+  Steuerung nicht rechtzeitig an Playwright zurückgibt.
+
+  **Nachweis der Nachbesserung vom 2026-10-03:** Eine kontrollierte Schutzseite
+  löste sich nach 1,239 Sekunden auf; der danach erzeugte Alert `CHALLENGE DONE` wurde
+  als `desktop-dialog` aufgenommen. Eine echte Endlosschleife aus `alert()` wurde
+  mit einem sichtbaren ersten Dialog innerhalb von 1,6 Sekunden abgeschlossen.
+  Der erneut geprüfte soxo-Fall erreichte dagegen keine Schutz- oder Zielseite,
+  sondern blieb bis zum 45-Sekunden-Limit auf `about:blank`; der Endpunkt meldete
+  dies nun als Navigationsfehler und hinterließ keinen Chromium-Prozess. Damit ist
+  für diesen konkreten Lauf kein späterer XSS-Dialog nachgewiesen.
 - Finding und Initialauftrag werden gemeinsam committed; die zugehörige Domain
   wird vom bestehenden `DomainService` zuvor separat gespeichert. Ein seltener
   Datenbankfehler beim folgenden Commit kann deshalb eine leere Domainzeile

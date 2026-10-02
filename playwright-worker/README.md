@@ -42,6 +42,29 @@ Without a dialog the endpoint still captures the visible page. A 50-ms grace
 period after the normal capture lets a dialog delivered on the callback boundary
 replace that page image before teardown.
 
+If a dialog appears while navigation is still waiting for `domcontentloaded`,
+the capture wins immediately instead of waiting for the navigation timeout. The
+first alert, confirm, or prompt in each document remains a real native dialog;
+further dialogs from the same document are suppressed after that evidence has
+been obtained so an alert loop cannot hold the worker indefinitely.
+
+Before a normal page image is taken, the worker recognizes common browser-
+protection pages from their response header, title, text, and DOM markers. It
+waits up to 30 seconds for that page to clear and then opens a fresh three-second
+dialog window on the actual target page. The response metadata records whether
+protection was detected and cleared; the finding detail page exposes this note.
+An unresolved protection page is still captured as the page the browser actually
+showed, but is explicitly identified instead of being presented as an ordinary
+target-page capture.
+
+A failed navigation that never leaves `about:blank` is returned as a capture
+failure instead of storing a blank image as available evidence. Screenshot
+browsers run as individually controlled browser-server processes; cleanup gets a
+short graceful window and then terminates the process so one hostile page cannot
+block later queue entries. An independent process watchdog also enforces the
+configured navigation timeout when Chromium itself fails to return control to
+Playwright.
+
 Successful response fields include:
 
 ```json
@@ -57,6 +80,10 @@ Successful response fields include:
   "metadata": {
     "timeoutMs": 10000,
     "settleMs": 3000,
+    "challengeWaitMs": 30000,
+    "challengeDetected": false,
+    "challengeCleared": null,
+    "challengeWaitedMs": 0,
     "navigationError": null,
     "browserName": "chromium"
   }

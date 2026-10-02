@@ -702,11 +702,20 @@ final class WebController
             $errorDetails = $job->getErrorMessage() !== null
                 ? '<details><summary>Failure details</summary><p>'.$this->escape($job->getErrorMessage()).'</p></details>'
                 : '';
+            $metadata = $job->getCaptureMetadata() ?? [];
+            $challengeDetails = '';
+            if (($metadata['challengeDetected'] ?? false) === true) {
+                $waitedSeconds = max(0, (int) ($metadata['challengeWaitedMs'] ?? 0)) / 1000;
+                $challengeMessage = ($metadata['challengeCleared'] ?? false) === true
+                    ? sprintf('Browser protection cleared after %.1f seconds; capture continued on the target page.', $waitedSeconds)
+                    : sprintf('Browser protection was still active after %.1f seconds; the screenshot may show the protection page.', $waitedSeconds);
+                $challengeDetails = '<details><summary>Browser protection detected</summary><p>'.$this->escape($challengeMessage).'</p></details>';
+            }
             $screenshotJobRows[] = sprintf(
                 '<tr><td><code>%s</code></td><td>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td></tr>',
                 $this->escape(substr($job->getId(), 0, 8)),
                 $this->escape($job->getStatus()),
-                $errorDetails,
+                $errorDetails.$challengeDetails,
                 $this->escape($job->getRequestedAt()->format(DATE_ATOM)),
                 $this->escape($job->getStartedAt()?->format(DATE_ATOM) ?? 'n/a'),
                 $this->escape($job->getCapturedAt()?->format(DATE_ATOM) ?? 'n/a'),

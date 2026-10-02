@@ -126,6 +126,37 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         self::assertStringContainsString('First attempt failed', $status->detail);
     }
 
+    public function testFindingPageExplainsDetectedAndUnresolvedBrowserProtection(): void
+    {
+        $domain = (new Domain())->setHostname('challenge.localhost')->setScheme('https');
+        $finding = (new Finding())->setDomain($domain)->setTitle('Challenge metadata')->setType('other')
+            ->setUrl('https://challenge.localhost/example');
+        $cleared = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())
+            ->setStatus('available')->setAttempts(1)->setCaptureMetadata([
+                'challengeDetected' => true,
+                'challengeCleared' => true,
+                'challengeWaitedMs' => 4200,
+            ]);
+        $unresolved = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())
+            ->setStatus('available')->setAttempts(1)->setCaptureMetadata([
+                'challengeDetected' => true,
+                'challengeCleared' => false,
+                'challengeWaitedMs' => 30000,
+            ]);
+        $this->entityManager->persist($domain);
+        $this->entityManager->persist($finding);
+        $this->entityManager->persist($cleared);
+        $this->entityManager->persist($unresolved);
+        $this->entityManager->flush();
+
+        $html = $this->request('/findings/'.$finding->getId())->getContent();
+
+        self::assertStringContainsString('Browser protection detected', $html);
+        self::assertStringContainsString('cleared after 4.2 seconds', $html);
+        self::assertStringContainsString('still active after 30.0 seconds', $html);
+        self::assertStringContainsString('screenshot may show the protection page', $html);
+    }
+
     private function request(string $path, string $method = 'GET', array $parameters = []): \Symfony\Component\HttpFoundation\Response
     {
         $request = Request::create($path, $method, $parameters);

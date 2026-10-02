@@ -172,8 +172,16 @@ aktuellen Stand neu ein.
 
 Weitere bekannte Grenzen:
 
-- Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet;
-  Capture und eine kurze 50-ms-Nachlaufphase fangen Dialoge an der Grenze ab.
+- Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet.
+  Erkannte Browser-Schutzseiten erhalten bis zu 30 Sekunden zum Auflösen und
+  danach ein neues vollständiges Dialogfenster; Erkennung und Ausgang stehen in
+  den Auftragsmetadaten. Capture und eine kurze 50-ms-Nachlaufphase fangen
+  Dialoge an der Grenze ab. Ein bereits während der Navigation sichtbarer erster
+  echter Dialog wird sofort aufgenommen; Wiederholungen desselben Dokuments
+  werden danach begrenzt, damit Alert-Schleifen den Worker nicht festhalten.
+  Ein Navigationsfehler auf `about:blank` gilt als Aufnahmefehler statt als
+  verfügbarer leerer Beleg; begrenzter Teardown und ein unabhängiger
+  Prozess-Watchdog schützen die Folgeaufträge.
 - Neue Findings und der erste Queue-Auftrag werden in einer Transaktion gespeichert.
   Das erneute Einreichen einer exakten alten URL ergänzt einen fehlenden Auftrag,
   ohne vorhandene Nutzerdaten oder terminale Aufträge zu verändern.

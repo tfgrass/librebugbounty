@@ -7,8 +7,98 @@ const { chromium, firefox } = require('playwright');
 
 const port = parseInt(process.env.PORT || '3000', 10);
 const DEFAULT_SCREENSHOT_SETTLE_MS = 3000;
+const DEFAULT_CHALLENGE_WAIT_MS = 30000;
+const CHALLENGE_POLL_MS = 500;
 const DIALOG_RENDER_DELAY_MS = 400;
 const POST_CAPTURE_DIALOG_GRACE_MS = 50;
+
+function challengeSnapshotIsActive(snapshot = {}) {
+  if (snapshot.selectorMatched === true) {
+    return true;
+  }
+
+  const title = String(snapshot.title || '').toLowerCase();
+  const bodyText = String(snapshot.bodyText || '').toLowerCase();
+  const titleMatched = [
+    'checking your browser',
+    'just a moment',
+    'attention required! | cloudflare',
+  ].some((marker) => title.includes(marker));
+  const bodyMatched = [
+    'checking your browser',
+    'verify you are human',
+    'verifying you are human',
+    'performing security verification',
+    'enable javascript and cookies to continue',
+    'needs to review the security of your connection',
+    'überprüfen, ob sie ein mensch sind',
+    'sicherheitsüberprüfung wird durchgeführt',
+  ].some((marker) => bodyText.includes(marker));
+
+  return titleMatched || bodyMatched;
+}
+
+async function inspectChallengePage(page) {
+  try {
+    const snapshot = await page.evaluate(() => ({
+      title: document.title || '',
+      bodyText: (document.body?.innerText || '').slice(0, 20000),
+      url: window.location.href,
+      selectorMatched: Boolean(document.querySelector([
+        '#challenge-running',
+        '#cf-challenge-running',
+        '#challenge-form',
+        '[data-translate="checking_browser"]',
+        'script[src*="/cdn-cgi/challenge-platform/"]',
+        'form[action*="/cdn-cgi/challenge-platform/"]',
+      ].join(','))),
+    }));
+
+    return {
+      active: challengeSnapshotIsActive(snapshot),
+      snapshot: {
+        title: snapshot.title,
+        url: snapshot.url,
+        selectorMatched: snapshot.selectorMatched,
+      },
+    };
+  } catch (error) {
+    return {
+      active: false,
+      snapshot: { error: error.message },
+    };
+  }
+}
+
+async function responseIsChallenge(response) {
+  if (response === null) {
+    return false;
+  }
+
+  try {
+    const headers = await response.allHeaders();
+    return String(headers['cf-mitigated'] || '').toLowerCase() === 'challenge';
+  } catch (error) {
+    return false;
+  }
+}
+
+async function waitForChallengeToClear(page, maximumMs, wait, shouldStop = () => false) {
+  const startedAt = Date.now();
+  let lastInspection = await inspectChallengePage(page);
+
+  while (lastInspection.active && Date.now() - startedAt < maximumMs && !shouldStop()) {
+    const remainingMs = maximumMs - (Date.now() - startedAt);
+    await wait(Math.min(CHALLENGE_POLL_MS, remainingMs));
+    lastInspection = await inspectChallengePage(page);
+  }
+
+  return {
+    cleared: !lastInspection.active,
+    waitedMs: Date.now() - startedAt,
+    snapshot: lastInspection.snapshot,
+  };
+}
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -152,6 +242,35 @@ async function launchBrowser(browserName, headless) {
       });
     default:
       throw new Error(`Unsupported browser "${browserName}". Use chromium or firefox.`);
+  }
+}
+
+async function launchScreenshotBrowser() {
+  const server = await chromium.launchServer({
+    headless: false,
+    args: ['--window-size=1440,900', '--window-position=0,0', '--start-maximized'],
+  });
+
+  try {
+    const browser = await chromium.connect(server.wsEndpoint());
+    return { browser, server };
+  } catch (error) {
+    await server.kill().catch(() => {});
+    throw error;
+  }
+}
+
+async function finishWithin(task, timeoutMs) {
+  let timeout;
+  try {
+    return await Promise.race([
+      task.then(() => true, () => false),
+      new Promise((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -370,13 +489,21 @@ async function runScreenshot(payload, dependencies = {}) {
   const settleMs = Number.isFinite(settleValue)
     ? Math.min(10000, Math.max(250, settleValue))
     : DEFAULT_SCREENSHOT_SETTLE_MS;
+  const challengeWaitValue = Number(payload.challengeWaitMs ?? DEFAULT_CHALLENGE_WAIT_MS);
+  const challengeWaitMs = Number.isFinite(challengeWaitValue)
+    ? Math.min(60000, Math.max(1000, challengeWaitValue))
+    : DEFAULT_CHALLENGE_WAIT_MS;
   const wait = dependencies.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
-  const launch = dependencies.launchBrowser || launchBrowser;
+  const launch = dependencies.launchBrowser || launchScreenshotBrowser;
   const now = dependencies.now || (() => new Date());
+  const inspectChallenge = dependencies.inspectChallengePage || inspectChallengePage;
+  const checkResponseChallenge = dependencies.responseIsChallenge || responseIsChallenge;
+  const waitForChallenge = dependencies.waitForChallengeToClear || waitForChallengeToClear;
   const dialogRenderDelayMs = dependencies.dialogRenderDelayMs ?? DIALOG_RENDER_DELAY_MS;
   const postCaptureDialogGraceMs = dependencies.postCaptureDialogGraceMs ?? POST_CAPTURE_DIALOG_GRACE_MS;
   let browser = null;
+  let browserServer = null;
   let context = null;
   let page = null;
   let openDialog = null;
@@ -390,6 +517,11 @@ async function runScreenshot(payload, dependencies = {}) {
   let captureMethod = null;
   let normalCaptureTask = null;
   let navigationError = null;
+  let navigationWatchdog = null;
+  let challengeDetected = false;
+  let challengeCleared = null;
+  let challengeWaitedMs = 0;
+  let challengeSnapshot = null;
   const dialogSeen = new Promise((resolve) => {
     resolveDialogSeen = resolve;
   });
@@ -401,20 +533,55 @@ async function runScreenshot(payload, dependencies = {}) {
     captureMethod = method;
   }
 
-  function stopDialogObservation() {
+  function stopDialogObservation(removeListener = true) {
     acceptingDialogs = false;
-    if (page !== null && dialogHandler !== null) {
+    if (removeListener && page !== null && dialogHandler !== null) {
       page.off('dialog', dialogHandler);
     }
   }
 
+  function armBrowserWatchdog(milliseconds) {
+    clearTimeout(navigationWatchdog);
+    if (browserServer === null) return;
+    navigationWatchdog = setTimeout(() => {
+      const process = browserServer.process();
+      if (process.exitCode === null && process.signalCode === null) {
+        process.kill('SIGKILL');
+      }
+    }, milliseconds);
+  }
+
   try {
-    browser = await launch('chromium', false);
+    const launched = await launch('chromium', false);
+    browser = launched.browser || launched;
+    browserServer = launched.server || null;
     context = await browser.newContext({
       ignoreHTTPSErrors: true,
       viewport: { width: 1440, height: 900 },
     });
     page = await context.newPage();
+    await page.addInitScript(() => {
+      const nativeAlert = window.alert.bind(window);
+      const nativeConfirm = window.confirm.bind(window);
+      const nativePrompt = window.prompt.bind(window);
+      let nativeDialogShown = false;
+
+      window.alert = (message) => {
+        if (nativeDialogShown) return undefined;
+        nativeDialogShown = true;
+        return nativeAlert(message);
+      };
+      window.confirm = (message) => {
+        if (nativeDialogShown) return false;
+        nativeDialogShown = true;
+        return nativeConfirm(message);
+      };
+      window.prompt = (message, defaultValue) => {
+        if (nativeDialogShown) return null;
+        nativeDialogShown = true;
+        return nativePrompt(message, defaultValue);
+      };
+    });
     dialogHandler = (dialog) => {
       if (!acceptingDialogs || dialogTask !== null) {
         dialog.dismiss().catch(() => {});
@@ -447,15 +614,66 @@ async function runScreenshot(payload, dependencies = {}) {
     page.on('dialog', dialogHandler);
 
     let response = null;
-    try {
-      response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-    } catch (error) {
-      navigationError = error.message;
+    armBrowserWatchdog(timeoutMs + 2000);
+    const navigationTask = (async () => {
+      try {
+        response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      } catch (error) {
+        navigationError = error.message;
+      } finally {
+        // Keep the watchdog armed after a navigation failure: even a simple
+        // DOM query can hang on the renderer that caused the timeout.
+        if (navigationError === null) {
+          clearTimeout(navigationWatchdog);
+          navigationWatchdog = null;
+        }
+      }
+    })();
+    await Promise.race([navigationTask, dialogSeen]);
+    if (dialogTask !== null) {
+      // A real dialog is already conclusive evidence for this neutral capture.
+      // Do not let an alert loop keep page.goto() blocked until its timeout.
+      await dialogTask;
+    } else {
+      await navigationTask;
+    }
+    if (navigationError === null && screenshotBase64 === null) {
+      armBrowserWatchdog(challengeWaitMs + (settleMs * 2) + 5000);
     }
 
-    await Promise.race([dialogSeen, wait(settleMs)]);
-    if (dialogTask !== null) {
-      await dialogTask;
+    if (screenshotBase64 === null) {
+      await Promise.race([dialogSeen, wait(settleMs)]);
+      if (dialogTask !== null) {
+        await dialogTask;
+      }
+    }
+    if (screenshotBase64 === null) {
+      const inspection = await inspectChallenge(page);
+      challengeDetected = inspection.active || await checkResponseChallenge(response);
+      challengeSnapshot = inspection.snapshot;
+
+      if (challengeDetected) {
+        const challengeResult = await waitForChallenge(
+          page,
+          challengeWaitMs,
+          wait,
+          () => dialogTask !== null,
+        );
+        challengeCleared = challengeResult.cleared;
+        challengeWaitedMs = challengeResult.waitedMs;
+        challengeSnapshot = challengeResult.snapshot;
+
+        if (dialogTask === null && challengeCleared) {
+          await dismissCommonConsentOverlays(page);
+          await Promise.race([dialogSeen, wait(settleMs)]);
+        }
+        if (dialogTask !== null) {
+          await dialogTask;
+        }
+      }
+    }
+    if (screenshotBase64 === null && navigationError !== null && page.url() === 'about:blank') {
+      throw new Error(`Navigation did not reach the target page: ${navigationError}`);
     }
     if (screenshotBase64 === null) {
       normalCaptureTask = (async () => {
@@ -476,7 +694,10 @@ async function runScreenshot(payload, dependencies = {}) {
     // From this point onward, no new capture task may start while the browser
     // context is closing. A task registered before the boundary is still part
     // of this request and must finish before its result is returned.
-    stopDialogObservation();
+    // Keep a dismiss-only handler attached during context shutdown. Removing
+    // the listener first makes Playwright auto-dismiss a racing alert, which
+    // can reject after the browser session has already closed.
+    stopDialogObservation(false);
     if (dialogTask !== null) {
       await dialogTask;
     }
@@ -496,12 +717,18 @@ async function runScreenshot(payload, dependencies = {}) {
       metadata: {
         timeoutMs,
         settleMs,
+        challengeWaitMs,
+        challengeDetected,
+        challengeCleared,
+        challengeWaitedMs,
+        challengeSnapshot,
         navigationError,
         browserName: 'chromium',
       },
     };
   } finally {
-    stopDialogObservation();
+    clearTimeout(navigationWatchdog);
+    stopDialogObservation(false);
     if (dialogTask !== null) {
       await dialogTask.catch(() => {});
     }
@@ -509,10 +736,17 @@ async function runScreenshot(payload, dependencies = {}) {
       await openDialog.dismiss().catch(() => {});
     }
     if (context !== null) {
-      await context.close().catch(() => {});
+      await finishWithin(context.close(), 2000);
     }
+    stopDialogObservation();
     if (browser !== null) {
-      await browser.close().catch(() => {});
+      await finishWithin(browser.close(), 2000);
+    }
+    if (browserServer !== null) {
+      const process = browserServer.process();
+      if (process.exitCode === null && process.signalCode === null) {
+        process.kill('SIGKILL');
+      }
     }
   }
 }
@@ -561,4 +795,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { DEFAULT_SCREENSHOT_SETTLE_MS, runScreenshot, withDisplayLease };
+module.exports = {
+  DEFAULT_SCREENSHOT_SETTLE_MS,
+  DEFAULT_CHALLENGE_WAIT_MS,
+  challengeSnapshotIsActive,
+  runScreenshot,
+  withDisplayLease,
+};
