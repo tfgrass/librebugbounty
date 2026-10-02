@@ -76,7 +76,8 @@ bearbeitbare Meldungen mit Codex-CLI-Mailentwürfen, Gruppierung auch anhand
 gemeinsamer Entwickler sowie Bestand/Dashboard/Statistiken. Entscheidungen,
 Lösungsvorschläge und offene Regeln stehen im [UI-Arbeitsmodell](ui-workflow.md).
 Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt und
-umgesetzt. Studio-Ingest v1 ist als nächster Abschnitt vorbereitet; vollständige
+umgesetzt. Studio-Ingest v1 wurde danach als erster paralleler Arbeitsbereich
+umgesetzt; vollständige
 Studio-Ansicht, Review und Meldungen bleiben getrennte spätere Vorhaben.
 
 ## Beobachteter Aufbau
@@ -342,8 +343,8 @@ Neue UI-Richtung: [Arbeitsbereiche und Duplikatbehandlung](ui-workflow.md).
 Resolve-artige Pages für Erfassen, Sichten und Mailvorbereitung bleiben das
 spätere Ziel. Bestätigt ist der Vorrang funktionierender Abläufe in der aktuellen
 Ansicht; der schnelle Eingang ist der erste dafür umgesetzte Arbeitsbereich. Seine
-parallele Half-Screen-Studioansicht ist als nächster begrenzter Abschnitt
-vorbereitet. Weitergehende Seiten-, Navigations- und Modellvorschläge für Bestand,
+parallele Half-Screen-Studioansicht ist anschließend als begrenzter Abschnitt
+umgesetzt worden. Weitergehende Seiten-, Navigations- und Modellvorschläge für Bestand,
 Review und Meldungen bleiben Vorschläge.
 
 - **Geklärt:** Eine neue technische Beobachtung hebt eine manuelle Entscheidung

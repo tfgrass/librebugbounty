@@ -49,6 +49,14 @@ ddev exec php bin/console app:db:init
 
 ## Fast intake, verification, and screenshots
 
+Open `/studio` for the compact, dark intake workspace. It is designed for a
+half-width window beside a list of URLs: paste one URL, press Enter, then continue
+after storage is confirmed. Optional marker and note fields sit under details;
+the session history shows compact storage and screenshot states. The classic
+overview remains at `/`, and both pages link to each other. Switching between
+them in the same tab retains the current draft and up to 50 intake entries.
+Finding details still open in the classic view.
+
 Submitting a supported URL stores the finding and its first persistent screenshot
 job atomically in one database transaction. A committed new finding therefore
 cannot be left without its initial capture work. An exact duplicate URL is not
@@ -83,7 +91,7 @@ not generate new toasts after reload.
 finding IDs. It reports existing manual assessment, latest stored technical
 observation, contact time, and screenshot-job state. This polling endpoint starts
 neither a retest nor a screenshot. The narrow JSON interface initially serves the
-classic page and the planned parallel studio page; it is not a general public API.
+classic and Studio pages; it is not a general public API.
 
 The supervised screenshot worker separately opens a headed Chromium instance and
 stores a screenshot. A successful intake therefore confirms the finding and

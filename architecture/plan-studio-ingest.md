@@ -6,6 +6,12 @@ gewählt. Dieser Plan beauftragt noch keinen vollständigen Studio-Umbau. Er sch
 den bereits funktionierenden schnellen Eingang als ersten eigenständig nutzbaren
 Studio-Arbeitsbereich zu.
 
+**Umsetzungsfortschreibung:** Nach dem anschließenden Aufruf von `/studio` mit
+404 wurde dieser begrenzte Abschnitt umgesetzt. Die zuvor vorbereitete Route war
+bis dahin noch kein gelieferter Screen. Tatsächlicher Prüfstand und Grenzen stehen
+in der [Studio-Abnahme](abnahme-studio-ingest.md); die folgende Planung bleibt als
+Entscheidungsgrundlage erhalten.
+
 ## Ziel und Nichtumfang
 
 Unter `/studio` entsteht neben der unveränderten klassischen Anwendung eine ruhige,

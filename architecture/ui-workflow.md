@@ -1,8 +1,8 @@
 # Arbeitsbereiche und UI – Diskussionsstand
 
 Stand: 2026-10-03. Fortgeschriebener Diskussions- und Entscheidungsstand aus dem
-Architektur-Sparring. Der schnelle Einzeleingang ist umgesetzt; als nächster
-Abschnitt wird ein paralleler, halbbreitentauglicher Studio-Eingang vorbereitet.
+Architektur-Sparring. Der schnelle Einzeleingang und der erste parallele,
+halbbreitentaugliche Studio-Eingang sind umgesetzt.
 Andere als solche gekennzeichnete Ideen bleiben Vorschläge. Geltender Stand:
 [Index](index.md), [Lastenheft](lastenheft.md).
 
@@ -471,8 +471,13 @@ die klassische Kartendarstellung gelöst und von beiden Oberflächen verwendet.
 
 Der vollständige Zuschnitt, die Half-Screen-Skizze, technische Reihenfolge und
 prüfbare Abnahme stehen im [Umsetzungsplan Studio-Ingest v1](plan-studio-ingest.md).
-Vorbereitet ist damit der nächste begrenzte Abschnitt, nicht der gesamte spätere
-Studio-Ausbau. Bestand, Inspector, Review und Meldungen erweitern diesen Umfang
+Nach dem anschließenden tatsächlichen Aufruf von `/studio` mit 404 wurde der
+vorbereitete Abschnitt implementiert: eigene Symfony-Route, dunkle Studio-Shell
+und kompakte Verlaufszeilen bei unverändertem API-Vertrag. Beide Oberflächen
+verwenden denselben Verlauf und vollständigen Entwurf im jeweiligen Tab;
+Wiederherstellung aus dem BFCache liest neuere Änderungen vor dem nächsten
+Schreiben neu ein. [Abnahme und Grenzen](abnahme-studio-ingest.md).
+Bestand, Inspector, Review und Meldungen erweitern diesen ersten Arbeitsbereich
 nicht stillschweigend.
 
 ## Szenarien für die jeweiligen Funktionspakete

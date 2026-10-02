@@ -8,7 +8,7 @@ use App\Value\RetestResult;
 /** @var list<\App\Dto\FindingReadView> $findings */
 /** @var \App\Dto\FindingReadFilter $filter */
 ?>
-<section class="panel">
+<section class="panel" data-intake data-intake-view="classic">
   <?php if ($message !== null): ?><div class="notice success"><?= $escape($message) ?></div><?php endif; ?>
   <?php if ($error !== null): ?><div class="notice error"><?= $escape($error) ?></div><?php endif; ?>
   <h2>Bestand</h2>

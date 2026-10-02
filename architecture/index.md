@@ -20,7 +20,7 @@ Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
   im aktuellen Tab erreichbar.
 - Vorhandene Abläufe wurden zuerst in der aktuellen Ansicht stabilisiert. Nach
   dem schnellen Eingang wird jetzt ein schmaler paralleler Studio-Eingang als
-  erster echter Arbeitsbereich vorbereitet; der vollständige Resolve-Umbau folgt
+  erster echter Arbeitsbereich umgesetzt; der vollständige Resolve-Umbau folgt
   weiterhin erst mit weiteren brauchbaren Arbeitsbereichen.
 
 ## Umgesetzter Stand
@@ -152,7 +152,7 @@ Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
-**Nächstes vorbereitetes Vorhaben:** Der Nutzer bewertet die klassische Gesamtseite
+**Studio-Ingest v1 umgesetzt:** Der Nutzer bewertet die klassische Gesamtseite
 für den Eingang als zu überladen. Studio-Ingest v1 stellt deshalb den bereits
 funktionierenden schnellen Eingang parallel unter `/studio` bereit: dunkle,
 reduzierte Arbeitsfläche, dominante Einzeleingabe und kompakter Sitzungsverlauf,
@@ -161,9 +161,13 @@ bleibt bestehen; Bestand, Inspector, Review und Meldungen gehören nicht in dies
 ersten Studio-Abschnitt.
 
 Beide Oberflächen verwenden dieselbe Fallverwaltung und die vorhandenen schmalen
-Intake-/Statusgrenzen. Empfohlen sind ein eigenes Symfony-Template und isolierte
-Styles statt einer neuen SPA. Kennzeichen und Notiz liegen im ersten Entwurf unter
-„Details hinzufügen“. [Umsetzungsplan und Abnahmevertrag](plan-studio-ingest.md),
+Intake-/Statusgrenzen. Ein eigenes Symfony-Template und isolierte Styles tragen
+die neue Ansicht. Kennzeichen und Notiz liegen unter „Details hinzufügen“; Entwurf
+und Verlauf bleiben beim Wechsel im selben Tab gemeinsam erhalten. Auch bei
+Zurück-/Vorwärtsnavigation und BFCache-Wiederherstellung liest das Dokument diesen
+aktuellen Stand neu ein.
+[Prüfstand und Grenzen](abnahme-studio-ingest.md),
+[Umsetzungsplan und Abnahmevertrag](plan-studio-ingest.md),
 [Entscheidungsweg](ui-workflow.md#nächstes-vorhaben-studio-ingest-v1--half-screen).
 
 Weitere bekannte Grenzen:
@@ -214,6 +218,7 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme Arbeitsabschnitt 3b](abnahme-abschnitt-3b.md)
 - [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md)
 - [Umsetzungsplan Studio-Ingest v1 / Half-Screen](plan-studio-ingest.md)
+- [Abnahme Studio-Ingest v1](abnahme-studio-ingest.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

@@ -563,7 +563,7 @@ final class WebController
             .'</style>'
             .'</head>'
             .'<body>'
-            .'<div class="utility-nav"><a href="/">Overview</a><a href="/operator-priority">Operator-Priorität</a><a href="/settings">Settings</a><a href="#about-modal">About</a></div>'
+            .'<div class="utility-nav"><a href="/">Overview</a><a href="/studio">Studio</a><a href="/operator-priority">Operator-Priorität</a><a href="/settings">Settings</a><a href="#about-modal">About</a></div>'
             .'<main>'.$body.'</main>'
             .$this->renderAboutModal()
             .'</body>'

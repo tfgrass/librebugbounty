@@ -17,7 +17,8 @@ Abschnitt 3b wurde danach ebenfalls ausdrücklich beauftragt und umgesetzt:
 [Bestand konsistent lesen und filtern](abnahme-abschnitt-3b.md).
 Am 2026-10-03 wurde außerdem der [schnelle Einzeleingang](abnahme-schneller-eingang.md)
 ausdrücklich beauftragt und umgesetzt. Danach wurde der schmale erste Studio-
-Arbeitsbereich als nächstes vorzubereitendes Vorhaben gewählt. Das spätere
+Arbeitsbereich als nächstes vorzubereitendes Vorhaben gewählt und anschließend
+umgesetzt: [Studio-Ingest v1](abnahme-studio-ingest.md). Das spätere
 Review-Paket und der vollständige Studio-Ausbau bleiben separate Arbeit.
 
 ## 1. Zweck und Verbindlichkeit
@@ -393,8 +394,8 @@ Vorhaben beauftragt.
 6. **Studio-Ingest v1 / Half-Screen:** Den bereits funktionierenden Eingang unter
    einer parallelen, reduzierten Studio-Oberfläche anbieten. URL-Eingabe und
    kompakter Sitzungsverlauf bleiben bei 640 bis 960 CSS-Pixeln gut nutzbar; die
-   klassische Oberfläche bleibt erreichbar. Für diesen Abschnitt vorbereitet,
-   aber noch nicht umgesetzt: [Umsetzungsplan](plan-studio-ingest.md).
+   klassische Oberfläche bleibt erreichbar. Umgesetzt:
+   [Abnahme](abnahme-studio-ingest.md), [Umsetzungsplan](plan-studio-ingest.md).
 
 Abschnitt 3 verbessert die vorhandene Darstellung; er setzt keinen vollständigen
 UI-Neubau voraus. Sicherung und Wiederherstellungsnachweis aus N03 gelten bereits
