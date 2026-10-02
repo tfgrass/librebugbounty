@@ -3,10 +3,8 @@
 namespace App\Tests;
 
 use App\Command\ScreenshotMissingCommand;
-use App\Dto\BrowserRetestRequest;
 use App\Dto\BrowserScreenshotRequest;
 use App\Dto\BrowserScreenshotResult;
-use App\Dto\RetestResultData;
 use App\Entity\Domain;
 use App\Entity\Evidence;
 use App\Entity\Finding;
@@ -24,11 +22,21 @@ use App\Value\ScreenshotJobStatus;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Console\Tester\CommandTester;
 
 final class ScreenshotQueueTest extends DatabaseTestCase
 {
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=';
+    private Session $session;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->session = new Session(new MockArraySessionStorage());
+    }
 
     public function testCaptureCreatesEvidenceWithoutChangingAssessmentOrRetestHistory(): void
     {
@@ -244,8 +252,7 @@ final class ScreenshotQueueTest extends DatabaseTestCase
     public function testRepeatedIntakeCreatesOneFindingAndOneQueuedScreenshot(): void
     {
         $retest = $this->createMock(BrowserRetestClientInterface::class);
-        $retest->expects(self::once())->method('retest')->with(self::isInstanceOf(BrowserRetestRequest::class))
-            ->willReturn(new RetestResultData(result: 'inconclusive'));
+        $retest->expects(self::never())->method('retest');
         self::getContainer()->set(BrowserRetestClientInterface::class, $retest);
         $screenshots = $this->createMock(BrowserScreenshotClientInterface::class);
         $screenshots->expects(self::never())->method('capture');
@@ -321,35 +328,47 @@ SQL);
         $response = $this->post('/findings', ['url' => $url]);
 
         self::assertSame(302, $response->getStatusCode());
-        self::assertStringContainsString('simulated%20screenshot%20queue%20insert%20failure', $response->headers->get('Location'));
+        self::assertStringContainsString('Die%20Speicherung%20konnte%20nicht%20best%C3%A4tigt%20werden', $response->headers->get('Location'));
+        self::assertStringNotContainsString('simulated%20screenshot%20queue%20insert%20failure', $response->headers->get('Location'));
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM finding WHERE url = :url', ['url' => $url]));
         self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM screenshot_job'));
     }
 
-    public function testHeadlessVerificationFailureDoesNotRollbackFindingOrScreenshotJob(): void
+    public function testIntakeDoesNotStartHeadlessVerification(): void
     {
         $retest = $this->createMock(BrowserRetestClientInterface::class);
-        $retest->expects(self::once())->method('retest')
-            ->willThrowException(new \RuntimeException('simulated headless verification failure'));
+        $retest->expects(self::never())->method('retest');
         self::getContainer()->set(BrowserRetestClientInterface::class, $retest);
 
-        $url = 'http://verification-failure.localhost/fixture';
+        $url = 'http://fast-intake.localhost/fixture';
         $response = $this->post('/findings', [
             'url' => $url,
-            'annotate' => 'Keep after browser failure',
+            'annotate' => 'Keep without browser wait',
         ]);
 
         self::assertSame(302, $response->getStatusCode());
         parse_str((string) parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
-        self::assertStringContainsString('stored for verification-failure.localhost', $query['message'] ?? '');
+        self::assertStringContainsString('stored for fast-intake.localhost', $query['message'] ?? '');
         self::assertStringContainsString('Screenshot queued', $query['message'] ?? '');
-        self::assertStringContainsString('simulated headless verification failure', $query['error'] ?? '');
+        self::assertArrayNotHasKey('error', $query);
 
         $finding = $this->entityManager->getRepository(Finding::class)->findOneBy(['url' => $url]);
         self::assertInstanceOf(Finding::class, $finding);
-        self::assertSame('Keep after browser failure', $finding->getPrivateNotes());
+        self::assertSame('Keep without browser wait', $finding->getPrivateNotes());
         self::assertCount(1, $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]));
         self::assertCount(0, $this->entityManager->getRepository(RetestRun::class)->findBy(['finding' => $finding]));
+    }
+
+    public function testIntakeRejectsMissingOrForgedCsrfWithoutStoringAnything(): void
+    {
+        $url = 'http://csrf-intake.localhost/fixture';
+        foreach ([[], ['_token' => 'forged']] as $parameters) {
+            $response = $this->request('/findings', 'POST', ['url' => $url] + $parameters);
+            self::assertSame(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+        }
+
+        self::assertCount(0, $this->entityManager->getRepository(Finding::class)->findAll());
+        self::assertCount(0, $this->entityManager->getRepository(ScreenshotJob::class)->findAll());
     }
 
     public function testScreenshotCliOnlyQueuesAndPreservesFindingState(): void
@@ -480,10 +499,29 @@ SQL);
 
     private function post(string $url, array $parameters): \Symfony\Component\HttpFoundation\Response
     {
-        $request = Request::create($url, 'POST', $parameters);
+        if ($url === '/findings') {
+            $parameters['_token'] ??= $this->intakeToken();
+        }
+
+        return $this->request($url, 'POST', $parameters);
+    }
+
+    private function request(string $url, string $method = 'GET', array $parameters = []): \Symfony\Component\HttpFoundation\Response
+    {
+        $request = Request::create($url, $method, $parameters);
+        $request->setSession($this->session);
         $response = self::$kernel->handle($request);
         self::$kernel->terminate($request, $response);
 
         return $response;
+    }
+
+    private function intakeToken(): string
+    {
+        $html = $this->request('/')->getContent();
+        self::assertSame(1, preg_match('#<form[^>]+action="/findings"[^>]*>(.*?)</form>#s', $html, $form));
+        self::assertSame(1, preg_match('/name="_token" value="([^"]+)"/', $form[1], $matches));
+
+        return html_entity_decode($matches[1], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

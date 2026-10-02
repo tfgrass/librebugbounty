@@ -1,6 +1,6 @@
 # LibreBugBounty – Architekturstand
 
-Stand: 2026-10-02. Einstieg für weitere Architekturgespräche und Umsetzung.
+Stand: 2026-10-03. Einstieg für weitere Architekturgespräche und Umsetzung.
 
 ## Ziel und bestätigte Richtung
 
@@ -14,6 +14,10 @@ Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
   aufgenommen.
 - Manuelle Bewertungen bleiben erhalten. Neue technische Ergebnisse erscheinen
   als Hinweise und dürfen eine Nutzerentscheidung nicht still überschreiben.
+- Der schnelle Einzeleingang bestätigt den atomaren Commit von Finding und
+  ScreenshotJob und kehrt dann ohne automatischen Retest zurück. Die nächste URL
+  lässt sich sofort erfassen; Sitzungsverlauf und unbestätigte Eingaben bleiben
+  im aktuellen Tab erreichbar.
 - Zuerst werden vorhandene Abläufe in der aktuellen Ansicht stabilisiert und
   schrittweise erweitert. Die Resolve-artige Oberfläche übernimmt später zwei
   bis drei oder mehr bereits brauchbare Arbeitsbereiche.
@@ -40,12 +44,19 @@ Web/CLI -> ScreenshotJob (SQLite) -> serieller Symfony-Worker
                                       -> PNG + Evidence + Aufnahmemetadaten
 ```
 
-Neue Findings und ihr erster Screenshot-Auftrag werden atomar gespeichert. Danach
-läuft für jeden neuen UI-Eingang die vorhandene headless XSS-Prüfung unmittelbar;
-die frühere Einstellung `cron_only` wird nicht mehr angeboten oder beachtet. Der
+Neue Findings und ihr erster Screenshot-Auftrag werden atomar gespeichert. Der
 von DDEV/Supervisor gestartete Worker verarbeitet persistente Aufträge in
 FIFO-Reihenfolge einzeln. Die Zustände
 `queued`, `running`, `available` und `failed` bleiben in der Detailansicht sichtbar.
+
+**Revision vom 2026-10-03:** Die in Abschnitt 2 eingeführte unmittelbare
+headless Prüfung jedes neuen UI-Eingangs ist für den Intake aufgehoben. Sie ließ
+den Request trotz bereits gespeicherten Falls bis zum 120-Sekunden-Timeout auf
+Browserarbeit warten; bei sehr vielen `alert()`-Aufrufen kam der Vorgang teils
+nicht rechtzeitig zum Abschluss. Das verhinderte mehrere schnelle Einzeleingaben.
+Bestätigte Speicherung hat im Intake deshalb Vorrang. Der Intake startet jetzt weder
+synchron noch automatisch einen Retest. Manuelle und andere ausdrücklich
+gestartete Retest-Wege bleiben davon unberührt.
 
 Der neutrale `/screenshot`-Endpunkt erzeugt mit Chromium und `ffmpeg` eine
 1440x900-Aufnahme des vollständigen Xvfb-Desktops. Er nimmt eine normale Seite
@@ -109,23 +120,43 @@ Archiv umfasst auch historische Duplikat-/Verwerfungswerte.
 [Abnahme von 3b](abnahme-abschnitt-3b.md) dokumentiert Mischbestands-, Paging- und
 Leseprüfungen sowie lokale HTTP-/Browserabnahme. Keine Migration war nötig.
 
+**Schneller Einzeleingang wurde am 2026-10-03 ausdrücklich beauftragt:** Der Nutzer
+hatte erneut beobachtet, dass das Absenden einer einzelnen URL auf die technische
+Prüfung wartet. Eine neue Eingabe speichert Finding und ersten ScreenshotJob
+weiterhin atomar und bestätigt diese dauerhafte Speicherung anschließend sofort;
+der Request wartet weder auf den Screenshot-Worker noch auf einen Retest. Exakte
+Duplikate verweisen auf den bestehenden Fall. Der klassische POST kehrt ebenfalls
+nach der Speicherung zurück, die bisherige Ansicht verwendet zusätzlich einen
+schmalen JSON-Eingang und einen ausschließlich lesenden Statusabruf.
+
+Das Formular wird nach bestätigter Speicherung wieder frei. Ein auf maximal 50
+Einträge begrenzter Verlauf liegt in `sessionStorage` und bleibt beim Reload des
+Tabs sichtbar. Fehlgeschlagene und nicht bestätigte Eingaben bleiben für eine
+bewusste erneute Übernahme erhalten; ein unbekannter Requestausgang löst keinen
+automatischen zweiten POST aus. Statusänderungen erscheinen im Verlauf, Toasts
+nur im sichtbaren und fokussierten Tab und nach einem Reload nicht erneut für alte
+Zustände. Polling liest ausschließlich persistierte Zustände und startet keine
+Browserarbeit.
+
+Der API-Umfang ist bewusst auf die klassische und die spätere parallele
+Studio-Ansicht begrenzt. Eine allgemeine Drittclient-API, eine neue Queue für
+technische Prüfungen und die Studio-Oberfläche selbst gehören nicht zu diesem
+Abschnitt. [Vertrag, Nachweise und Grenzen](abnahme-schneller-eingang.md): 155
+isolierte Tests mit 1.446 Assertions sowie der End-to-End-Browserlauf mit fünf
+Einzeleingaben waren erfolgreich.
+
 Weiter offen bleibt **4: Betriebsnachweise abschließen**,
 einschließlich des frischen isolierten DDEV-Aufbaus. Die Regeln zum Abarbeiten von
 Hinweisen folgen vor dem späteren Review-Paket.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
-**Befürwortete Ausbaurichtung nach 3b:** Der Nutzer möchte häufig fünf einzelne URLs
-nacheinander eingeben können, mit sofort wieder nutzbarem Formular. Der aktuelle
-Eingangsrequest wartet trotz bereits eingereihtem Screenshot noch auf die technische
-Rückmeldung. Diskutiert werden eine getrennte Eingangsbestätigung und Ergebnisanzeige
-sowie eine parallele Resolve-Ansicht auf derselben Fallverwaltung. Bestätigter
-API-Umfang: zunächst zwei Oberflächen. Der Nutzer hat die Richtung befürwortet.
-Nächstes vorgeschlagenes Vorhaben ist der schnelle Eingang in der bisherigen
-Ansicht, danach die parallele Studio-Ansicht mit Eingang und Bestand. Die
-Frontendwahl bleibt offen. Die aktuelle Frage zum nächsten Paket beauftragt
-noch keine Implementierung; Abschnitt 4 bleibt als Betriebsnachweis offen.
-[Bedarf, beobachtete Grenze und vorläufiger Vorschlag](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
+**Nächste Ausbaurichtung:** Nach dem schnellen Eingang kann Eingang und Bestand in
+einer parallelen Resolve-/Studio-Ansicht angeordnet werden. Beide Oberflächen
+verwenden dieselbe Fallverwaltung und dieselben schmalen Anwendungs- und
+Leseregeln. Frameworkwahl, genaue Navigation und Auswahlkontext der Studio-Ansicht
+bleiben offen; Review und Meldungen behalten ihre eigenen offenen Fachregeln.
+[Entscheidung und Zuschnitt](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
 
 Weitere bekannte Grenzen:
 
@@ -173,6 +204,7 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme Arbeitsabschnitt 2](abnahme-abschnitt-2.md)
 - [Abnahme Arbeitsabschnitt 3a](abnahme-abschnitt-3a.md)
 - [Abnahme Arbeitsabschnitt 3b](abnahme-abschnitt-3b.md)
+- [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

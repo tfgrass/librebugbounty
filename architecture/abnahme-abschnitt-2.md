@@ -5,6 +5,13 @@ Screenshot-Warteschlange umgesetzt und in der laufenden DDEV-Installation mit
 kontrollierten lokalen Seiten geprüft. Die fachliche Browserprüfung und die
 Belegaufnahme sind jetzt getrennte Vorgänge.
 
+> **Revision vom 2026-10-03:** Dieser Bericht hält die damalige Abnahme fest.
+> Schritt 2 und das Warten der HTTP-Antwort auf die unmittelbare XSS-Prüfung sind
+> ausdrücklich ersetzt: Der [schnelle Einzeleingang](abnahme-schneller-eingang.md)
+> kehrt nach dem atomaren Commit zurück und startet keinen automatischen Retest.
+> Grund sind bis zu 120 Sekunden blockierende Prüfungen und Seiten mit sehr vielen
+> Dialogaufrufen. Die hier abgenommene persistente Screenshot-Queue bleibt gültig.
+
 ## Erreichtes Verhalten
 
 Beim Erfassen einer neuen URL gilt folgende Reihenfolge:
@@ -323,10 +330,10 @@ das spätere Einreihen über diese veraltete Entity-Referenz keinen Job erzeugt.
   keine Docker-Restart-Policy. Ein Fehler nach dem Claim wird terminal sichtbar.
 - Ein harter Prozessabbruch zwischen Dateischreiben und Metadaten-Commit kann eine
   nicht referenzierte Datei hinterlassen. `app:artifacts:audit` findet sie.
-- Zwei exakt gleiche, wirklich parallele Web-Eingaben können beide den
-  Vorab-Lookup passieren. Der Unique Constraint verhindert den doppelten Fall,
-  der zweite Request kann dann aber eine Fehlermeldung statt der freundlichen
-  Duplikatweiterleitung erhalten.
+- **Beim schnellen Eingang am 2026-10-03 behoben:** Zwei exakt gleiche,
+  parallele Eingaben können den Duplikat-Lookup nicht mehr gleichzeitig
+  passieren. Lookup und Anlage laufen unter demselben Queue-Mutationslock; ein
+  gezielter Zwei-Prozess-Test belegt genau eine Neuanlage und ein Duplikatergebnis.
 - Die `missing`-Befehle erkennen fehlende Evidence-Zeilen, nicht eine fehlende
   Datei hinter einer noch vorhandenen Zeile.
 - `doctrine:schema:validate` meldet weiterhin historische Unterschiede an alten

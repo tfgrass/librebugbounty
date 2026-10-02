@@ -20,26 +20,24 @@ use App\Value\RetestResult;
   </div>
   <p class="hint">Screenshot-Aufträge im aktiven Bestand: <?= $escape($screenshotStats['queued']) ?> queued · <?= $escape($screenshotStats['running']) ?> running · <?= $escape($screenshotStats['failed']) ?> failed.</p>
   <div class="section-head"><div><h2>Intake</h2></div></div>
-  <form method="post" action="/findings">
-    <label>URL <input name="url" placeholder="https://example.com/search?q=%3Csvg%20onload=alert(1)%3E" required></label>
-    <label>Payload <input name="payload" placeholder="<?= $escape($defaultPayload) ?>" value="<?= $escape($defaultPayload) ?>"></label>
-    <p class="hint" id="payload-hint">Your XSS must display <code data-payload-token><?= $escape($defaultPayload) ?></code> in a JS popup, for example: <code>&lt;script&gt;alert('<span data-payload-token><?= $escape($defaultPayload) ?></span>')&lt;/script&gt;</code> or <code>&lt;img src=x onerror=prompt(/<span data-payload-token><?= $escape($defaultPayload) ?></span>/)&gt;</code></p>
-    <label>Notes <textarea name="annotate" placeholder="Optional note."></textarea></label>
-    <button type="submit">Save and Verify</button>
-    <script>
-(() => {
-  const payloadInput = document.querySelector('input[name="payload"]');
-  const tokens = document.querySelectorAll('[data-payload-token]');
-  const fallback = <?= json_encode($defaultPayload, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-  const update = () => {
-    const value = (payloadInput && payloadInput.value ? payloadInput.value.trim() : '') || fallback;
-    tokens.forEach((token) => { token.textContent = value; });
-  };
-  if (payloadInput) { payloadInput.addEventListener('input', update); }
-  update();
-})();
-    </script>
+  <form method="post" action="/findings" id="intake-form">
+    <?= $this->csrfField('finding_create') ?>
+    <label>URL <input name="url" type="url" inputmode="url" autocomplete="url" autocapitalize="off" spellcheck="false" placeholder="https://example.com/" required autofocus></label>
+    <label>Kennzeichen <input name="payload" placeholder="<?= $escape($defaultPayload) ?>" value="<?= $escape($defaultPayload) ?>"></label>
+    <p class="hint">Kennzeichen und Notizen für deine Belege. Der Fall wird gespeichert; sein Screenshot entsteht separat. Eine technische Beobachtung wird angezeigt, sobald eine gespeicherte Beobachtung vorhanden ist.</p>
+    <label>Notiz <textarea name="annotate" placeholder="Optionale Notiz"></textarea></label>
+    <button type="submit">Speichern</button>
   </form>
+  <p id="intake-notice" class="hint" role="status" aria-live="polite"></p>
+  <section id="intake-history" hidden>
+    <h3>Eingaben dieser Sitzung</h3>
+    <p class="hint">Die letzten 50 Eingaben bleiben in diesem Tab beim Neuladen erhalten. Fall und Ergebnisstände werden serverseitig gespeichert. Fehlgeschlagene Eingaben kannst du bewusst wieder ins Formular übernehmen.</p>
+    <p id="intake-storage-notice" class="hint" role="status"></p>
+    <p id="intake-status-notice" class="hint" role="status"></p>
+    <div id="intake-history-list" class="detail-list"></div>
+  </section>
+  <div id="intake-toasts" role="status" aria-live="polite" style="position:fixed;right:16px;bottom:16px;width:min(420px,calc(100vw - 32px));z-index:60;pointer-events:none"></div>
+  <script src="/js/intake.js" defer></script>
 </section>
 
 <section class="panel wide" id="findings">

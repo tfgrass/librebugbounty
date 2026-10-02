@@ -2,6 +2,7 @@
 
 namespace App\Service;
 
+use App\Dto\FindingCreateResult;
 use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
@@ -47,6 +48,56 @@ final class FindingService
         string $status = FindingStatus::NEW,
         bool $allowUnauthorizedStore = false,
     ): Finding {
+        return $this->createFindingResult(
+            url: $url,
+            hostname: $hostname,
+            title: $title,
+            type: $type,
+            severity: $severity,
+            method: $method,
+            requestParams: $requestParams,
+            payload: $payload,
+            expectedEvidence: $expectedEvidence,
+            privateNotes: $privateNotes,
+            reportUrl: $reportUrl,
+            reportedAt: $reportedAt,
+            submittedAt: $submittedAt,
+            notifiedOwnerAt: $notifiedOwnerAt,
+            status: $status,
+            allowUnauthorizedStore: $allowUnauthorizedStore,
+        )->finding;
+    }
+
+    public function createIntakeFinding(
+        string $url,
+        ?string $expectedEvidence = null,
+        ?string $privateNotes = null,
+    ): FindingCreateResult {
+        return $this->createFindingResult(
+            url: $url,
+            expectedEvidence: $expectedEvidence,
+            privateNotes: $privateNotes,
+        );
+    }
+
+    private function createFindingResult(
+        string $url,
+        ?string $hostname = null,
+        ?string $title = null,
+        ?string $type = null,
+        string $severity = FindingSeverity::MEDIUM,
+        string $method = 'GET',
+        ?array $requestParams = null,
+        ?string $payload = null,
+        ?string $expectedEvidence = 'OPENBUGBOUNTY',
+        ?string $privateNotes = null,
+        ?string $reportUrl = null,
+        ?\DateTimeImmutable $reportedAt = null,
+        ?\DateTimeImmutable $submittedAt = null,
+        ?\DateTimeImmutable $notifiedOwnerAt = null,
+        string $status = FindingStatus::NEW,
+        bool $allowUnauthorizedStore = false,
+    ): FindingCreateResult {
         $url = trim($url);
         $this->validation->assertSeverity($severity);
         $this->validation->assertStatus($status);
@@ -67,66 +118,84 @@ final class FindingService
             throw new \InvalidArgumentException(sprintf('Unsupported URL scheme "%s".', $scheme));
         }
 
-        $domain = $this->domainService->upsertDomain($resolvedHostname, $scheme, true)->domain;
-        $existing = $this->findings->findOneByDomainAndUrl($domain, $url);
-        if ($existing instanceof Finding) {
-            // Older data and an interrupted pre-queue intake may not have a job.
-            // Re-submitting the same URL repairs that invariant without creating a
-            // second finding or replacing any of its fields.
-            if (!$existing->isDiscarded()) {
-                $this->screenshotQueue?->ensureExists($existing);
+        $createOrFind = function () use (
+            $resolvedHostname,
+            $scheme,
+            $url,
+            $title,
+            $type,
+            $severity,
+            $status,
+            $method,
+            $requestParams,
+            $payload,
+            $expectedEvidence,
+            $privateNotes,
+            $reportUrl,
+            $reportedAt,
+            $submittedAt,
+            $notifiedOwnerAt,
+        ): FindingCreateResult {
+            $domain = $this->domainService->upsertDomain($resolvedHostname, $scheme, true)->domain;
+            $existing = $this->findings->findOneByDomainAndUrl($domain, $url);
+            if ($existing instanceof Finding) {
+                return new FindingCreateResult($existing, false);
             }
 
-            return $existing;
-        }
+            $title ??= 'reflected_xss';
+            $type ??= 'reflected_xss';
+            $submittedAt ??= new \DateTimeImmutable();
+            $expectedEvidence = $expectedEvidence !== null && trim($expectedEvidence) !== ''
+                ? $expectedEvidence
+                : $this->settings?->getDefaultPayload() ?? 'OPENBUGBOUNTY';
 
-        $title ??= 'reflected_xss';
-        $type ??= 'reflected_xss';
-        $submittedAt ??= new \DateTimeImmutable();
-        $expectedEvidence = $expectedEvidence !== null && trim($expectedEvidence) !== ''
-            ? $expectedEvidence
-            : $this->settings?->getDefaultPayload() ?? 'OPENBUGBOUNTY';
+            $finding = new Finding();
+            $finding->setDomain($domain);
+            $finding->setTitle($title);
+            $finding->setType($type);
+            $finding->setSeverity($severity);
+            $finding->setStatus($status);
+            $finding->setUrl($url);
+            $finding->setMethod($method);
+            $finding->setRequestParams($requestParams);
+            $finding->setPayload($payload);
+            $finding->setExpectedEvidence($expectedEvidence);
+            $finding->setPrivateNotes($privateNotes);
+            $finding->setReportUrl($reportUrl);
+            $finding->setReportedAt($reportedAt);
+            $finding->setSubmittedAt($submittedAt);
+            $finding->setNotifiedOwnerAt($notifiedOwnerAt);
+            $finding->setReviewState(null);
 
-        $finding = new Finding();
-        $finding->setDomain($domain);
-        $finding->setTitle($title);
-        $finding->setType($type);
-        $finding->setSeverity($severity);
-        $finding->setStatus($status);
-        $finding->setUrl($url);
-        $finding->setMethod($method);
-        $finding->setRequestParams($requestParams);
-        $finding->setPayload($payload);
-        $finding->setExpectedEvidence($expectedEvidence);
-        $finding->setPrivateNotes($privateNotes);
-        $finding->setReportUrl($reportUrl);
-        $finding->setReportedAt($reportedAt);
-        $finding->setSubmittedAt($submittedAt);
-        $finding->setNotifiedOwnerAt($notifiedOwnerAt);
-        $finding->setReviewState(null);
+            $initialScreenshotJob = (new ScreenshotJob())
+                ->setFinding($finding)
+                ->setUrl($finding->getUrl())
+                ->setStatus(ScreenshotJobStatus::QUEUED)
+                ->setActiveKey($finding->getId());
 
-        $initialScreenshotJob = (new ScreenshotJob())
-            ->setFinding($finding)
-            ->setUrl($finding->getUrl())
-            ->setStatus(ScreenshotJobStatus::QUEUED)
-            ->setActiveKey($finding->getId());
-
-        $persist = function () use ($finding, $initialScreenshotJob): void {
             // Doctrine commits both inserts in the same flush transaction. A
             // queue insert failure or process stop can therefore never leave a
             // newly committed finding without its durable screenshot work item.
             $this->entityManager->persist($finding);
             $this->entityManager->persist($initialScreenshotJob);
             $this->entityManager->flush();
+
+            return new FindingCreateResult($finding, true);
         };
 
-        if ($this->screenshotOperationLock === null) {
-            $persist();
-        } else {
-            $this->screenshotOperationLock->synchronizedQueueMutation($persist);
+        $result = $this->screenshotOperationLock === null
+            ? $createOrFind()
+            : $this->screenshotOperationLock->synchronizedQueueMutation($createOrFind);
+
+        // Older data and an interrupted pre-queue intake may not have a job.
+        // Re-submitting the same URL repairs that invariant without creating a
+        // second finding or replacing any of its fields. This happens after the
+        // creation lock because ensureExists() acquires that lock itself.
+        if (!$result->created && !$result->finding->isDiscarded()) {
+            $this->screenshotQueue?->ensureExists($result->finding);
         }
 
-        return $finding;
+        return $result;
     }
 
     public function getFindingOrFail(string $id): Finding

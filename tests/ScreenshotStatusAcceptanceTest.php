@@ -2,7 +2,6 @@
 
 namespace App\Tests;
 
-use App\Dto\RetestResultData;
 use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Entity\RetestRun;
@@ -10,13 +9,21 @@ use App\Entity\ScreenshotJob;
 use App\Service\BrowserRetestClientInterface;
 use App\Service\EvidenceService;
 use App\Service\EvidenceStorageInterface;
-use App\Service\SettingsService;
 use App\Service\ScreenshotStatusService;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
 {
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=';
+    private Session $session;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->session = new Session(new MockArraySessionStorage());
+    }
 
     public function testStoredCaptureFailuresAndUnknownHistoryRemainDistinctAndReadOnly(): void
     {
@@ -81,24 +88,16 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         self::assertSame($paths, self::getContainer()->get(EvidenceStorageInterface::class)->listPaths());
     }
 
-    public function testIntakeQueuesScreenshotSeparatelyFromHeadlessVerification(): void
+    public function testIntakeQueuesScreenshotWithoutStartingHeadlessVerification(): void
     {
-        // Existing installations may still contain this legacy value. New UI
-        // intake must nevertheless perform its headless verification now.
-        self::getContainer()->get(SettingsService::class)->save([
-            'intake.auto_verify_mode' => 'cron_only',
-        ]);
         $browser = $this->createMock(BrowserRetestClientInterface::class);
-        $browser->expects(self::once())->method('retest')
-            ->with(self::callback(static fn ($request): bool => $request->headless === true && $request->screenshot === false))
-            ->willReturn(new RetestResultData(
-                result: 'inconclusive',
-                raw: ['screenshotCaptureError' => 'Fixture capture utility unavailable'],
-            ));
+        $browser->expects(self::never())->method('retest');
         self::getContainer()->set(BrowserRetestClientInterface::class, $browser);
-        $request = Request::create('/findings', 'POST', ['url' => 'http://fixture.localhost/intake', 'annotate' => 'Retain me']);
-        $response = self::$kernel->handle($request);
-        self::$kernel->terminate($request, $response);
+        $response = $this->request('/findings', 'POST', [
+            '_token' => $this->intakeToken(),
+            'url' => 'http://fixture.localhost/intake',
+            'annotate' => 'Retain me',
+        ]);
         self::assertSame(302, $response->getStatusCode());
         parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
         self::assertArrayHasKey('message', $query, json_encode($query));
@@ -109,9 +108,7 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         $finding = $this->entityManager->getRepository(Finding::class)->findOneBy(['url' => 'http://fixture.localhost/intake']);
         self::assertInstanceOf(Finding::class, $finding);
         self::assertSame('Retain me', $finding->getPrivateNotes());
-        $run = $this->entityManager->getRepository(RetestRun::class)->findOneBy(['finding' => $finding]);
-        self::assertSame(false, $run->getRawResult()['screenshotRequested']);
-        self::assertSame('Fixture capture utility unavailable', $run->getRawResult()['screenshotCaptureError']);
+        self::assertCount(0, $this->entityManager->getRepository(RetestRun::class)->findBy(['finding' => $finding]));
         $job = $this->entityManager->getRepository(ScreenshotJob::class)->findOneBy(['finding' => $finding]);
         self::assertInstanceOf(ScreenshotJob::class, $job);
         self::assertSame('queued', $job->getStatus());
@@ -127,5 +124,24 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         self::assertSame('available', $status->state);
         self::assertFalse($status->isProblem());
         self::assertStringContainsString('First attempt failed', $status->detail);
+    }
+
+    private function request(string $path, string $method = 'GET', array $parameters = []): \Symfony\Component\HttpFoundation\Response
+    {
+        $request = Request::create($path, $method, $parameters);
+        $request->setSession($this->session);
+        $response = self::$kernel->handle($request);
+        self::$kernel->terminate($request, $response);
+
+        return $response;
+    }
+
+    private function intakeToken(): string
+    {
+        $html = $this->request('/')->getContent();
+        self::assertSame(1, preg_match('#<form[^>]+action="/findings"[^>]*>(.*?)</form>#s', $html, $form));
+        self::assertSame(1, preg_match('/name="_token" value="([^"]+)"/', $form[1], $matches));
+
+        return html_entity_decode($matches[1], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

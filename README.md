@@ -1,8 +1,8 @@
 # LibreBugBounty
 
 LibreBugBounty is a local, open-source OpenBugBounty alternative for reflected
-XSS triage. It combines URL intake, immediate technical verification, persistent
-screenshot jobs, evidence history, and a compact review workflow.
+XSS triage. It combines fast durable URL intake, persistent screenshot jobs,
+evidence history, explicit technical checks, and a compact review workflow.
 
 ## Screenshots
 
@@ -47,7 +47,7 @@ run separately, use:
 ddev exec php bin/console app:db:init
 ```
 
-## Intake, verification, and screenshots
+## Fast intake, verification, and screenshots
 
 Submitting a supported URL stores the finding and its first persistent screenshot
 job atomically in one database transaction. A committed new finding therefore
@@ -57,14 +57,37 @@ notes and history unchanged. If an older finding has no screenshot-job history,
 that duplicate submission repairs the missing initial job. Existing terminal or
 active jobs are not replaced.
 
-Every finding newly stored through the web intake is then verified immediately
-and headless. The check does not take the evidence image. The supervised
-screenshot worker later opens a separate headed Chromium instance and stores a
-screenshot, so intake no longer waits for visible capture. A historical
-`intake.auto_verify_mode=cron_only` setting is ignored and the choice has been
-removed from the settings UI. If the headless check fails, the already committed
-finding and screenshot job remain. Imports and direct service/ORM usage do not
-implicitly run this web-only immediate retest.
+The intake response returns after that durable database commit. It does not wait
+for the screenshot worker and does not start an automatic headless retest. This
+revises the earlier immediate-verification behavior, which could block a request
+for up to 120 seconds and could fail to settle on pages that repeatedly open
+dialogs. Manual and other explicitly selected retest commands remain available
+as separate operations.
+
+The existing page submits one URL at a time to `POST /api/findings`. A newly
+stored finding returns HTTP 201; an exact duplicate returns HTTP 200. Both include
+the finding ID, detail link, and current persisted status. Validation errors use
+HTTP 422 and invalid CSRF tokens use HTTP 403. The classic `POST /findings` route
+uses the same storage operation and redirects without running a retest.
+
+After confirmed storage, unchanged URL and note fields are cleared and the URL
+field is focused for the next entry. If the next draft is already being edited,
+its values and active field are preserved. The current tab keeps up to 50
+submissions and the current draft in `sessionStorage`, so they survive a reload.
+Failed or unconfirmed requests remain available for an explicit retry; an unknown
+response never triggers an automatic second POST.
+Status toasts appear only in the visible, focused tab and restored old states do
+not generate new toasts after reload.
+
+`GET /api/findings/status?ids[]=...` reads the persisted state of at most 50
+finding IDs. It reports existing manual assessment, latest stored technical
+observation, contact time, and screenshot-job state. This polling endpoint starts
+neither a retest nor a screenshot. The narrow JSON interface initially serves the
+classic page and the planned parallel studio page; it is not a general public API.
+
+The supervised screenshot worker separately opens a headed Chromium instance and
+stores a screenshot. A successful intake therefore confirms the finding and
+queued capture work, not a technical vulnerability result or an available image.
 
 The separate capture always produces an image when it succeeds:
 

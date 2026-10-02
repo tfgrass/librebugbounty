@@ -1,6 +1,6 @@
 # Lastenheft: LibreBugBounty stabilisieren und strukturieren
 
-Stand: 2026-10-02 · Version 0.8 · Arbeitsfassung für die Umsetzung mit Codex
+Stand: 2026-10-03 · Version 0.9 · Arbeitsfassung für die Umsetzung mit Codex
 
 Umsetzungsstand: Arbeitsabschnitte 1 und 2 wurden ausdrücklich beauftragt und
 umgesetzt. [Abnahme Abschnitt 1](abnahme-abschnitt-1.md),
@@ -15,7 +15,9 @@ Anschließend wurde der geklärte Teilabschnitt 3a ausdrücklich beauftragt und
 umgesetzt: [Bewertung, Kontaktzeitpunkt, Verwerfen und Historie](abnahme-abschnitt-3a.md).
 Abschnitt 3b wurde danach ebenfalls ausdrücklich beauftragt und umgesetzt:
 [Bestand konsistent lesen und filtern](abnahme-abschnitt-3b.md).
-Das spätere Review-Paket bleibt separate Arbeit.
+Am 2026-10-03 wurde außerdem der [schnelle Einzeleingang](abnahme-schneller-eingang.md)
+ausdrücklich beauftragt. Das spätere Review-Paket und die parallele Studio-Ansicht
+bleiben separate Arbeit.
 
 ## 1. Zweck und Verbindlichkeit
 
@@ -40,6 +42,11 @@ der sichtbaren Seitenansicht unmittelbar manuell beurteilen können.
 Im anschließenden Sparring wurde die Ausbaurichtung präzisiert: zunächst vorhandene
 Funktionen stabilisieren und die bestehende Ansicht schrittweise erweitern; die
 Resolve-artige Oberfläche folgt später mit bereits nutzbaren Arbeitsbereichen.
+Für den Eingang wurde anschließend bestätigt: einzelne URLs schnell nacheinander
+erfassen, nach bestätigter Speicherung das Formular sofort wieder verwenden und
+den Verlauf der aktuellen Tabsitzung über Reload erhalten. Toasts erscheinen nur
+im fokussierten Tab. Backend/API bedienen zunächst die klassische und die spätere
+Studio-Oberfläche, nicht beliebige weitere Clients.
 
 **Aus der Analyse abgeleiteter Vorschlag:** Die übrigen Muss-Anforderungen sind
 die vorgeschlagene Baseline dieses Lastenhefts. Ihre Bezeichnung als Muss beschreibt
@@ -94,14 +101,29 @@ ist keine Aussage darüber, ob ein Fall erledigt ist.
 - Ein neuer UI-Fall und sein erster Screenshot-Auftrag werden gemeinsam committed;
   eine exakt doppelte Eingabe darf einen vollständig fehlenden Altauftrag ergänzen,
   aber keinen vorhandenen terminalen Auftrag oder Nutzdaten ersetzen.
-- Das Speichern eines Falls bleibt erfolgreich, wenn eine nachgelagerte technische
-  Aktion scheitert. Die Oberfläche unterscheidet beide Ergebnisse.
+- Nach diesem Commit kehrt der Eingangsrequest zurück. Er wartet weder auf die
+  Screenshot-Aufnahme noch auf einen technischen Retest und startet im Intake
+  keinen automatischen Retest.
+- Klassischer Formular-POST und schneller JSON-Eingang verwenden denselben
+  Speicherfall und denselben CSRF-Zweck. Der JSON-Eingang unterscheidet neue
+  Speicherung (HTTP 201), exaktes Duplikat (HTTP 200), Eingabefehler und
+  abgewiesene CSRF-Tokens.
+- Der lesende Eingangsstatus verarbeitet höchstens 50 gültige Finding-IDs. Er
+  zeigt ausschließlich persistierte Fall-, Beobachtungs- und Screenshotzustände
+  und startet keine Browserarbeit.
+- Nach bestätigter Speicherung ist das Formular wieder frei. Fehlgeschlagene oder
+  wegen eines Transportabbruchs nicht bestätigte Eingaben bleiben erhalten; eine
+  erneute Übermittlung erfordert eine bewusste Nutzeraktion.
 
-**Abnahme:** Eine harmlose lokale URL zweimal eintragen: ein Fall, unveränderte
-vorhandene Notiz und kein zweiter Retest. Ein synthetischer historischer Fall ohne
+**Abnahme:** Fünf harmlose lokale URLs einzeln in einem Tab erfassen. Jede
+bestätigte Speicherung gibt das Formular ohne Warten auf Browserarbeit wieder frei;
+Finding und Initialauftrag sind anschließend vorhanden, RetestRun und Aufruf des
+Retest-Clients nicht. Eine lokale URL zweimal eintragen: ein Fall, unveränderte
+vorhandene Notiz und kein Retest. Ein synthetischer historischer Fall ohne
 ScreenshotJob erhält genau einen; vorhandene Auftragshistorie bleibt unberührt.
-Ein simulierter Ausfall der nachgelagerten Browserschnittstelle lässt Fall und
-Initialauftrag aufrufbar und zeigt den Ausfall getrennt an.
+Validierungs-, CSRF- und unbekannten Transportfehler prüfen; Entwurf und Verlauf
+bleiben erhalten und verursachen keinen automatischen Wiederholungs-POST. Weitere
+Nachweise: [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md).
 
 ### F02 – Übersicht und Detailansicht
 
@@ -145,11 +167,18 @@ wird als Ausgangspunkt respektiert; vermeintliche Regressionen werden reproduzie
 hintereinander erfassen, ohne jeweils auf die sichtbare Aufnahme zu warten. Neuer
 Fall und erster persistenter Screenshot-Auftrag werden atomar gespeichert; ein
 von DDEV gestarteter Worker arbeitet die Aufträge FIFO und einzeln ab. Ein
-zusätzlicher Cronjob ist nicht nötig. Jeder neue UI-Eingang wird sofort headless
-und ohne Screenshot technisch geprüft; die alte `cron_only`-Einstellung gilt für
-diesen Weg nicht mehr. Ein
-später erstelltes Bild dokumentiert seinen tatsächlichen späteren Aufnahmezeitpunkt
-und wird nicht als Bild der früheren technischen Beobachtung ausgegeben.
+zusätzlicher Cronjob ist nicht nötig. Ein später erstelltes Bild dokumentiert
+seinen tatsächlichen späteren Aufnahmezeitpunkt und wird nicht als Bild einer
+früheren technischen Beobachtung ausgegeben.
+
+**Ausdrücklich revidierte Teilentscheidung vom 2026-10-03:** Die vorherige
+Festlegung „jeder neue UI-Eingang wird sofort headless technisch geprüft“ gilt
+nicht mehr. Dieser synchrone Vorgang konnte den Eingangsrequest bis zu 120 Sekunden
+blockieren; viele wiederholte `alert()`-Aufrufe konnten einen rechtzeitigen
+Abschluss zusätzlich verhindern. Bestätigte dauerhafte Speicherung hat im Intake
+Vorrang. Der Eingangsweg startet daher keinen automatischen Retest. Die bestehende
+Screenshot-Queue bleibt bestehen; manuelle oder anderweitig ausdrücklich
+ausgelöste technische Prüfungen sind davon unabhängig.
 
 **Abnahme:** Eine kontrollierte lokale Beispielseite mit gewöhnlichem Dialog
 liefert einen lesbaren Bildbeleg mit sichtbarer Seite und Dialog. Eine lokale
@@ -233,8 +262,9 @@ eine neue simulierte Beobachtung nicht automatisch reaktiviert.
 
 ### F07 – Fehler verständlich darstellen
 
-- Eingabefehler, nicht erreichbare technische Schnittstelle, Aufnahmefehler,
-  fehlende Datei und fehlgeschlagene Speicherung sind unterscheidbar.
+- Eingabefehler, nicht bestätigter Requestausgang, nicht erreichbare technische
+  Schnittstelle, Aufnahmefehler, fehlende Datei und fehlgeschlagene Speicherung
+  sind unterscheidbar.
 - Die Oberfläche nennt den betroffenen Vorgang und sein Ergebnis. Technische
   Detailinformationen sind für Diagnose verfügbar, ohne die normale Ansicht zu überladen.
 - Ein erfolgreich gespeicherter Fall wird wegen eines Aufnahmefehlers nicht als
@@ -328,8 +358,9 @@ Funktionen in der aktuellen Ansicht nutzbar machen. Die folgende Aufteilung blei
 der Vorschlag für die Stabilisierung; jeder Abschnitt liefert ein prüfbares Ergebnis.
 Ein früher Resolve-Prototyp ist zurückgestellt. Die Kennungen der Abschnitte bleiben
 erhalten. Beauftragt und umgesetzt sind Abschnitt 1, Abschnitt 2 samt
-ergänzendem Backup und der begrenzte Teil 3a; Nachweise und Grenzen stehen in den jeweiligen
-Abnahmeprotokollen.
+ergänzendem Backup sowie 3a und 3b; Nachweise und Grenzen stehen in den jeweiligen
+Abnahmeprotokollen. Der schnelle Einzeleingang wurde danach als eigenes begrenztes
+Vorhaben beauftragt.
 
 1. **Sicher bearbeiten und lesen:** DDEV-Ausgangslage dokumentieren, Testdaten
    isolieren, einheitlichen Speicher verwenden, lesende Detailansicht und sichtbare
@@ -347,15 +378,21 @@ Abnahmeprotokollen.
    [Zuschnitt](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 4. **Bestand übernehmen und Übergabe abschließen:** Migration und Wiederherstellung
    an Kopien prüfen, Dokumentation aktualisieren und Abnahmeprotokoll erstellen.
+5. **Schneller Einzeleingang:** Finding und ersten Screenshot-Auftrag dauerhaft
+   speichern und den Request anschließend ohne automatischen Retest beantworten.
+   Fünf einzelne URLs lassen sich in einem Tab nacheinander erfassen. Ein lokaler
+   Sitzungsverlauf erhält bestätigte, fehlgeschlagene und nicht bestätigte
+   Eingaben; ein lesender Statusabruf meldet ausschließlich persistierte Zustände.
+   Beauftragt am 2026-10-03; [Abnahme und Grenzen](abnahme-schneller-eingang.md).
 
 Abschnitt 3 verbessert die vorhandene Darstellung; er setzt keinen vollständigen
 UI-Neubau voraus. Sicherung und Wiederherstellungsnachweis aus N03 gelten bereits
 vor jeder betroffenen schreibenden Migration, unabhängig von der Abschnittsnummer.
 
 Anschließende Erweiterungen entstehen ebenfalls zunächst in der bestehenden
-Oberfläche: verbesserter Eingang, Review-Arbeitsliste mit Bildvergleich sowie
-Meldungen mit Entwürfen und später Gruppierung. Ihr Zuschnitt ist noch ein Vorschlag
-und steht im [UI-Arbeitsmodell](ui-workflow.md). Sind zwei bis drei Arbeitsbereiche
+Oberfläche: Review-Arbeitsliste mit Bildvergleich sowie Meldungen mit Entwürfen
+und später Gruppierung. Ihr Zuschnitt ist noch ein Vorschlag und steht im
+[UI-Arbeitsmodell](ui-workflow.md). Sind zwei bis drei Arbeitsbereiche
 im Alltag brauchbar, lässt sich der Wechsel zur Resolve-artigen Navigation und
 Anordnung konkret planen. Funktionen und Daten werden dabei weiterverwendet.
 
@@ -402,8 +439,15 @@ Bildvergleichsreferenz werden vor dem späteren Review-Paket geklärt; siehe
 
 Die frühere offene Entscheidung zu langen Screenshot-Vorgängen ist für diesen
 Anwendungsfall getroffen: persistente SQLite-Aufträge und ein einzelner
-DDEV-Worker. Die sofortige technische Verifikation bleibt ein eigener synchroner,
-headless Vorgang; ob sie später ebenfalls entkoppelt wird, ist nicht entschieden.
+DDEV-Worker. **Die anschließende frühere Festlegung einer sofortigen synchronen
+headless Verifikation im Intake ist revidiert:** Der Eingang startet keinen
+automatischen Retest. Eine mögliche spätere, ausdrücklich sichtbare automatische
+Prüfstrategie wäre ein neues Vorhaben; sie ist keine offene Implementierungsfrage
+des schnellen Eingangs.
+
+Für die parallele Studio-Ansicht bleiben Framework, Navigation und Auswahlkontext
+offen. Festgelegt sind nur dieselbe Fallverwaltung wie in der klassischen Ansicht
+und ein API-Umfang zunächst für diese beiden Oberflächen.
 
 Mehrbenutzerbetrieb, öffentliche Bereitstellung und automatische Kommunikation
 sind spätere mögliche Vorhaben und keine Blocker für die lokale Stabilisierung.

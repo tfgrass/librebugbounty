@@ -1,6 +1,6 @@
 # Arbeitsmodell und Bestandsanalyse
 
-Stand: 2026-10-02. Bestandsanalyse mit anschließendem Umsetzungsstand.
+Stand: 2026-10-03. Bestandsanalyse mit anschließendem Umsetzungsstand.
 
 **Aktualisierung:** Arbeitsabschnitt 1 ist ausdrücklich beauftragt, umgesetzt und
 in DDEV geprüft. [Abnahme, Änderungen und Grenzen](abnahme-abschnitt-1.md).
@@ -14,9 +14,19 @@ Serialisierung und DDEV-Prozessbetrieb wurden danach neu geordnet. Spätere
 Architekturvorschläge bleiben als solche bestehen, sofern sie nicht ausdrücklich
 als umgesetzt gekennzeichnet sind.
 
+**Revision vom 2026-10-03:** Der schnelle Einzeleingang wurde ausdrücklich
+beauftragt. Er ersetzt für den UI-Intake die frühere synchrone automatische
+headless Verifikation: Nach dem atomaren Commit von Finding und erstem
+ScreenshotJob kehrt der Request zurück und startet keinen Retest. Grund sind die
+bis zu 120 Sekunden blockierende Browserprüfung und besonders Seiten mit sehr
+vielen Dialogaufrufen, bei denen sie nicht rechtzeitig zum Abschluss kommt.
+Bestätigte Speicherung hat im Eingang Vorrang. Details und Grenzen stehen im
+[UI-Arbeitsmodell](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
+
 ## Bestätigte Anforderungen
 
-Grundlage: Nutzerauftrag und Antworten im Architekturgespräch vom 2026-10-02.
+Grundlage: Nutzerauftrag und Antworten in den Architekturgesprächen vom
+2026-10-02 und 2026-10-03.
 
 - Lokal nutzbare Oberfläche als persönliche Alternative zu OpenBugBounty.
 - URL eingeben und den zugehörigen Fall mit Browseransicht und Screenshots bearbeiten.
@@ -37,6 +47,13 @@ Grundlage: Nutzerauftrag und Antworten im Architekturgespräch vom 2026-10-02.
   Arbeitsbereichen zur Resolve-artigen Gestaltung wechseln und die erarbeiteten
   Funktionen übernehmen. Der Nutzer hat diese Reihenfolge im weiteren Sparring
   ausdrücklich präzisiert.
+- Häufig mehrere URLs als einzelne Eingaben nacheinander erfassen; nach bestätigter
+  Speicherung wird das Formular sofort wieder nutzbar. Sitzungsverlauf und Entwurf
+  bleiben im aktuellen Tab über Reload erhalten, Toasts erscheinen nur im
+  fokussierten Tab.
+- Klassische und spätere Studio-Oberfläche verwenden zunächst dieselbe schmale
+  Backend-Schnittstelle und Fallverwaltung. Weitere API-Clients sind derzeit kein
+  Produktziel.
 
 Die damalige automatische Verarbeitung im analysierten Ausgangscode war
 beobachteter Bestand, keine vollständig bestätigte Spezifikation sämtlicher
@@ -47,7 +64,8 @@ Rückmeldung überspringen, Sichtung mit Notizen und Bildvergleich bei Änderung
 bearbeitbare Meldungen mit Codex-CLI-Mailentwürfen, Gruppierung auch anhand
 gemeinsamer Entwickler sowie Bestand/Dashboard/Statistiken. Entscheidungen,
 Lösungsvorschläge und offene Regeln stehen im [UI-Arbeitsmodell](ui-workflow.md).
-Die dortige Richtung erteilt noch keinen Implementierungsauftrag.
+Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt;
+Studio-Ansicht, Review und Meldungen bleiben getrennte spätere Vorhaben.
 
 ## Beobachteter Aufbau
 
@@ -57,8 +75,9 @@ Der große WebController enthält weiterhin Routing, Anwendungsabläufe, HTML/CS
 Statusdarstellung und Dateiauslieferung; die frühere lesende Datenbereinigung
 wurde entfernt.
 
-Der Web-POST speichert einen Fall und seinen ersten Screenshot-Auftrag atomar und
-wartet anschließend immer auf den getrennten headless Retest. DDEV betreibt einen
+**Historischer Stand vor der Revision:** Der Web-POST speicherte einen Fall und
+seinen ersten Screenshot-Auftrag atomar und wartete anschließend immer auf den
+getrennten headless Retest. DDEV betreibt einen
 seriellen Symfony-Worker für Screenshots. CLI-Commands verwenden im älteren
 Prüfpfad teils RetestService, teils ReviewService, mit unterschiedlichen
 Voreinstellungen. Finding, ReviewState und RetestRun tragen weiterhin teilweise
@@ -154,11 +173,12 @@ zudem keinen einheitlichen Screenshot-Vertrag.
    Werte, nicht den historischen Verursacher. Die maßgebliche manuelle Entscheidung
    ist aus solchen Kombinationen nicht zuverlässig abzuleiten.
 
-7. **Auftrags- und Zeitdarstellung ist unvollständig.**
+7. **Historischer Ausgangsbefund: Auftrags- und Zeitdarstellung war unvollständig.**
    Der normale RetestService persistiert einen Lauf erst nach Rückkehr des
    Transports. Bei Transportausnahmen kann ein dokumentierter Versuch fehlen.
    Bei `recordBrowserResult()` beginnt die gespeicherte Uhr erst nach der
-   Browserarbeit. Web-Eingaben warten synchron auf die gesamte Verarbeitung.
+   Browserarbeit. Web-Eingaben warteten synchron auf die gesamte Verarbeitung;
+   für den Intake ersetzt die Revision vom 2026-10-03 dieses Verhalten.
 
 8. **Konfiguration, Commands und Dokumentation widersprechen sich.**
    Das Review-Timeout aus den Einstellungen gilt nicht einheitlich. README und
@@ -245,11 +265,14 @@ ScreenshotJob erzeugt.
 
 Für den bestätigten schrittweisen Ausbau empfiehlt sich: Anwendungsregeln beim
 jeweiligen Funktionsumbau aus der Darstellung herauslösen, vorhandene Ansichten
-daran anbinden und geeignete Twig-Bausteine weiterverwenden. Es braucht dafür
-keine vorsorgliche separate Frontend-API. Jede Erweiterung liefert einen in der
-aktuellen Anwendung nutzbaren Ablauf. Ein späterer Wechsel von Navigation und
-Anordnung nutzt dieselben Anwendungsfälle und Daten; er kann dennoch eigene
-Arbeit für Auswahlkontext, Bedienung und Darstellung erfordern.
+daran anbinden und geeignete Twig-Bausteine weiterverwenden. Der schnelle Eingang
+führt dafür zwei schmale JSON-Grenzen zum Speichern und zum rein lesenden
+Statusabruf ein. Sie dienen zunächst der klassischen und der späteren
+Studio-Oberfläche und begründen keine umfassende öffentliche API oder separate
+Frontend-Anwendung. Jede Erweiterung liefert einen in der aktuellen Anwendung
+nutzbaren Ablauf. Ein späterer Wechsel von Navigation und Anordnung nutzt dieselben
+Anwendungsfälle und Daten; er kann dennoch eigene Arbeit für Auswahlkontext,
+Bedienung und Darstellung erfordern.
 
 ## Alternativen und Voraussetzungen
 
@@ -262,8 +285,10 @@ Arbeit für Auswahlkontext, Bedienung und Darstellung erfordern.
   Beleg-/Entscheidungshistorie genügt möglicherweise; abhängig vom Auditbedarf.
 - Eine vollständig synchrone Aufnahme wurde für den Eingang verworfen, weil
   mehrere Fälle ohne Warten auf den sichtbaren Browser erfasst werden sollen.
-  Die unmittelbare headless Verifikation bleibt synchron und getrennt; die frühere
-  `cron_only`-Einstellung wird im UI-Eingang nicht mehr berücksichtigt.
+  **Ersetzt am 2026-10-03:** Auch die unmittelbare synchrone headless Verifikation
+  entfällt im Intake. Der Intake startet keinen automatischen Retest; eine neue
+  Hintergrund-Queue dafür wurde bewusst nicht eingeführt. Screenshot-Aufträge
+  bleiben der bereits vorhandene, davon unabhängige asynchrone Pfad.
 
 ## Umgesetzte Stabilisierung
 
@@ -287,12 +312,12 @@ wurde als persistente serielle Queue umgesetzt und anhand kontrollierter lokaler
 Seiten mit und ohne Dialog geprüft. Sie umfasst keine Optimierung automatisierter
 Schwachstellenreproduktion gegen externe Ziele.
 
-Als nächster fachlicher Abschnitt bleibt die durchgehende Trennung von technischer
-Beobachtung, manueller Bewertung und Sichtungsbedarf. Der Screenshot-Pfad erfüllt
-diese Neutralität bereits; die gewachsenen allgemeinen Retest-/Review-Pfade noch
-nicht. Vor einer Übergabe sind manuelle Urteile und reine
-„Hinweis geprüft“-Aktionen zu klären, wie im [UI-Arbeitsmodell](ui-workflow.md)
-beschrieben.
+Die Trennung von technischer Beobachtung, manueller Bewertung und Kontakt wurde
+in 3a und 3b für Bewertung und Bestand umgesetzt. Reine „Hinweis geprüft“-Aktionen,
+Bildvergleich und Review-Arbeitsliste bleiben wie im
+[UI-Arbeitsmodell](ui-workflow.md) beschrieben offen. Der schnelle Eingang erhält
+diese Trennung: Sein Statusabruf zeigt gespeicherte Beobachtungen nur lesend und
+startet selbst keine Prüfung.
 
 ## Entscheidende offene Punkte
 
@@ -304,8 +329,9 @@ vermischt werden.
 Neue UI-Richtung: [Arbeitsbereiche und Duplikatbehandlung](ui-workflow.md).
 Resolve-artige Pages für Erfassen, Sichten und Mailvorbereitung bleiben das
 spätere Ziel. Bestätigt ist der Vorrang funktionierender Abläufe in der aktuellen
-Ansicht; der zunächst vorgeschlagene frühe UI-Prototyp ist zurückgestellt.
-Die konkreten dortigen Seiten- und Modellvorschläge bleiben Vorschläge.
+Ansicht; der schnelle Eingang ist der erste dafür beauftragte Arbeitsbereich.
+Die konkreten Seiten-, Navigations- und Modellvorschläge für die parallele
+Studio-Ansicht bleiben Vorschläge.
 
 - **Geklärt:** Eine neue technische Beobachtung hebt eine manuelle Entscheidung
   nicht auf. Entscheidung erhalten und neue Beobachtung als Hinweis zeigen;

@@ -1,7 +1,9 @@
 # Arbeitsbereiche und UI – Diskussionsstand
 
-Stand: 2026-10-02. Vorschlag aus dem Architektur-Sparring; kein fertiger
-Umsetzungsauftrag. Geltender Stand: [Index](index.md), [Lastenheft](lastenheft.md).
+Stand: 2026-10-03. Fortgeschriebener Diskussions- und Entscheidungsstand aus dem
+Architektur-Sparring. Der schnelle Einzeleingang ist beauftragt; andere als solche
+gekennzeichnete Ideen bleiben Vorschläge. Geltender Stand: [Index](index.md),
+[Lastenheft](lastenheft.md).
 
 ## Bestätigte Nutzerrichtung
 
@@ -345,10 +347,9 @@ Ansicht anbieten ist die neu eingebrachte Ausbaumöglichkeit. Auf weitere Nachfr
 bestätigt: Die API soll zunächst die beiden Oberflächen unterstützen; weitere
 eigenständige Clients sind kein aktuelles Ziel. Der Nutzer hat die vorgeschlagene
 Richtung aus schnellem Eingang, späteren Rückmeldungen und paralleler Oberfläche
-anschließend befürwortet und fragt nach dem nächsten Arbeitspaket. Noch kein neuer
-Implementierungsabschnitt beauftragt.
+anschließend befürwortet.
 
-**Beobachteter Stand bei `a8ae19d`:** Der Screenshot-Auftrag wird bereits mit dem
+**Historischer Stand bei `a8ae19d`:** Der Screenshot-Auftrag wurde bereits mit dem
 neuen Finding gespeichert. Der Eingangscontroller wartet danach auf den synchronen
 technischen Vorgang und antwortet erst mit dessen Ergebnis. Die Bildaufnahme selbst
 ist bereits entkoppelt. Eine neue Darstellung oder eine JSON-Antwort allein ändern
@@ -356,20 +357,51 @@ diese Antwortgrenze nicht. Ein laufender technischer Vorgang ist im derzeitigen
 Lesemodell zudem nicht als dauerhafter Zwischenstand abrufbar; sein `pending`-Objekt
 wird erst bei Ergebnisübernahme gespeichert.
 
-**Vorläufige Empfehlung:** Eingangsbestätigung und späteren Ergebnisstand getrennt
-behandeln. Die Oberfläche soll die nächste URL unabhängig vom späteren Ergebnis
-aufnehmen können. „Gespeichert“ darf sich auf eine bestätigte Server-Speicherung
-beziehen; bis dahin muss eine ausstehende Eingabe als solche erkennbar und bei
-Fehlern wieder erreichbar bleiben. Ein bloßes Freigeben des Formulars während eines
-langen Requests verbessert die Bedienung, beantwortet aber Speicherbestätigung,
-Reload und nachvollziehbaren Bearbeitungsstand noch nicht vollständig.
+**Ausdrücklich revidierte Entscheidung vom 2026-10-03:** Jeder neue UI-Eingang
+wird nicht mehr unmittelbar und synchron headless geprüft. Der technische Pfad
+konnte bis zum 120-Sekunden-Timeout warten; bei Seiten mit sehr vielen
+`alert()`-Aufrufen konnte der Browservorgang praktisch nicht zu einem rechtzeitigen
+Abschluss kommen. Ein realer Eingabeversuch des Nutzers zeigte dieses blockierende
+Verhalten erneut. Bestätigte dauerhafte Speicherung hat deshalb im Eingang Vorrang:
+Finding und erster ScreenshotJob werden weiterhin atomar committed, anschließend
+kehrt der Request zurück. Der Intake startet weder synchron noch automatisch einen
+Retest. Der persistente Screenshot-Worker arbeitet unabhängig weiter; manuelle und
+andere ausdrücklich ausgelöste Retests bleiben eigene Vorgänge.
 
-Eine sichtbare Zeile je Eingabe mit URL, Falllink und Ergebnisstand würde Toasts
-ergänzen. Rückmeldungen können in anderer Reihenfolge eintreffen; ein Fehler der
-späteren Verarbeitung darf einen gespeicherten Fall nicht als ungespeichert
-darstellen. Exakte Duplikate bleiben ein verständlich benanntes Ergebnis. Die
-bereits festgelegte Trennung von manuellem Urteil und technischer Beobachtung gilt
-auch für diese Rückmeldungen.
+Diese Revision ersetzt die Festlegung aus Abschnitt 2, wonach jeder neue
+UI-Eingang sofort headless geprüft werde. Sie führt bewusst keine zweite
+Hintergrund-Queue für technische Prüfungen ein. Ein Screenshotzustand oder eine
+bereits anderweitig gespeicherte Beobachtung darf später lesend angezeigt werden;
+das Status-Polling selbst erzeugt keine Arbeit und täuscht keine neue technische
+Beobachtung vor.
+
+**Beauftragter Umsetzungsvertrag:** Der klassische Formular-POST speichert und
+leitet unmittelbar weiter. Für den schnellen Eingang nimmt `POST /api/findings`
+dieselben Formulardaten und denselben CSRF-Zweck entgegen. Eine neue Speicherung
+antwortet mit HTTP 201, ein exaktes Duplikat mit HTTP 200; beide Antworten enthalten
+Finding-ID, Detail-Link und den aktuellen persistierten Zustand. Ungültige Eingaben
+und ein ungültiges CSRF-Token bleiben unterscheidbar. `GET /api/findings/status`
+liest den Zustand von höchstens 50 gültigen Finding-IDs und startet weder Retest
+noch Screenshot. Diese Schnittstellen sind schmale gemeinsame Grenzen für die
+klassische und die spätere Studio-Oberfläche, keine allgemeine öffentliche API.
+
+Nach bestätigter Speicherung werden unveränderte URL und Notiz geleert und das
+URL-Feld für die nächste Eingabe fokussiert. Wurde der nächste Entwurf bereits
+bearbeitet, bleiben seine Werte und das aktive Feld erhalten. Eine sichtbare
+Verlaufszeile je Eingabe unterscheidet Speichern, gespeichert, exaktes Duplikat,
+Eingabefehler, unbekannten
+Requestausgang und den persistierten Screenshotzustand. Ein Transportabbruch gilt
+nicht als Beleg, dass der Server nicht gespeichert hat: Die Eingabe bleibt als
+„nicht bestätigt“ erhalten und wird nur nach einem bewussten Klick wieder ins
+Formular übernommen. Dadurch verursacht ein Timeout keinen automatischen Doppel-POST.
+
+**Bestätigte Bedienungsdetails:** Der Verlauf der aktuellen Tabsitzung wird mit
+Entwurf in `sessionStorage` gehalten und auf höchstens 50 Einträge begrenzt. Er
+bleibt nach einem Reload dieses Tabs sichtbar; ein zwischen Tabs geteilter oder
+dauerhafter serverseitiger Eingangsverlauf gehört nicht zum Abschnitt. Toasts
+erscheinen nur im sichtbaren, fokussierten Tab. Nach einem Reload lösen bereits
+bekannte Zustände keine erneuten Toasts aus. Der Verlauf ist Bedienzustand; Fälle,
+ScreenshotJobs, Bewertungen und Beobachtungen bleiben serverseitige Wahrheit.
 
 Für parallele Oberflächen bietet sich dasselbe Symfony-Backend mit derselben
 Datenbasis, denselben Anwendungsfällen und Leseregeln an. Klassische Ansicht und
@@ -380,37 +412,29 @@ JavaScript-Komponenten und passenden JSON-Schnittstellen bleiben als einfachere
 Alternative erhalten. "Headless" bezeichnet hier die Trennung von Backend/API und
 Darstellung; der bereits vorhandene Browsermodus ist davon unabhängig.
 
-**Vorgeschlagener Zuschnitt:** Zuerst den schnellen Eingang in der vorhandenen
-Ansicht praktisch nutzbar machen; anschließend Eingang und Bestand in einer
-parallelen Resolve-Ansicht darstellen. Vorläufiges Layout: Fallliste links,
+**Festgelegter Zuschnitt:** Zuerst wird der schnelle Eingang in der vorhandenen
+Ansicht praktisch nutzbar gemacht; anschließend können Eingang und Bestand in
+einer parallelen Resolve-Ansicht dargestellt werden. Vorläufiges Layout: Fallliste links,
 Arbeitsfläche beziehungsweise vorhandener Bildbeleg in der Mitte, ausgewählter
 Fall mit Notizen/Bewertung rechts; Arbeitsbereichwechsel unten. Review und Meldungen
-folgen mit ihren eigenen noch offenen Fachregeln. Dies ist ein Vorschlag und kein
-Implementierungsauftrag oder fertiger Übergabeplan.
+folgen mit ihren eigenen noch offenen Fachregeln. Der schnelle Eingang wurde nach
+einer erneuten beobachteten Blockade ausdrücklich zur Umsetzung beauftragt. Die
+Studio-Ansicht bleibt ein folgendes Vorhaben und ist damit noch nicht beauftragt.
 
 **Geklärter API-Umfang:** Zunächst zwei Oberflächen. Eine umfassende API für weitere
-Clients ist deshalb keine Voraussetzung dieses Vorschlags. Die konkrete
-Frameworkwahl folgt dem benötigten Auswahl-/Bearbeitungszustand. Vor einer
-belastbaren Umsetzung sind außerdem die Wiederherstellbarkeit des Eingabeverlaufs
-und das Verhalten von Benachrichtigungen bei mehreren offenen Tabs festzulegen.
-Für die Grundrichtung reichen zunächst Fallverwaltung und Rückmeldungen; eine neue
+Clients ist deshalb keine Voraussetzung. Die konkrete Frameworkwahl der
+Studio-Ansicht folgt ihrem benötigten Auswahl-/Bearbeitungszustand. Für die
+Grundrichtung reichen Fallverwaltung und lesende Rückmeldungen; eine neue
 automatische Meldungs-/Versandfunktion ist damit nicht beschlossen.
 
-**Nächstes vorgeschlagenes Vorhaben: schneller Einzeleingang.** Die vorhandene
-Ansicht bleibt der erste nutzbare Arbeitsbereich. Zielabnahme: fünf kontrollierte
+**Beauftragtes Vorhaben: schneller Einzeleingang.** Die vorhandene Ansicht bleibt
+der erste nutzbare Arbeitsbereich. Zielabnahme: fünf kontrollierte
 lokale Beispiel-URLs nacheinander in einem Tab erfassen, ohne auf die späteren
-Ergebnisse zu warten. Jede Eingabe erhält ihren eigenen Fallbezug; gespeicherte
-Fälle, exakte Duplikate, Eingabefehler und später fehlgeschlagene Vorgänge bleiben
-unterscheidbar. Die Eingabe darf bei fehlgeschlagener Speicherung nicht verloren
-gehen. Damit entsteht die gemeinsame Grundlage für die folgende Studio-Ansicht.
-
-Als Startvorschlag für die verbleibenden Bedienungsdetails: Eingabeverlauf der
-aktuellen Sitzung nach Reload wieder sichtbar, einschließlich fehlgeschlagener
-Eingaben; Toasts nur im fokussierten Tab und beim Reload keine erneute Meldung
-sämtlicher alter Ergebnisse. Die dauerhaft serverseitig gespeicherten Fall- und
-Ergebnisstände bleiben in beiden Oberflächen lesbar. Ein zwischen Tabs geteilter,
-dauerhafter Eingangsverlauf wäre ein weitergehender Produktumfang. Diese Defaults
-sind Empfehlungen, noch keine gesondert bestätigten Produktentscheidungen.
+Screenshotzustände zu warten. Jede Eingabe erhält ihren eigenen Fallbezug;
+gespeicherte Fälle, exakte Duplikate, Eingabefehler und nicht bestätigte Requests
+bleiben unterscheidbar. Die Eingabe darf bei fehlgeschlagener oder unbestätigter
+Speicherung nicht verloren gehen. Die fokussierte Abnahme steht in
+[Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md).
 
 ## Szenarien für die jeweiligen Funktionspakete
 
