@@ -279,8 +279,9 @@ Das [UI-Arbeitsmodell](ui-workflow.md) hält die bestätigte Richtung fest:
   Fall ist bereits umgesetzt. Ähnlichkeitsregeln bleiben offen.
 - Review mit Notizen, mehreren Sichtungsgründen und Vorher-/Nachher-Bildern,
   besonders bei `vulnerable -> inconclusive`.
-- Bearbeitbare Meldungen, später Mailentwürfe über Codex CLI und Gruppierung nach
-  Domain, Betreiber, Entwickler oder begründeter Ähnlichkeit.
+- Später bearbeitbare Meldungen und gegebenenfalls Mailentwürfe über Codex CLI
+  sowie Gruppierung nach Domain, Betreiber, Entwickler oder begründeter
+  Ähnlichkeit. Dieser Ausbau ist auf Wunsch des Nutzers derzeit zurückgestellt.
 - Bestand mit Dashboard, Suche und verständlichen Statistiken.
 
 Studio-Eingang und Studio-Falldetail übernehmen bereits nutzbare Anwendungsfälle.
@@ -288,11 +289,14 @@ Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Studi
 zuerst seine noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
 Anwendungsfälle und Daten weiter.
 
-**Aktueller Vorschlag nach dem Dashboard, noch nicht beauftragt:**
-[Meldungen v1](ui-workflow.md#vorschlag-nach-dem-dashboard-meldungen-v1) mit
-ausgewählten Fällen, gespeichertem bearbeitbarem Entwurf und dokumentiertem
-Versand. Die Priorität gegenüber einem Review-Arbeitsvorrat hängt davon ab,
-welcher dieser beiden Abläufe im Alltag mehr Zeit kostet; diese Frage ist offen.
+**Aktuelle Priorität nach dem Dashboard:** Der Nutzer hat
+[Meldungen v1](ui-workflow.md#vorschlag-nach-dem-dashboard-meldungen-v1)
+zurückgestellt: Der manuelle E-Mail-Export funktioniert gut, und wichtige
+Grundlagen sollen vor einem Kontaktmanagement fertig werden. Als nächstes
+empfehle ich [N01 aus einer frischen isolierten DDEV-Kopie und danach
+Studio-Review v1](ui-workflow.md#aktuelle-richtung-grundlagen-und-review-vor-kontaktmanagement).
+Diese Reihenfolge ist ein Vorschlag; die Review-Regeln zu Sichtungsgründen,
+Erledigen, Zurückstellen und Vergleichsbasis sind vor dessen Umsetzung offen.
 
 ## Dokumente
 

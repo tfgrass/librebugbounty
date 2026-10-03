@@ -577,9 +577,15 @@ vorerst die klassische Gestaltung; ihre Funktionen bleiben erreichbar.
 
 ## Vorschlag nach dem Dashboard: Meldungen v1
 
-**Stand 2026-10-03, Vorschlag ohne Umsetzungsauftrag:** Nach Eingang, Falldetail,
+**Ersetzt am 2026-10-03:** Dieser Vorschlag wurde nach der folgenden Nutzerantwort
+zurückgestellt. Der manuelle E-Mail-Export funktioniert für den Nutzer bereits gut;
+E-Mail- und Kontaktmanagement soll erst nach den vorher wichtigen Grundlagen
+erneut betrachtet werden. Die nachfolgenden Details bewahren die damalige Idee,
+sind aber keine aktuelle Paketempfehlung.
+
+**Ursprünglicher Vorschlag ohne Umsetzungsauftrag:** Nach Eingang, Falldetail,
 Bestand und Statistiken fragt der Nutzer nach dem nächsten sinnvollen Schritt.
-Die aktuelle Empfehlung ist eine kleine, lokal bearbeitbare Meldungsverwaltung.
+Die damalige Empfehlung war eine kleine, lokal bearbeitbare Meldungsverwaltung.
 Sie ergänzt den Weg von bewusst ausgewählten Fällen zu einer dokumentierten
 Betreibermeldung und schafft künftig die Grundlage für Antwort- und
 Versandauswertungen.
@@ -619,11 +625,54 @@ Erledigen und Zurückstellen bleiben hierfür entscheidend. Fehlende neue manuel
 Bewertung im Altbestand darf nicht ungeprüft sämtliche alten Fälle als neue
 Sichtungsarbeit einordnen.
 
-**Offene Prioritätsfrage:** Wo geht heute mehr Zeit verloren: beim Sichten und
-Beurteilen oder beim Zusammenstellen, Schreiben und Nachhalten von Meldungen?
-Die Antwort kann die Empfehlung zugunsten des Review-Pakets ändern. Der noch
-offene Betriebsnachweis aus einer frischen DDEV-Kopie bleibt separat erhalten;
-Sicherungs- und Übernahmeprüfungen gelten weiterhin für schreibende Änderungen.
+**Damals offene Prioritätsfrage:** Wo geht heute mehr Zeit verloren: beim Sichten
+und Beurteilen oder beim Zusammenstellen, Schreiben und Nachhalten von Meldungen?
+Der Nutzer hat die Priorität anschließend mit dem gut funktionierenden manuellen
+Export und dem Vorrang der Grundlagen geklärt. Der noch offene Betriebsnachweis
+aus einer frischen DDEV-Kopie bleibt separat erhalten; Sicherungs- und
+Übernahmeprüfungen gelten weiterhin für schreibende Änderungen.
+
+## Aktuelle Richtung: Grundlagen und Review vor Kontaktmanagement
+
+**Vom Nutzer am 2026-10-03 entschieden:** Der E-Mail-Teil funktioniert über den
+manuellen Export gut genug. E-Mail- und Kontaktmanagement werden vorerst
+zurückgestellt. Zuerst sollen die übrigen wichtigen Grundlagen fertig werden.
+Das ist eine Priorität, keine Aussage, dass Meldungsverwaltung dauerhaft entfällt.
+
+**Beobachteter offener Stand:** Beim Betriebsabschluss fehlt noch der strenge
+N01-Nachweis aus einer vollständig frischen, isolierten DDEV-Projektkopie.
+Studio-Eingang, Bestand, Detail und Statistiken sind umgesetzt. Ein eigener
+Review-Arbeitsvorrat mit Sichtungsgründen und gezieltem Abarbeiten fehlt; die
+vorhandene manuelle Bewertung darf durch technische Beobachtungen nicht ersetzt
+werden. Alte Fälle ohne neue Bewertungshistorie sind nicht automatisch neue
+Sichtungsaufgaben.
+
+**Meine Empfehlung für die Reihenfolge, noch nicht vom Nutzer festgelegt:**
+
+1. **Betriebsabschluss N01:** Eine frische isolierte DDEV-Kopie starten,
+   Abhängigkeiten und Migrationen aus der Projektkonfiguration aufbauen,
+   die lokale Aufnahme mit und ohne Dialog prüfen und den Ablauf nach Neustart
+   wiederholen. Ergebnis ist ein belegter reproduzierbarer Aufbau oder ein
+   konkreter, anschließend behobener Konfigurationsfehler. Die bestehende
+   Nutzerdatenbank bleibt außerhalb dieses Versuchs.
+2. **Studio-Review v1:** Einen paginierten Arbeitsvorrat mit getrennten
+   Sichtungsgründen und einem Eintrag pro Fall zuschneiden. Aus ihm einen Fall
+   öffnen, vorhandene Belege und Beobachtungen vergleichen, die Bewertung
+   bewusst ändern oder erhalten, einen Hinweis ausdrücklich erledigen und zum
+   nächsten Fall wechseln. Spätere Beobachtungen können einen neuen Anlass
+   erzeugen, ohne die frühere Entscheidung zu überschreiben.
+
+Vor einem Review-Umsetzungsplan sind noch die in diesem Dokument genannten
+Fachregeln zu klären: Welche Ereignisse erzeugen einen Sichtungsgrund? Welche
+gesehenen Beobachtungen erledigt „geprüft“? Wie und bis wann wirkt
+„zurückstellen“? Welche frühere Beurteilung dient als Vergleichsreferenz?
+Die bestehende Bild- und Bewertungshistorie bietet dafür eine Grundlage, aber
+Altwerte erhalten keine erfundene frühere manuelle Entscheidung. E-Mail-Export
+und bestehende Kontaktmarkierungen laufen im bisherigen manuellen Ablauf weiter.
+Der vorhandene Artefakt-Audit macht historische fehlende Bilddateien bereits
+sichtbar. Wenn sie den Review-Ablauf konkret behindern, ist eine gezielte
+Belegpflege ein eigenes Folgepaket; eine neue Aufnahme wäre ein neuer Beleg zum
+neuen Zeitpunkt und keine Wiederherstellung des historischen Bilds.
 
 ## Szenarien für die jeweiligen Funktionspakete
 
@@ -648,5 +697,5 @@ Vor dem Ausbau der Duplikaterkennung über die exakt gleiche URL hinaus ist die
 Duplikatdefinition zu klären; vor CLI-Integration sind Betriebsweg und
 Ergebnisvertrag zu konkretisieren. Die Screenshot-Stabilisierung ist umgesetzt.
 Die Trennung von manueller Bewertung und Sichtungshinweis aus Abschnitt 3 bleibt
-vor dem Review-Paket ausdrücklich zu klären. Die aktuelle Empfehlung zur nächsten
-Paketwahl steht unter [Vorschlag nach dem Dashboard](#vorschlag-nach-dem-dashboard-meldungen-v1).
+vor dem Review-Paket ausdrücklich zu klären. Die aktuelle, noch nicht bestätigte
+Reihenfolge steht unter [Grundlagen und Review vor Kontaktmanagement](#aktuelle-richtung-grundlagen-und-review-vor-kontaktmanagement).
