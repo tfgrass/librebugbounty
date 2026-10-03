@@ -43,14 +43,16 @@ use App\Value\RetestResult;
 <section class="panel wide" id="findings">
   <div class="section-head"><div><h2>Findings</h2><p class="hint">Aktiver Bestand im normalen Arbeiten; verworfene Fälle sind im Archiv ausdrücklich auffindbar.</p></div></div>
   <p class="hint">Filter gelten gemeinsam. Für verworfene Bewertungen wähle eine Archivansicht.</p>
-  <?php if ($filter->legacyStatus !== '' || $filter->legacyBucket !== ''): ?>
+  <?php if ($filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== ''): ?>
     <p class="notice success" data-legacy-filter>Diagnosefilter aktiv:
       <?php if ($filter->legacyStatus !== ''): ?>Altstatusfilter <code><?= $escape($filter->legacyStatus) ?></code>.<?php endif; ?>
       <?php if ($filter->legacyBucket !== ''): ?>Altgruppenfilter <code><?= $escape($filter->legacyBucket) ?></code>.<?php endif; ?>
+      <?php if ($filter->legacyReview !== ''): ?>Alte Review-Markierung <code><?= $escape($filter->legacyReview) ?></code>.<?php endif; ?>
       Diese Filter verwenden die gespeicherten Statusfelder mit unklarer historischer Herkunft.
     </p>
   <?php endif; ?>
   <form method="get" action="/legacy#findings" class="filters" id="finding-filters">
+    <?php foreach (['event', 'from', 'to', 'tld', 'sent'] as $name): ?><?php if ($filter->{$name} !== ''): ?><input type="hidden" name="<?= $escape($name) ?>" value="<?= $escape($filter->{$name}) ?>"><?php endif; ?><?php endforeach; ?>
     <label>Suche (Domain, Titel oder URL)<input type="search" name="q" value="<?= $escape($filter->q) ?>"></label>
     <div class="split">
       <label>Domain <input name="domain" value="<?= $escape($filter->domain) ?>" placeholder="example.com"></label>
@@ -84,7 +86,7 @@ use App\Value\RetestResult;
         </select>
       </label>
     </div>
-    <details<?= $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->type !== '' || $filter->severity !== '' || $filter->exactDomain ? ' open' : '' ?>>
+    <details<?= $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->type !== '' || $filter->severity !== '' || $filter->exactDomain ? ' open' : '' ?>>
       <summary>Zusätzliche Filter und Altwerte zur Diagnose</summary>
       <p class="hint">Altstatus und Altgruppe sind gespeicherte Kompatibilitätswerte. Ihre historische Herkunft bleibt unklar.</p>
       <div class="split">
@@ -99,6 +101,13 @@ use App\Value\RetestResult;
           <select name="legacy_bucket">
             <?php foreach (['', 'open', 'fixed', 'manual_review', 'unchecked'] as $value): ?>
               <option value="<?= $escape($value) ?>"<?= $filter->legacyBucket === $value ? ' selected' : '' ?>><?= $escape($value === '' ? 'Alle Altgruppen' : $value) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <label>Alte Review-Markierung
+          <select name="legacy_review">
+            <?php foreach (['' => 'Alle Review-Markierungen', 'confirmed_fixed' => 'confirmed_fixed', 'manually_checked' => 'manually_checked'] as $value => $label): ?>
+              <option value="<?= $escape($value) ?>"<?= $filter->legacyReview === $value ? ' selected' : '' ?>><?= $escape($label) ?></option>
             <?php endforeach; ?>
           </select>
         </label>

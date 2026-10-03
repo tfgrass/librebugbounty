@@ -24,6 +24,7 @@ final readonly class FindingReadView
         public ?\DateTimeImmutable $observationAt,
         public bool $discarded,
         public string $url = '',
+        public ?\DateTimeImmutable $sentAt = null,
     ) {
     }
 }

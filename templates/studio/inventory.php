@@ -20,7 +20,8 @@ $formatTime = static fn (?\DateTimeImmutable $at): string => $at === null
     ? 'Zeitpunkt unbekannt'
     : $at->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y · H:i');
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
-$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '';
+$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '';
+$eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet', 'contacted' => 'Als kontaktiert markiert', 'confirmed' => 'Erstmals manuell bestätigt', 'fixed' => 'Erstmals manuell behoben'];
 ?>
 <!doctype html>
 <html lang="de">
@@ -103,6 +104,11 @@ $hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filte
               <div class="studio-list-additional-fields">
                 <label>Domain <input name="domain" value="<?= $escape($filter->domain) ?>" placeholder="example.com" autocomplete="off"></label>
                 <label>Domainvergleich <select name="exact_domain"><option value="0"<?= !$filter->exactDomain ? ' selected' : '' ?>>Enthält den Domainfilter</option><option value="1"<?= $filter->exactDomain ? ' selected' : '' ?>>Entspricht dem Domainfilter exakt</option></select></label>
+                <label>Ereignis <select name="event"><option value="">Kein Ereignisfilter</option><?php foreach ($eventLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $filter->event === $value ? ' selected' : '' ?>><?= $escape($label) ?></option><?php endforeach; ?></select></label>
+                <label>Vom Tag <input type="date" name="from" value="<?= $escape($filter->from) ?>"></label>
+                <label>Bis einschließlich <input type="date" name="to" value="<?= $escape($filter->to) ?>"></label>
+                <label>TLD <input name="tld" value="<?= $escape($filter->tld) ?>" placeholder=".de, ip oder local" autocomplete="off"></label>
+                <label>Versand <select name="sent"><?php foreach (['' => 'Alle Versandstände', 'yes' => 'Versand erfasst', 'no' => 'Kein Versand erfasst'] as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $filter->sent === $value ? ' selected' : '' ?>><?= $escape($label) ?></option><?php endforeach; ?></select></label>
                 <label>Typ <input name="type" value="<?= $escape($filter->type) ?>" placeholder="Alle Typen"></label>
                 <label>Schweregrad <select name="severity">
                   <?php foreach (['', ...FindingSeverity::values()] as $value): ?><option value="<?= $escape($value) ?>"<?= $filter->severity === $value ? ' selected' : '' ?>><?= $escape($value === '' ? 'Alle Schweregrade' : $value) ?></option><?php endforeach; ?>
@@ -113,18 +119,24 @@ $hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filte
                 <label>Altgruppenfilter <select name="legacy_bucket">
                   <?php foreach (['', 'open', 'fixed', 'manual_review', 'unchecked'] as $value): ?><option value="<?= $escape($value) ?>"<?= $filter->legacyBucket === $value ? ' selected' : '' ?>><?= $escape($value === '' ? 'Alle Altgruppen' : $value) ?></option><?php endforeach; ?>
                 </select></label>
+                <label>Alte Review-Markierung <select name="legacy_review">
+                  <?php foreach (['' => 'Alle Review-Markierungen', 'confirmed_fixed' => 'confirmed_fixed', 'manually_checked' => 'manually_checked'] as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $filter->legacyReview === $value ? ' selected' : '' ?>><?= $escape($label) ?></option><?php endforeach; ?>
+                </select></label>
               </div>
-              <p class="studio-list-hint">Alle Filter gelten gemeinsam. Altstatus und Altgruppe sind gespeicherte Diagnosewerte mit unklarer historischer Herkunft.</p>
+              <p class="studio-list-hint">Alle Filter gelten gemeinsam. Altstatus, Altgruppe und alte Review-Markierung sind gespeicherte Diagnosewerte mit unklarer historischer Herkunft.</p>
             </details>
             <a class="studio-list-reset" href="<?= $escape($path) ?>">Zurücksetzen</a>
           </div>
         </form>
       </section>
 
-      <?php if ($filter->legacyStatus !== '' || $filter->legacyBucket !== ''): ?>
-        <p class="studio-list-feedback" data-tone="warning" data-legacy-filter>Diagnosefilter aktiv: <?= $filter->legacyStatus !== '' ? 'Altstatus '.$escape($filter->legacyStatus).'. ' : '' ?><?= $filter->legacyBucket !== '' ? 'Altgruppe '.$escape($filter->legacyBucket).'. ' : '' ?>Die historische Herkunft dieser Werte bleibt unklar.</p>
+      <?php if ($filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== ''): ?>
+        <p class="studio-list-feedback" data-tone="warning" data-legacy-filter>Diagnosefilter aktiv: <?= $filter->legacyStatus !== '' ? 'Altstatus '.$escape($filter->legacyStatus).'. ' : '' ?><?= $filter->legacyBucket !== '' ? 'Altgruppe '.$escape($filter->legacyBucket).'. ' : '' ?><?= $filter->legacyReview !== '' ? 'Alte Review-Markierung '.$escape($filter->legacyReview).'. ' : '' ?>Die historische Herkunft dieser Werte bleibt unklar.</p>
       <?php endif; ?>
       <?php if ($filter->scope !== 'active'): ?><p class="studio-list-archive-hint"><?= $filter->scope === 'all' ? 'Diese Ansicht enthält auch das Archiv.' : 'Archiv: Diese Fälle werden im normalen Arbeiten ignoriert.' ?> Neue technische Beobachtungen reaktivieren verworfene Fälle nicht.</p><?php endif; ?>
+      <?php if ($filter->event !== '' || $filter->tld !== ''): ?>
+        <p class="studio-list-archive-hint" data-statistics-filter>Statistikauswahl: <?= $escape($eventLabels[$filter->event] ?? 'Alle Ereignisse') ?><?= $filter->from !== '' ? ' · ab '.$escape($filter->from) : '' ?><?= $filter->to !== '' ? ' · bis '.$escape($filter->to) : '' ?><?= $filter->tld !== '' ? ' · TLD '.$escape($filter->tld) : '' ?>. Die Bewertung daneben zeigt den heutigen Stand.</p>
+      <?php endif; ?>
 
       <section class="studio-list-results" aria-labelledby="studio-list-results-title">
         <div class="studio-list-results-heading"><h2 id="studio-list-results-title"><?= $escape($scopeLabels[$filter->scope]) ?></h2><span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>"><?= $escape($pagination['totalFiltered']) ?> Fälle <span class="studio-list-order">· Neueste zuerst</span></span></div>
@@ -152,7 +164,7 @@ $hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filte
                 <div class="studio-finding-dimension" data-dimension="observation"><span class="studio-finding-mobile-label">Technische Beobachtung</span><span class="studio-finding-state" data-tone="<?= $escape($observationTone) ?>"><?= $escape(FindingReadLabels::observation($finding->observationResult)) ?></span>
                   <?php if ($finding->observationId !== null): ?><small><?= $escape($formatTime($finding->observationAt)) ?> · <?= $escape($finding->observationMode ?? 'Herkunft unbekannt') ?></small><?php endif; ?>
                 </div>
-                <div class="studio-finding-dimension" data-dimension="contact"><span class="studio-finding-mobile-label">Kontakt</span><span><?= $escape(FindingReadLabels::contact($finding->contactedAt)) ?></span><?php if ($finding->contactedAt !== null): ?><small><?= $escape($formatTime($finding->contactedAt)) ?></small><?php endif; ?></div>
+                <div class="studio-finding-dimension" data-dimension="contact"><span class="studio-finding-mobile-label">Kontakt &amp; Versand</span><span><?= $escape(FindingReadLabels::contact($finding->contactedAt)) ?></span><?php if ($finding->contactedAt !== null): ?><small><?= $escape($formatTime($finding->contactedAt)) ?></small><?php endif; ?><?php if ($finding->sentAt !== null): ?><small>Versendet · <?= $escape($formatTime($finding->sentAt)) ?></small><?php endif; ?></div>
                 <div class="studio-finding-dimension" data-dimension="date"><span class="studio-finding-mobile-label">Eingang</span><time datetime="<?= $escape(($finding->submittedAt ?? $finding->createdAt)->format(DATE_ATOM)) ?>"><?= $escape($formatTime($finding->submittedAt ?? $finding->createdAt)) ?></time><?php if ($finding->submittedAt === null): ?><small>Ablagezeit; Eingangszeit unbekannt</small><?php endif; ?></div>
                 <a class="studio-finding-open" href="<?= $escape($detailUrl) ?>" aria-label="Fall <?= $escape($finding->domain) ?> öffnen">Fall öffnen <span aria-hidden="true">↗</span></a>
               </article>
@@ -189,6 +201,7 @@ $hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filte
       <a class="studio-workspace-link" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Eingang</span></a>
       <a class="studio-workspace-link studio-workspace-link-active" href="/findings" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Bestand</span></a>
       <a class="studio-settings-link" href="/legacy/settings" aria-label="Einstellungen · klassische Ansicht"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg></a>
+      <a class="studio-workspace-link" href="/statistics"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20V4m0 16h16M8 15l4-5 4 2 4-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Statistiken</span></a>
     </nav>
   </div>
 </body>

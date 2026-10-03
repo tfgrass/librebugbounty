@@ -575,6 +575,56 @@ Zurückstellen und Vergleichsreferenzen. Bildvergleich, Mailvorbereitung und
 Meldungsgruppen sind damit noch nicht umgesetzt. Einstellungen und Export haben
 vorerst die klassische Gestaltung; ihre Funktionen bleiben erreichbar.
 
+## Vorschlag nach dem Dashboard: Meldungen v1
+
+**Stand 2026-10-03, Vorschlag ohne Umsetzungsauftrag:** Nach Eingang, Falldetail,
+Bestand und Statistiken fragt der Nutzer nach dem nächsten sinnvollen Schritt.
+Die aktuelle Empfehlung ist eine kleine, lokal bearbeitbare Meldungsverwaltung.
+Sie ergänzt den Weg von bewusst ausgewählten Fällen zu einer dokumentierten
+Betreibermeldung und schafft künftig die Grundlage für Antwort- und
+Versandauswertungen.
+
+Beobachtet ist viel erhaltene Kontaktaktivität, aber keine eigenständige
+Meldungsverwaltung. Kontaktmarker allein liefern weder Empfänger, Mailtext noch
+eine verlässliche Versandhistorie. Ob Mailvorbereitung tatsächlich der größte
+Zeitaufwand des Nutzers ist, bleibt eine zu klärende Annahme.
+
+Der vorgeschlagene erste Zuschnitt:
+
+- Im Bestand Fälle auswählen und daraus eine Meldung vorbereiten. Die Fälle
+  behalten ihre eigenen Bewertungen und Belege.
+- Unter einem eigenen Arbeitsbereich „Meldungen“ gespeicherte Entwürfe und
+  dokumentierte Versände wiederfinden.
+- Empfänger, Betreff, Text und enthaltene Fälle bearbeiten und den Entwurf später
+  mit erhaltenen Änderungen weiterführen.
+- Den tatsächlichen Versand mit ausdrücklich angegebenem Datum dokumentieren.
+  Das genaue Verhältnis zu vorhandenen Fall-Versandmarkern und spätere
+  Datumskorrekturen müssen vor der Umsetzung geklärt werden.
+
+Ein prüfbares Ergebnis wäre: Drei ausgewählte Fälle gemeinsam vorbereiten,
+Empfänger und Text bearbeiten, die Meldung später unverändert wieder öffnen und
+ihren Versand dokumentieren. Meldungszahl und Zahl der darin enthaltenen Fälle
+bleiben unterschiedliche Zähleinheiten. Historische Kontakte und undatierte
+Bewertungen behalten ihre bisherige Aussage; daraus werden keine alten Mails
+rekonstruiert.
+
+Kontaktrecherche, generierte Entwürfe, Gruppierung nach Betreiber oder Entwickler
+sowie Antworten und Wiedervorlagen sind mögliche Folgeabschnitte. Die bisherigen
+Vorschläge zur Codex-Anbindung und zu Beziehungen bleiben dafür erhalten.
+
+**Alternative:** Wenn Sichten und Bewerten derzeit mehr Zeit kostet, zuerst einen
+Studio-Review-Arbeitsvorrat mit vorhandenen Belegen, gezieltem Abarbeiten und
+„Speichern und weiter“ zuschneiden. Die offenen Regeln zu neuen Sichtungsanlässen,
+Erledigen und Zurückstellen bleiben hierfür entscheidend. Fehlende neue manuelle
+Bewertung im Altbestand darf nicht ungeprüft sämtliche alten Fälle als neue
+Sichtungsarbeit einordnen.
+
+**Offene Prioritätsfrage:** Wo geht heute mehr Zeit verloren: beim Sichten und
+Beurteilen oder beim Zusammenstellen, Schreiben und Nachhalten von Meldungen?
+Die Antwort kann die Empfehlung zugunsten des Review-Pakets ändern. Der noch
+offene Betriebsnachweis aus einer frischen DDEV-Kopie bleibt separat erhalten;
+Sicherungs- und Übernahmeprüfungen gelten weiterhin für schreibende Änderungen.
+
 ## Szenarien für die jeweiligen Funktionspakete
 
 Die früher für einen frühen UI-Prototyp vorgeschlagenen Szenarien bleiben als
@@ -597,5 +647,6 @@ Prüfideen für die schrittweisen Erweiterungen erhalten:
 Vor dem Ausbau der Duplikaterkennung über die exakt gleiche URL hinaus ist die
 Duplikatdefinition zu klären; vor CLI-Integration sind Betriebsweg und
 Ergebnisvertrag zu konkretisieren. Die Screenshot-Stabilisierung ist umgesetzt.
-Als nächster fachlicher Zuschnitt bleibt die kleinere, ausdrücklich zu klärende
-Trennung von manueller Bewertung und Sichtungshinweis aus Abschnitt 3.
+Die Trennung von manueller Bewertung und Sichtungshinweis aus Abschnitt 3 bleibt
+vor dem Review-Paket ausdrücklich zu klären. Die aktuelle Empfehlung zur nächsten
+Paketwahl steht unter [Vorschlag nach dem Dashboard](#vorschlag-nach-dem-dashboard-meldungen-v1).

@@ -6,6 +6,7 @@ use App\Service\SettingsService;
 use App\Service\FindingDetailService;
 use App\Service\FindingListService;
 use App\Service\FindingNavigation;
+use App\Service\StatisticsService;
 use App\Repository\FindingRepository;
 use App\Entity\Finding;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -24,6 +25,7 @@ final class StudioController
         private readonly FindingRepository $findings,
         private readonly FindingListService $findingList,
         private readonly FindingNavigation $navigation,
+        private readonly StatisticsService $statistics,
     ) {
     }
 
@@ -73,6 +75,30 @@ final class StudioController
         $html = ob_get_clean();
 
         return new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8', 'Cache-Control' => 'no-store']);
+    }
+
+    #[Route(path: '/statistics', name: 'studio_statistics', methods: ['GET'])]
+    public function statistics(Request $request): Response
+    {
+        try {
+            $view = $this->statistics->get($request->query->all());
+        } catch (\InvalidArgumentException $exception) {
+            return new Response('Ungültiger Zeitraum: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, [
+                'Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store',
+            ]);
+        }
+        $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        ob_start();
+        require dirname(__DIR__, 2).'/templates/studio/statistics.php';
+        $html = ob_get_clean();
+
+        return new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8', 'Cache-Control' => 'no-store']);
+    }
+
+    #[Route(path: '/studio/statistics', name: 'studio_statistics_alias', methods: ['GET'])]
+    public function canonicalStatistics(Request $request): RedirectResponse
+    {
+        return $this->redirectWithQuery('/statistics', $request);
     }
 
     #[Route(path: '/studio/findings', name: 'studio_findings_alias', methods: ['GET'])]

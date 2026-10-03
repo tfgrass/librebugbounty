@@ -217,6 +217,30 @@ Listenlinks öffnen Studio und übernehmen die entsprechende Listenauswahl.
 Die älteren `/studio`-Adressen in vorstehenden Abschnittsprotokollen beschreiben
 jeweils den damaligen Abnahmestand.
 
+**Studio-Statistiken v1 ausdrücklich beauftragt und implementiert:** Eine eigene,
+unten verlinkte Seite unter `/statistics` bietet Tageslinien,
+Wochen-/Monats-/Jahresübersichten, Jahres-Heatmap, TLD-Donut, Bestandsverteilung
+und offene Kontaktarbeit. Der Nutzer hat die Begriffe geklärt:
+„Gemeldet“ zählt neue Ingest-Fälle; „Versendet“ bezeichnet Meldungen an Betreiber.
+[Umfang und Datenvertrag](studio-statistiken.md) sind festgehalten. Für vergleichbare
+Kurven zählen erstmals versendete Fälle; „Als versendet markieren“ hält im
+Falldetail den ersten Versandzeitpunkt ausdrücklich fest. Kontaktmarker und
+Bewertungen bleiben unabhängig. [Abnahme Studio-Statistiken](abnahme-studio-statistiken.md):
+197 Tests mit 2.809 Assertions und zehn isolierte Browser-Szenarien erfolgreich;
+schmale Kalendernavigation und Nutzung ohne JavaScript sind geprüft.
+
+**Folgeauftrag zur Lesbarkeit und Historie:** Wegen der dominierenden Ingestzahlen
+werden die Aktivitätsreihen jetzt auf derselben Zeitachse mit je eigener
+beschrifteter Skala dargestellt. Kontakte sind standardmäßig sichtbar und haben
+eine eigene Kennzahl. Erhaltene Kontaktmarker werden rückwirkend an ihrem
+gespeicherten Datum gezählt; frühere erneute Markierungen konnten dieses Datum
+überschreiben. Undatierte alte Review-Marker und rohe `fixed`-Statuswerte erscheinen
+als gesonderte, verlinkte Altbestandsgruppen. Die Gruppen sind zeitraumunabhängig,
+TLD-gefiltert, schließen das Archiv ein und können sich überschneiden.
+Die neue Daten-/Listenabnahme ist mit 199 Tests und 2.837 Assertions erfolgreich;
+elf isolierte Browser-Szenarien prüfen historische Rückblicke, genaue Falllinks
+und den Extremfall mit 500 neuen Fällen neben einer Kontaktmarkierung.
+
 Weitere bekannte Grenzen:
 
 - Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet.
@@ -264,6 +288,12 @@ Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Studi
 zuerst seine noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
 Anwendungsfälle und Daten weiter.
 
+**Aktueller Vorschlag nach dem Dashboard, noch nicht beauftragt:**
+[Meldungen v1](ui-workflow.md#vorschlag-nach-dem-dashboard-meldungen-v1) mit
+ausgewählten Fällen, gespeichertem bearbeitbarem Entwurf und dokumentiertem
+Versand. Die Priorität gegenüber einem Review-Arbeitsvorrat hängt davon ab,
+welcher dieser beiden Abläufe im Alltag mehr Zeit kostet; diese Frage ist offen.
+
 ## Dokumente
 
 - [Lastenheft und Arbeitsabschnitte](lastenheft.md)
@@ -278,7 +308,8 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md)
 - [Festlegung Studio-Bestand und Routen](studio-bestand-routen.md)
 - [Abnahme Studio-Bestand und Routen](abnahme-studio-bestand.md)
-- [Vorgeschlagenes Arbeitspaket Studio-Statistiken](studio-statistiken.md)
+- [Studio-Statistiken v1 – Umfang und Datenvertrag](studio-statistiken.md)
+- [Abnahme Studio-Statistiken v1](abnahme-studio-statistiken.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

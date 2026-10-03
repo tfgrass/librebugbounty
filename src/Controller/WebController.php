@@ -362,6 +362,29 @@ final class WebController
         }
     }
 
+    #[Route(path: 'findings/{id}/mark-sent', name: 'finding_mark_sent', methods: ['POST'])]
+    public function markSent(string $id, Request $request): Response
+    {
+        if (!$this->validCsrf($request, 'finding_mark_sent_'.$id)) {
+            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
+        $parameters = $request->request->all();
+        foreach (['surface', 'return_to'] as $field) {
+            if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
+                return new Response('Ungültige Versandangaben.', Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $returnPath = $this->findingReturnPath($id, $parameters);
+        try {
+            $finding = $this->findingService->getFindingOrFail($id);
+            $this->findingService->markSent($finding);
+
+            return $this->redirectMessage('Versandzeitpunkt für '.$this->shortId($finding).' gespeichert.', $returnPath);
+        } catch (\Throwable $exception) {
+            return $this->redirectError($exception->getMessage(), $returnPath);
+        }
+    }
+
     #[Route(path: 'findings/{id}/confirm-fixed', name: 'finding_confirm_fixed', methods: ['POST'])]
     public function confirmFixed(string $id, Request $request): Response
     {

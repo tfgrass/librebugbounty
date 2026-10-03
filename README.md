@@ -195,6 +195,44 @@ not automatically requeue an Evidence row whose file later disappeared; use
 `app:artifacts:audit` to identify that distinct condition and queue a deliberate
 replacement with `app:screenshot:all --recreate`.
 
+## Statistics
+
+Open `/statistics` from the bottom Studio navigation for daily activity, week,
+month, year, custom and all-time views. The page includes an interactive activity
+chart with separate labeled scales for each series, year calendar, TLD donut,
+today's manual assessments and the age of
+confirmed cases without a recorded contact or sent report. Case counts and
+distinct host counts are separate; statistic links open the matching event/date
+and TLD-filtered inventory and keep those filters through case editing.
+Contact activity is visible by default, alongside new intake and sent reports,
+so a small contact count remains readable even on days with many new cases.
+
+“Gemeldet” means newly stored intake cases; exact duplicate submissions add
+no new case. “Versendet” counts cases with an explicitly recorded first report
+sent to their owner. Use “Als versendet markieren” in the Studio case inspector
+after sending a report yourself. This records the first owner-notification time
+without sending mail or changing the independent contact marker or assessment.
+Existing contact markers are not inferred to be sent reports. Repeating the
+action preserves the first timestamp.
+
+Historical intake and contact dates are included in period and all-time views.
+Contact activity uses the retained marker date: earlier versions could replace
+it when a case was marked contacted again, so it is not always a first contact.
+The historical inventory card separately shows undated `confirmed_fixed` and
+`manually_checked` review markers and the old raw `fixed` status for cases without
+a recorded manual assessment. These counts include the archive, follow the TLD
+filter and cover all retained history regardless of the selected period. Groups
+may overlap; their links use the diagnostic `legacy_review` or `legacy_status`
+filters and open the exact counted cases.
+
+Confirmed/fixed activity uses the first matching manual assessment in the
+recorded history. Technical `fixed` observations and undated historical status
+values do not invent manual fixes or dates. Activity includes retained archived
+cases; the current-state widgets show the active inventory. Dates are displayed
+in Europe/Berlin. Statistics describe the retained database, so deleting/resetting
+records can change past totals. The page is read-only and works without
+JavaScript; JavaScript adds chart inspection and display switches.
+
 ## Manual assessment and contact
 
 The finding detail page separates your manual assessment from the latest technical
@@ -222,7 +260,7 @@ ddev exec php bin/console app:finding:assess FINDING_ID contacted
 ```
 
 Optional `--observation-id` and `--evidence-id` record an explicitly considered
-basis. Assessment and contact forms require CSRF tokens; reload an expired form
+basis. Assessment, contact and sent-report forms require CSRF tokens; reload an expired form
 before trying again. This protection is provided by Symfony's session/CSRF services.
 
 ## Read and filter the inventory

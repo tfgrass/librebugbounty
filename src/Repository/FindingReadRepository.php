@@ -4,6 +4,7 @@ namespace App\Repository;
 
 use App\Dto\FindingReadFilter;
 use App\Dto\FindingReadView;
+use App\Value\HostnameTld;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 
@@ -16,9 +17,9 @@ final class FindingReadRepository
         .'SELECT latest.rowid FROM retest_run latest WHERE latest.finding_id = f.id '
         .'ORDER BY COALESCE(latest.finished_at, latest.started_at) DESC, latest.rowid DESC LIMIT 1)';
 
-    private const DISCARDED = "(f.manual_assessment = 'discarded' OR f.status IN ('duplicate', 'discarded'))";
-    private const ACTIVE = "((f.manual_assessment IS NULL OR f.manual_assessment <> 'discarded') AND f.status NOT IN ('duplicate', 'discarded'))";
-    private const DUPLICATES = "(f.status = 'duplicate' OR (f.manual_assessment = 'discarded' AND f.discard_reason = 'duplicate'))";
+    public const DISCARDED = "(f.manual_assessment = 'discarded' OR f.status IN ('duplicate', 'discarded'))";
+    public const ACTIVE = "((f.manual_assessment IS NULL OR f.manual_assessment <> 'discarded') AND f.status NOT IN ('duplicate', 'discarded'))";
+    public const DUPLICATES = "(f.status = 'duplicate' OR (f.manual_assessment = 'discarded' AND f.discard_reason = 'duplicate'))";
 
     public function __construct(private readonly Connection $connection)
     {
@@ -34,7 +35,7 @@ final class FindingReadRepository
         $sql = 'SELECT f.id, d.hostname AS domain, f.title, f.url, f.type, f.severity, '
             .'f.status AS legacy_status, f.review_state AS legacy_review_state, '
             .'f.manual_assessment AS assessment, f.discard_reason, f.assessed_at, '
-            .'f.submitted_at, f.created_at, f.contacted_at, '
+            .'f.submitted_at, f.created_at, f.contacted_at, f.notified_owner_at AS sent_at, '
             .'r.id AS observation_id, r.result AS observation_result, r.mode AS observation_mode, '
             .'COALESCE(r.finished_at, r.started_at) AS observation_at, '
             .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded'
@@ -97,6 +98,9 @@ final class FindingReadRepository
         if ($filter->contact !== '') {
             $conditions[] = $filter->contact === 'yes' ? 'f.contacted_at IS NOT NULL' : 'f.contacted_at IS NULL';
         }
+        if ($filter->sent !== '') {
+            $conditions[] = $filter->sent === 'yes' ? 'f.notified_owner_at IS NOT NULL' : 'f.notified_owner_at IS NULL';
+        }
         if ($filter->type !== '') {
             $conditions[] = 'f.type = :type';
             $parameters['type'] = $filter->type;
@@ -104,6 +108,32 @@ final class FindingReadRepository
         if ($filter->severity !== '') {
             $conditions[] = 'f.severity = :severity';
             $parameters['severity'] = $filter->severity;
+        }
+        if ($filter->event !== '') {
+            $eventDate = match ($filter->event) {
+                'reported' => 'COALESCE(f.submitted_at, f.created_at)',
+                'sent' => 'f.notified_owner_at',
+                'contacted' => 'f.contacted_at',
+                'confirmed', 'fixed' => '(SELECT MIN(a.assessed_at) FROM finding_assessment a WHERE a.finding_id = f.id AND a.assessment = :event_assessment)',
+            };
+            if (in_array($filter->event, ['confirmed', 'fixed'], true)) {
+                $parameters['event_assessment'] = $filter->event;
+            }
+            $conditions[] = $eventDate.' IS NOT NULL';
+            $storageZone = new \DateTimeZone(date_default_timezone_get());
+            if ($filter->from !== '') {
+                $conditions[] = $eventDate.' >= :event_from';
+                $parameters['event_from'] = FindingReadFilter::date($filter->from)->setTimezone($storageZone)->format('Y-m-d H:i:s');
+            }
+            if ($filter->to !== '') {
+                $conditions[] = $eventDate.' < :event_until';
+                $parameters['event_until'] = FindingReadFilter::date($filter->to)->modify('+1 day')->setTimezone($storageZone)->format('Y-m-d H:i:s');
+            }
+        }
+        if ($filter->tld !== '') {
+            [$tldCondition, $tldParameters] = HostnameTld::sqlCondition($filter->tld);
+            $conditions[] = $tldCondition;
+            $parameters += $tldParameters;
         }
 
         // Legacy compatibility is diagnostic. It never changes another filter
@@ -123,6 +153,10 @@ final class FindingReadRepository
                 'manual_review' => "f.review_state = 'manual_checking'",
                 'unchecked' => 'f.last_retested_at IS NULL',
             };
+        }
+        if ($filter->legacyReview !== '') {
+            $conditions[] = 'f.review_state = :legacy_review';
+            $parameters['legacy_review'] = $filter->legacyReview;
         }
 
         return [$conditions !== [] ? ' WHERE '.implode(' AND ', $conditions) : '', $parameters];
@@ -150,6 +184,7 @@ final class FindingReadRepository
             observationAt: $this->date($row['observation_at']),
             discarded: (bool) $row['discarded'],
             url: $row['url'],
+            sentAt: $this->date($row['sent_at']),
         );
     }
 

@@ -243,6 +243,12 @@
   .studio-empty { min-height: 160px; }
 }
 
+@media (max-width: 479px) {
+  .studio-workspace-nav { gap: 0; padding-inline: 8px 46px; }
+  .studio-workspace-nav .studio-workspace-link { flex: 1; min-width: 0; padding-inline: 5px; }
+  .studio-settings-link { right: 8px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-studio] *, [data-studio] *::before, [data-studio] *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }

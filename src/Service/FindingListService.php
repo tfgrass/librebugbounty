@@ -15,7 +15,7 @@ final class FindingListService
         'q', 'domain', 'assessment', 'observation', 'contact', 'scope',
         'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket',
         'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain',
-        'page', 'pageSize',
+        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review',
     ];
 
     public function __construct(
@@ -85,9 +85,15 @@ final class FindingListService
             'contact' => $filter->contact,
             'legacy_status' => $filter->legacyStatus,
             'legacy_bucket' => $filter->legacyBucket,
+            'legacy_review' => $filter->legacyReview,
             'type' => $filter->type,
             'severity' => $filter->severity,
             'exact_domain' => $filter->exactDomain ? '1' : '',
+            'event' => $filter->event,
+            'from' => $filter->from,
+            'to' => $filter->to,
+            'tld' => $filter->tld,
+            'sent' => $filter->sent,
         ], static fn (string $value): bool => $value !== '');
     }
 
@@ -173,6 +179,12 @@ final class FindingListService
             severity: $get('severity'),
             exactDomain: $exactDomain === '1',
             q: $get('q'),
+            event: $get('event'),
+            from: $query['from'] ?? '',
+            to: $query['to'] ?? '',
+            tld: strtolower($get('tld')),
+            sent: $get('sent'),
+            legacyReview: $get('legacy_review'),
         );
 
         return [$filter, $page, $pageSize];

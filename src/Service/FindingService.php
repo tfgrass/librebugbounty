@@ -260,6 +260,19 @@ final class FindingService
         $this->entityManager->flush();
     }
 
+    /** Record an already sent owner report, independently from the contact marker. */
+    public function markSent(Finding $finding): void
+    {
+        $now = new \DateTimeImmutable();
+        // Conditional update preserves the first timestamp even for concurrent
+        // requests or a stale managed entity. No browser or mail work is started.
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE finding SET notified_owner_at = :sent_at, updated_at = :sent_at WHERE id = :id AND notified_owner_at IS NULL',
+            ['sent_at' => $now->format('Y-m-d H:i:s'), 'id' => $finding->getId()],
+        );
+        $this->entityManager->refresh($finding);
+    }
+
     public function confirmFixed(Finding $finding): void
     {
         $this->assess($finding, ManualAssessment::FIXED);
