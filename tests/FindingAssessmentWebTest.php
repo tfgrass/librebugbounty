@@ -91,6 +91,9 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $evidence = (new Evidence())->setFinding($finding)->setKind('note')->setValue('retained fixture evidence');
         $this->entityManager->persist($evidence);
         $this->entityManager->flush();
+        $activeHtml = $this->request('/legacy/findings/'.$finding->getId())->getContent();
+        $retestToken = $this->token($activeHtml, 'retest');
+        $screenshotToken = $this->token($activeHtml, 'screenshots');
         self::assertSame(302, $this->assess($finding, 'discarded', ['discard_reason' => 'duplicate'])->getStatusCode());
         $finding = $this->reload($finding);
         self::assertSame('discarded', $finding->getManualAssessment());
@@ -102,8 +105,8 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertStringNotContainsString('/'.$finding->getId().'/retest', $html);
         self::assertStringNotContainsString('/'.$finding->getId().'/screenshots', $html);
         $before = $this->snapshot();
-        self::assertSame(409, $this->request('/findings/'.$finding->getId().'/retest', 'POST')->getStatusCode());
-        self::assertSame(409, $this->request('/findings/'.$finding->getId().'/screenshots', 'POST')->getStatusCode());
+        self::assertSame(409, $this->request('/findings/'.$finding->getId().'/retest', 'POST', ['_token' => $retestToken])->getStatusCode());
+        self::assertSame(409, $this->request('/findings/'.$finding->getId().'/screenshots', 'POST', ['_token' => $screenshotToken])->getStatusCode());
         self::assertSame($before, $this->snapshot());
         self::assertSame([], $this->browser->browserCalls);
     }
@@ -244,7 +247,13 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $previousRun->setStartedAt($at)->setFinishedAt($at)->setResult($previousResult);
         $this->entityManager->flush();
         $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
-        self::assertStringNotContainsString('name="assessment" value="confirmed"', $html);
+        if ($previousResult === 'inconclusive') {
+            // A qualifying same-ID edit after the decision now reopens review;
+            // a matching positive result still creates no notice.
+            self::assertStringContainsString('name="assessment" value="confirmed"', $html);
+        } else {
+            self::assertStringNotContainsString('name="assessment" value="confirmed"', $html);
+        }
 
         $finding = $this->reload($finding);
         $newRun = (new RetestRun())->setFinding($finding)->setMode('browser')->setResult('inconclusive')
@@ -271,7 +280,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
     public static function sameSecondPreviousResults(): array
     {
         return [
-            'already judged inconclusive' => ['inconclusive'],
+            'stored inconclusive edited after judgment' => ['inconclusive'],
             'older positive result with same start time' => ['still_vulnerable'],
         ];
     }

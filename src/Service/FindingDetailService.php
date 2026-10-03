@@ -4,9 +4,11 @@ namespace App\Service;
 
 use App\Dto\FindingAssessmentState;
 use App\Dto\FindingDetailView;
+use App\Dto\ReviewNoticeView;
 use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
+use App\Entity\FindingReviewAcknowledgement;
 use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
 use App\Repository\EvidenceRepository;
@@ -30,6 +32,7 @@ final class FindingDetailService
         private readonly FindingAssessmentRepository $assessmentRepository,
         private readonly EvidenceStorageInterface $storage,
         private readonly EntityManagerInterface $entityManager,
+        private readonly ReviewNoticeService $reviewNotices,
     ) {
     }
 
@@ -43,6 +46,8 @@ final class FindingDetailService
         $runs = $this->retestRunRepository->findRecentByFinding($finding, 20);
         $screenshotJobs = $this->screenshotJobRepository->findRecentByFinding($finding, null);
         $assessments = $this->assessmentRepository->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']);
+        $noticesAvailable = $this->reviewNotices->available();
+        $acknowledgements = $noticesAvailable ? $this->entityManager->getRepository(FindingReviewAcknowledgement::class)->findBy(['finding' => $finding], ['reviewedAt' => 'DESC', 'id' => 'DESC']) : [];
         if ($refresh) {
             // A rejected concurrent POST may already have these records in the
             // identity map. Refresh the current case in batches before deriving
@@ -51,6 +56,7 @@ final class FindingDetailService
                 if ($records === []) {
                     continue;
                 }
+                if ($entityClass === FindingAssessment::class && !$noticesAvailable) { continue; }
                 $this->entityManager->createQuery('SELECT record FROM '.$entityClass.' record WHERE record.id IN (:ids)')
                     ->setParameter('ids', array_map(static fn ($record): string => $record->getId(), $records))
                     ->setHint(Query::HINT_REFRESH, true)
@@ -58,6 +64,7 @@ final class FindingDetailService
             }
         }
 
+        $notice = $this->reviewNotices->get($id);
         return new FindingDetailView(
             finding: $finding,
             evidence: $evidence,
@@ -65,12 +72,14 @@ final class FindingDetailService
             screenshotJobs: $screenshotJobs,
             assessments: $assessments,
             screenshots: $this->screenshots($evidence, $screenshotJobs),
-            assessmentState: $this->assessmentState($finding, $runs, $assessments[0] ?? null),
+            assessmentState: $this->assessmentState($finding, $runs, $assessments[0] ?? null, $notice),
+            notice: $notice,
+            reviewAcknowledgements: $acknowledgements,
         );
     }
 
     /** @param list<RetestRun> $runs */
-    public function assessmentState(Finding $finding, array $runs, ?FindingAssessment $newest): FindingAssessmentState
+    public function assessmentState(Finding $finding, array $runs, ?FindingAssessment $newest, ?ReviewNoticeView $notice = null): FindingAssessmentState
     {
         $assessment = $finding->getManualAssessment();
         $latestRun = $runs[0] ?? null;
@@ -85,9 +94,14 @@ final class FindingDetailService
                 $newest->getKnownObservationIds(),
             );
         }
+        if ($this->reviewNotices->available()) {
+            $notice ??= $this->reviewNotices->get($finding->getId());
+            $newerObservation = ($notice?->observations ?? []) !== [];
+        }
         $needsConfirmation = ($assessment === null || $newerObservation)
             && ($latestRun?->getResult() === 'inconclusive'
                 || ($assessment === null && $finding->getReviewState() === ReviewState::MANUAL_CHECKING));
+        if ($assessment !== null && $this->reviewNotices->available()) { $needsConfirmation = $newerObservation; }
         // Preserve explicit corrections and legacy fixed cases while keeping
         // technical activity separate from a stored manual decision.
         $canConfirm = $needsConfirmation || $assessment === 'fixed' || $finding->isDiscarded()

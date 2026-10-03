@@ -19,7 +19,10 @@ Am 2026-10-03 wurde außerdem der [schnelle Einzeleingang](abnahme-schneller-ein
 ausdrücklich beauftragt und umgesetzt. Danach wurde der schmale erste Studio-
 Arbeitsbereich als nächstes vorzubereitendes Vorhaben gewählt und anschließend
 umgesetzt: [Studio-Ingest v1](abnahme-studio-ingest.md). Das spätere
-Review-Paket und der vollständige Studio-Ausbau bleiben separate Arbeit.
+Review-Paket wurde danach ebenfalls umgesetzt. Der Nutzer hat anschließend den
+Commit und drei Grundlagen beauftragt: übrige Formularaktionen absichern,
+frischen DDEV-Betrieb nachweisen und neue Hinweise nach einem Urteil im Review
+bearbeiten. Kontakte bleiben zurückgestellt.
 
 ## 1. Zweck und Verbindlichkeit
 
@@ -330,6 +333,14 @@ Zustandsändernde Web-Aktionen sind gegen unbeabsichtigte fremde Formularaufrufe
 geschützt; reine Leseaufrufe bleiben ohne fachliche Nebenwirkung. Private Notizen,
 vollständige Ziel-URLs und Browserinhalte werden nicht unnötig in Diagnoseausgaben
 oder versionierte Testdaten übernommen. Kein öffentlicher Betrieb wird vorausgesetzt.
+
+**Umsetzungsstand am 2026-10-03:** Auch Einstellungen, Recheck,
+Screenshot-Einreihung und Löschen prüfen jetzt vorhandene Session-/Aktions-Tokens.
+Native eigene Formulare enthalten die passenden Tokens. Isolierte HTTP-Prüfungen
+belegen bei zwölf bestehenden Schreibpfaden, dass fehlende, ungültige und
+missgebildete Tokens weder Daten noch Dateien ändern oder Dienste aufrufen.
+Aktion, Fall und Session sind gebunden; gültige eigene Formulare funktionieren.
+Der Review-POST besitzt zusätzlich den vorhandenen CSRF- und Kontextschutz.
 
 ## 6. Architekturleitplanken
 

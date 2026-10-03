@@ -325,7 +325,11 @@ Schutz der übrigen älteren Schreibaktionen (N04), der frische isolierte
 Betriebsnachweis (N01) und später Review für neue Hinweise zu bereits bewerteten
 Fällen empfohlen. Die fehlenden Formularprüfungen wurden im aktuellen Code
 festgestellt; Backup/Restore und Artefakt-Audit existieren bereits. Die Reihenfolge
-ist ein Vorschlag, kein Umsetzungsauftrag. [Befunde und Zuschnitt](ui-workflow.md#nach-review-v1-verbliebene-grundlagen-vor-kontakten).
+war zunächst ein Vorschlag. Danach hat der Nutzer den Commit und alle drei
+Punkte ausdrücklich beauftragt; Review v1 ist als `7a37dac` committed und ein
+aktuelles Backup wurde restore-validiert. Nur neue Widersprüche, Unklarheiten
+und Fehler sollen erneut im Review erscheinen. [Befunde und Zuschnitt](ui-workflow.md#nach-review-v1-verbliebene-grundlagen-vor-kontakten),
+[Hinweis-Regeln](studio-review.md#neue-hinweise-nach-einem-urteil).
 
 ## Dokumente
 

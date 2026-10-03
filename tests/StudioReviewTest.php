@@ -11,6 +11,7 @@ use App\Service\BrowserRetestClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\FindingNavigation;
+use App\Service\FindingService;
 use App\Service\ReviewQueueService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -64,9 +65,10 @@ final class StudioReviewTest extends DatabaseTestCase
             $this->image($excluded);
         }
         foreach (['confirmed', 'fixed', 'discarded'] as $assessment) {
-            $excluded = $this->finding('manual-'.$assessment)->setManualAssessment($assessment, null, new \DateTimeImmutable());
+            $excluded = $this->finding('manual-'.$assessment);
             $this->observation($excluded, 'inconclusive');
             $this->image($excluded);
+            self::getContainer()->get(FindingService::class)->assess($excluded, $assessment);
         }
         foreach (['duplicate', 'discarded'] as $status) {
             $excluded = $this->finding('legacy-'.$status)->setStatus($status);
@@ -76,7 +78,7 @@ final class StudioReviewTest extends DatabaseTestCase
         $before = $this->snapshot();
         $queue = self::getContainer()->get(ReviewQueueService::class);
         $view = $queue->get([]);
-        self::assertSame(['all' => 6, 'inconclusive' => 1, 'error' => 1, 'unchecked' => 4, 'ready' => 4, 'missing' => 2], $view->counts);
+        self::assertSame(['all' => 6, 'inconclusive' => 1, 'error' => 1, 'unchecked' => 4, 'ready' => 4, 'missing' => 2, 'changed' => 0], $view->counts);
         self::assertSame(4, $view->total);
         self::assertSame($inconclusive->getId(), $view->detail->finding->getId());
         self::assertSame($error->getId(), $queue->get(['kind' => 'error', 'images' => 'all'])->detail->finding->getId());

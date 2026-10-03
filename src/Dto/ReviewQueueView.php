@@ -20,6 +20,11 @@ final readonly class ReviewQueueView
         public ?string $lastReviewedId = null,
         public string $stateFingerprint = '',
         public ?string $selectedEvidenceId = null,
+        public bool $notice = false,
+        public array $triggeringObservations = [],
+        public ?\DateTimeImmutable $lastAcknowledgedAt = null,
+        public bool $baselineKnown = true,
+        public bool $noticesAvailable = false,
     ) {
     }
 }

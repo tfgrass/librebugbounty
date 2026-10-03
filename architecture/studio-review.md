@@ -1,4 +1,4 @@
-# Studio-Review v1
+# Studio-Review
 
 Stand: 2026-10-03. Nach dem manuellen Einreihen der fehlenden Screenshots hat der
 Nutzer die Umsetzung der eigenen Review-Ansicht beauftragt; sie ist umgesetzt.
@@ -17,7 +17,7 @@ Unter `/review` wird jeweils ein Fall aus dem Arbeitsvorrat gezeigt. Ein großes
 Bildfeld und direkt erreichbare gespeicherte PoC-Angaben ermöglichen eine
 manuelle Entscheidung. Die Seite ist in der unteren Studio-Navigation verlinkt.
 
-Der Vorrat entspricht dem zuletzt gemeinsam verwendeten Screenshot-Backfill:
+Der erste unbewertete Vorrat entspricht dem zuletzt gemeinsam verwendeten Screenshot-Backfill:
 
 - Aktiver Fall; weder manuell noch durch eine alte Kennzeichnung verworfen oder
   als Duplikat archiviert.
@@ -29,7 +29,8 @@ Die letzte Beobachtung folgt derselben Zeit-/SQLite-Reihenfolge wie die bestehen
 Bestandsprojektion. Alte `fixed`-/Review-Werte werden sichtbar erhalten; aus dem
 fehlenden neuen Historieneintrag wird keine frühere menschliche Entscheidung
 abgeleitet. Automatisch bestätigte Fälle und Fälle mit gespeichertem manuellem
-Urteil gehören nicht in diesen ersten Arbeitsvorrat.
+Urteil gehören nicht in diesen ersten Arbeitsvorrat. Der unten beschriebene
+beauftragte Ausbau ergänzt neue Hinweise zu bereits bewerteten Fällen.
 
 Standardmäßig werden nur Fälle mit tatsächlich lesbarer Bilddatei gezeigt. Die
 Filter erlauben alle Bildzustände oder Fälle ohne verfügbares Bild sowie eine
@@ -102,11 +103,11 @@ Studio-Pfade.
 
 ## Grenzen und Prüfung
 
-Keine Migration und keine Veränderung bestehender technischer Läufe oder Bilder
-sind für diese Ansicht nötig. Eine dauerhafte Wiedervorlage, „Hinweis erledigt,
-Urteil behalten“, Wiederaufnahme nach neuen Beobachtungen zu bereits manuell
-bewerteten Fällen und Vorher-/Nachher-Vergleich bleiben eigene Erweiterungen.
-N01 aus einer frischen isolierten DDEV-Kopie bleibt ein separater Betriebsnachweis.
+Für den ersten Review-Vorrat war keine Migration nötig. Der anschließend
+beauftragte Hinweis-Ausbau ergänzt eine eigene Sichtungshistorie und einen
+Beobachtungsstand für künftige manuelle Urteile; technische Läufe und Bilder
+werden dabei erhalten. Dauerhafte Wiedervorlage und Vorher-/Nachher-Vergleich
+bleiben eigene Erweiterungen. N01 ist ein separater Betriebsnachweis.
 
 Erste Abnahme vor der Präzisierung der Links-/Rechts-Aktionen:
 gezielte HTTP-/Datenprüfung und isolierte Browserprüfung mit lokalen
@@ -159,3 +160,50 @@ Abnahme nach der ausdrücklichen Präzisierung zu zwei bewertenden Hauptaktionen
   JavaScript-/Ressourcenfehler. Der isolierte Testserver und seine Daten wurden
   entfernt. Bericht und Bilder:
   `/tmp/librebugbounty-studio-review-decisions-final/`.
+
+## Neue Hinweise nach einem Urteil
+
+**Beauftragter Ausbau:** Der Nutzer hat den Commit von Review v1 und alle drei
+Grundlagen aus dem folgenden Sparring ausdrücklich beauftragt: ältere
+Schreibaktionen absichern, frischen DDEV-Betrieb nachweisen und neue gespeicherte
+Hinweise zu bereits bewerteten Fällen im Review bearbeiten.
+
+**Verbindliche Präzisierung:** Nur widersprüchliche Ergebnisse, Unklarheiten und
+Fehler sollen erneut erscheinen. Die zunächst vorgeschlagene Variante „alle
+neuen Ergebnisse“ ist dadurch verworfen. Bei `confirmed` widerspricht ein neues
+`fixed`, bei `fixed` ein neues `still_vulnerable`. `inconclusive` und `error`
+erzeugen bei beiden Urteilen einen Anlass. Passende Ergebnisse und `pending`
+erzeugen keinen Anlass. Archivierte Fälle bleiben ausgeschlossen.
+
+`kind=changed` zeigt diese Fälle; `all` verbindet beide Vorräte ohne doppelte
+Karten. Die drei bisherigen technischen Filter bleiben der ersten Sichtung
+zugeordnet. Bildfilter und Cursor gelten für beide Vorräte. Alle ungelösten
+auslösenden Beobachtungen erscheinen mit Zeit, Ergebnis und Anlass. Die jüngste
+Gesamtbeobachtung bleibt separat sichtbar: Ein später passendes Ergebnis erledigt
+einen früheren Widerspruch nicht stillschweigend.
+
+„Geprüft · Bewertung behalten“ legt eine unveränderliche Sichtung ab. Urteil,
+Bewertungsdatum, gesamte Finding-Zeile, Kontakt und Bewertungshistorie bleiben
+erhalten. Die Sichtung ist an das konkrete Urteil und den gesamten bekannten
+Beobachtungsstand gebunden. Ein erneutes explizites Urteil, auch mit demselben
+Wert, begründet einen neuen Bewertungsstand. Links/rechts speichern weiterhin
+`fixed` beziehungsweise `confirmed`; Überspringen lässt Hinweise offen.
+
+Künftige Urteile und Sichtungen speichern Zustandsfingerprints der vorhandenen
+Beobachtungen. Damit werden neue IDs, rückdatierte Eingänge und Änderungen an
+bestehenden Läufen erkennbar. Ältere Urteile behalten ihre vorhandene ID-Grenze;
+fehlt die Historie ganz, dient der Bewertungszeitpunkt als konservative Grenze.
+Unklare Gleichzeitigkeit bleibt sichtbar. Die Migration erfindet keine Urteile,
+Sichtungen oder Bewertungsgrundlagen.
+
+Kontextschutz erkennt Änderungen seit der angezeigten Karte einschließlich
+konkurrierender Sichtungen. Ein Fehler erhält Karte, Bild und Eingaben; nur ein
+erfolgreicher Schreibvorgang führt weiter. Die optionale konkrete Grundlage wird
+weiterhin ausdrücklich gewählt. Sichtungshistorie und Snapshots bleiben beim
+Reset technischer Belege erhalten; Falllöschung entfernt auch dessen Sichtungen.
+Detailhinweis und Review nutzen dieselbe Regel. Native Formulare funktionieren
+ohne JavaScript. Die Sichtung startet keine Aufnahme oder technische Prüfung.
+
+**Abnahme in Arbeit:** Isolierte Policy-, HTTP-, Konflikt-, Rollback- und
+Browserprüfungen sowie Migration auf einer wiederhergestellten Kopie. Die
+abschließenden Ergebnisse werden nach den tatsächlichen Läufen ergänzt.

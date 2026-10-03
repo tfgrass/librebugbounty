@@ -774,8 +774,9 @@ der linken Hauptaktion für dieses Vorhaben geklärt.
 
 **Nutzerrückmeldung:** Die Links-/Rechts-Bewertung wurde ausprobiert und scheint
 zu funktionieren. Kontakte bleiben zurückgestellt; gefragt ist jetzt eine
-Einordnung der noch unfertigen Grundlagen. Die folgende Reihenfolge ist eine
-Empfehlung, kein neuer Umsetzungsauftrag.
+Einordnung der noch unfertigen Grundlagen. Die folgende Reihenfolge war zunächst
+eine Empfehlung. Der Nutzer hat danach den Commit und alle drei Punkte ausdrücklich
+beauftragt. Kontakte bleiben zurückgestellt.
 
 **Prüfgrundlage:** Lesender Abgleich der Architektur mit den aktuellen
 Controller-, Review-, Detail-, Export- und Artefaktpfaden einschließlich der
@@ -784,35 +785,52 @@ oder Dienstaktionen für dieses Sparring. Die zuletzt ausgeführte Review-Abnahm
 ist in [Studio-Review v1](studio-review.md) dokumentiert.
 
 Als Abschluss des gerade nutzbaren Abschnitts empfiehlt sich ein Commit des
-Review-Stands und eine aktuelle konsistente Sicherung. Beides wurde durch
-diesen Sparringsauftrag nicht ausgeführt. Backup und getrennte Restore-Prüfung
+Review-Stands und eine aktuelle konsistente Sicherung. Beim reinen Sparring wurde
+beides nicht ausgeführt; im anschließenden Umsetzungsauftrag wurde Review v1 als
+`7a37dac` committed und ein aktuelles Backup restore-validiert. Backup und getrennte Restore-Prüfung
 sind bereits implementiert und nachgewiesen; sie müssen nicht neu gebaut werden.
 
-1. **Schreibaktionen absichern (N04):** Die neuen Bewertungswege prüfen
-   Formular-Tokens. In `WebController` fehlt diese Prüfung weiterhin bei
-   Einstellungen, Löschen und den älteren Screenshot-/Retest-Aktionen.
+1. **Schreibaktionen absichern (N04):** Die neuen Bewertungswege prüften
+   bereits Formular-Tokens. Beim Sparring fehlte diese Prüfung in `WebController`
+   bei Einstellungen, Löschen und den älteren Screenshot-/Retest-Aktionen.
    `framework.csrf_protection: true` allein prüft handgebaute Formulare nicht.
-   Das lässt die bestätigte lokale Anwendungsgrenze aus N04 unvollständig.
+   Das ließ die bestätigte lokale Anwendungsgrenze aus N04 unvollständig.
    Ein begrenztes Folgepaket sollte diese übrigen Wege mit dem bestehenden
    Schutz versehen. Abnahme: Fehlende oder ungültige Tokens ändern keine Daten
    und erzeugen keine Aufträge; gültige eigene Formulare erhalten die bisherigen
-   Abläufe. Das ist die stärkste konkrete Grundlage für das nächste Paket.
+   Abläufe. **Jetzt umgesetzt und geprüft:** 17 isolierte HTTP-Tests mit
+   422 Assertions, einschließlich Aktion/Fall/Session-Bindung, missgebildeter
+   Tokens und gültiger nativer Formulare.
 2. **Betriebsabschluss N01:** Versionierte Konfiguration und Neustart der
    bestehenden Installation sind belegt. Der Aufbau aus einer vollständig
    frischen isolierten Kopie ist weiter offen. Ergebnis wäre ein dokumentierter
    Start aus Projektkonfiguration, funktionierender lokaler Belegablage und
    erneuter Funktion nach Neustart. Die vorhandene Installation und ihre
    Nutzerdaten bleiben außerhalb dieses Nachweises.
-3. **Review für neue gespeicherte Hinweise:** Die Detailprojektion erkennt
-   Beobachtungen nach einer manuellen Bewertung und zeigt einen Hinweis.
-   `/review` verlangt dagegen `manual_assessment IS NULL` und erfasst solche
-   Fälle nicht. Offen bleibt ein Arbeitsvorrat für neue Hinweise samt
+3. **Review für neue gespeicherte Hinweise:** Die frühere Detailprojektion erkannte
+   Beobachtungen nach einer manuellen Bewertung und zeigte einen Hinweis.
+   Der erste `/review`-Vorrat verlangte dagegen `manual_assessment IS NULL` und
+   erfasste solche Fälle nicht. Vorgeschlagen wurde ein Arbeitsvorrat für neue Hinweise samt
    ausdrücklichem Erledigen bei unverändertem Urteil. Empfehlung: Eine
    Sichtung kann das Urteil ändern oder den konkreten Hinweis als geprüft
    markieren, während Urteil und dessen Datum erhalten bleiben. Welche neuen
    Beobachtungen einen Anlass erzeugen und welcher Stand als erledigt gilt,
    ist vor der Umsetzung zu klären. Dieses Paket gewinnt an Bedeutung, sobald
    neue technische Beobachtungen zu bereits bewerteten Fällen bearbeitet werden.
+
+**Festlegung im Umsetzungsauftrag:** Erneut erscheinen ausschließlich
+widersprüchliche Ergebnisse, Unklarheiten und Fehler. Passende Ergebnisse lösen
+keinen Hinweis aus. Die ausdrückliche Sichtung kann das Urteil ändern oder
+„Geprüft · Bewertung behalten“ speichern. Der vollständige Datenfluss ist in
+[Studio-Review](studio-review.md#neue-hinweise-nach-einem-urteil) fortgeführt.
+
+**Aktueller Prüfstand:** Der Hinweis-Vorrat und die Sichtung bei unverändertem
+Urteil sind implementiert. 14 isolierte Notice-Browserprüfungen und alle
+23 bisherigen Review-Browserprüfungen bestanden, einschließlich nativer
+Formulare ohne JavaScript und vier Fensterbreiten. Die additive Migration auf
+einer restore-validierten Datenkopie erhielt alle bisherigen Spalten und
+Tabelleninhalte; alle 661 Belegdateien blieben bytegleich. Gesamtsuite,
+abschließende Backend-Regressionsprüfungen und N01 werden separat abgeschlossen.
 
 **Bedingtes Folgepaket Belegpflege:** Fehlende Dateien und fehlgeschlagene Aufträge
 sind sichtbar, und der lesende Artefakt-Audit existiert. Nach dem manuellen

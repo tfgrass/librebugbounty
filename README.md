@@ -94,7 +94,9 @@ no retest or capture. Image comparison remains future work.
 
 Open `/review` from the bottom navigation for manual review of unresolved cases.
 The supply includes active cases without a recorded manual assessment whose
-latest observation is inconclusive, an error, or absent. Available screenshots
+latest observation is inconclusive, an error, or absent, and new review notices
+for assessed cases. A notice appears only for a contradictory result, an
+inconclusive result, or an error; matching results do not reopen review. Available screenshots
 are shown by default; filters expose cases with missing images and each technical
 reason separately. The large image, stored URL/request data, marker, and notes
 are visible together. Selecting an image does not select an assessment basis.
@@ -107,8 +109,13 @@ the current pass; the case can reappear when restarting. Discard remains a
 separate explicit action that archives the case. Native forms work without JavaScript.
 Stale submissions cannot overwrite a newer decision. The last reviewed case can
 be opened in the full detail to correct its assessment. Opening review starts no
-browser or screenshot work. Persistent deferral and reopening review hints after
-later technical observations are outside this first version.
+browser or screenshot work. The **Neue Hinweise** filter selects previously
+assessed cases with unresolved notices. Every triggering observation is shown,
+even when a later matching result exists. **Geprüft · Bewertung behalten** records
+an immutable acknowledgement without changing the finding, its assessment date,
+contact state, or assessment history. A later qualifying observation reopens the
+notice. The full detail shows acknowledgement history and uses the same notice
+policy. Persistent deferral and image comparison remain future work.
 
 Submitting a supported URL stores the finding and its first persistent screenshot
 job atomically in one database transaction. A committed new finding therefore

@@ -299,6 +299,9 @@ final class FindingAssessmentTest extends DatabaseTestCase
             self::assertSame(0, (int) $connection->fetchOne('SELECT COUNT(*) FROM finding_assessment'));
             $schemaTool = new SchemaTool($this->entityManager);
             $expected = $schemaTool->getSchemaFromMetadata($this->entityManager->getMetadataFactory()->getAllMetadata());
+            // This historical 3a migration predates the later nullable review
+            // boundary extension; its original columns still match exactly.
+            $expected->getTable('finding_assessment')->dropColumn('known_observation_states');
             $manager = $connection->createSchemaManager();
             $difference = $manager->createComparator()->compareTables(
                 $expected->getTable('finding_assessment'),

@@ -113,6 +113,9 @@ if (PHP_SAPI === 'cli') {
     $manager->persist($job);
     $manager->persist((new App\Entity\ScreenshotJob())->setFinding($findings['queued'])->setUrl($findings['queued']->getUrl())->setStatus('queued')->setActiveKey($findings['queued']->getId()));
     $manager->flush();
+    // This baseline fixture represents an observation stored before its legacy
+    // judgment. Lifecycle timestamps must agree with that history as well.
+    $manager->getConnection()->executeStatement('UPDATE retest_run SET created_at = ?, updated_at = ? WHERE finding_id = ?', ['2026-10-03 08:31:04', '2026-10-03 08:31:04', $findings['confirmed']->getId()]);
     foreach ($names as $index => $name) {
         $manager->getConnection()->executeStatement('UPDATE finding SET created_at = ?, updated_at = ? WHERE id = ?', [sprintf('2026-10-03 08:%02d:00', $index), sprintf('2026-10-03 08:%02d:00', $index), $findings[$name]->getId()]);
     }

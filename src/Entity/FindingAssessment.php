@@ -47,6 +47,11 @@ class FindingAssessment extends AbstractTimestampedEntity
     #[ORM\Column(type: 'json')]
     private array $knownObservationIds;
 
+    // Written conditionally in the same assessment transaction so deployed v1
+    // can continue creating judgments while the additive migration is prepared.
+    #[ORM\Column(type: 'json', nullable: true, insertable: false, updatable: false)]
+    private ?array $knownObservationStates = null;
+
     public function __construct(
         Finding $finding,
         string $assessment,
@@ -56,6 +61,7 @@ class FindingAssessment extends AbstractTimestampedEntity
         ?string $evidenceId = null,
         ?array $referenceSnapshot = null,
         array $knownObservationIds = [],
+        ?array $knownObservationStates = null,
     ) {
         ManualAssessment::validate($assessment, $discardReason);
         $this->id = \Symfony\Component\Uid\Uuid::v7()->toRfc4122();
@@ -67,6 +73,7 @@ class FindingAssessment extends AbstractTimestampedEntity
         $this->evidenceId = $evidenceId;
         $this->referenceSnapshot = $referenceSnapshot;
         $this->knownObservationIds = $knownObservationIds;
+        $this->knownObservationStates = $knownObservationStates;
     }
 
     public function getId(): string { return $this->id; }
@@ -80,4 +87,5 @@ class FindingAssessment extends AbstractTimestampedEntity
     public function getReferenceSnapshot(): ?array { return $this->referenceSnapshot; }
     /** @return list<string> */
     public function getKnownObservationIds(): array { return $this->knownObservationIds; }
+    public function getKnownObservationStates(): ?array { return $this->knownObservationStates; }
 }

@@ -50,7 +50,7 @@ final class FindingNavigation
         $images = $query['images'] ?? 'ready';
         $after = $query['after'] ?? '';
         $evidence = $query['evidence'] ?? '';
-        if (!is_string($kind) || !in_array($kind, ['all', 'inconclusive', 'error', 'unchecked'], true)
+        if (!is_string($kind) || !in_array($kind, ['all', 'changed', 'inconclusive', 'error', 'unchecked'], true)
             || !is_string($images) || !in_array($images, ['ready', 'all', 'missing'], true)
             || !is_string($after) || ($after !== '' && !Uuid::isValid($after))
             || !is_string($evidence) || ($evidence !== '' && !Uuid::isValid($evidence))

@@ -25,6 +25,8 @@ final readonly class FindingDetailView
         public array $assessments,
         public array $screenshots,
         public FindingAssessmentState $assessmentState,
+        public ?ReviewNoticeView $notice = null,
+        public array $reviewAcknowledgements = [],
     ) {
     }
 }

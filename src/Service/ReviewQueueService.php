@@ -3,6 +3,9 @@
 namespace App\Service;
 
 use App\Dto\ReviewQueueView;
+use App\Entity\Evidence;
+use App\Entity\RetestRun;
+use App\Entity\FindingReviewAcknowledgement;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Security\Csrf\CsrfToken;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
@@ -29,6 +32,7 @@ final class ReviewQueueService
         private readonly FindingDetailService $detail,
         private readonly FindingService $findings,
         private readonly CsrfTokenManagerInterface $csrf,
+        private readonly ReviewNoticeService $notices,
     ) {
     }
 
@@ -45,12 +49,22 @@ final class ReviewQueueService
             $lastReviewedId = null;
         }
         $candidates = $connection->fetchAllAssociative(self::CANDIDATES.' ORDER BY f.created_at ASC, f.id ASC');
+        $noticesAvailable = $this->notices->available();
+        $notices = $this->notices->forFindings();
+        $noticeIds = array_keys(array_filter($notices, static fn ($notice): bool => $notice->observations !== []));
+        if ($noticeIds !== []) {
+            foreach ($connection->fetchAllAssociative('SELECT id, created_at FROM finding WHERE id IN ('.implode(',', array_fill(0, count($noticeIds), '?')).')', $noticeIds) as $candidate) {
+                $candidates[] = $candidate + ['result' => 'changed'];
+            }
+            usort($candidates, static fn (array $a, array $b): int => [$a['created_at'], $a['id']] <=> [$b['created_at'], $b['id']]);
+        }
         $ready = [];
         // All evidence paths are read together. Only the displayed case receives
         // its full entity/detail projection; job status cannot prove file presence.
-        $paths = $connection->fetchAllAssociative(
-            'SELECT e.finding_id, e.file_path FROM evidence e INNER JOIN ('.self::CANDIDATES.') c ON c.id = e.finding_id WHERE e.kind = ? AND e.file_path IS NOT NULL AND e.file_path <> ?',
-            ['screenshot', ''],
+        $candidateIds = array_column($candidates, 'id');
+        $paths = $candidateIds === [] ? [] : $connection->fetchAllAssociative(
+            'SELECT finding_id, file_path FROM evidence WHERE kind = ? AND file_path IS NOT NULL AND file_path <> ? AND finding_id IN ('.implode(',', array_fill(0, count($candidateIds), '?')).')',
+            ['screenshot', '', ...$candidateIds],
         );
         foreach ($paths as $path) {
             if (!isset($ready[$path['finding_id']]) && $this->storage->exists($path['file_path'])) {
@@ -62,7 +76,7 @@ final class ReviewQueueService
         if ($after !== null && $anchor === false) {
             throw new \InvalidArgumentException('Der Ausgangsfall ist nicht mehr vorhanden. Den Review-Vorrat bitte neu öffnen.');
         }
-        $counts = ['all' => 0, 'inconclusive' => 0, 'error' => 0, 'unchecked' => 0, 'ready' => 0, 'missing' => 0];
+        $counts = ['all' => 0, 'inconclusive' => 0, 'error' => 0, 'unchecked' => 0, 'ready' => 0, 'missing' => 0, 'changed' => 0];
         $filtered = [];
         $remaining = [];
         $eligible = false;
@@ -91,6 +105,7 @@ final class ReviewQueueService
         // decision about unseen data.
         $stateFingerprint = $id === null ? '' : $this->fingerprint($id);
         $currentDetail = $id === null ? null : $this->detail->get($id, true);
+        $currentNotice = $currentDetail?->notice;
         $selectedEvidenceId = null;
         if ($currentDetail !== null) {
             foreach ($currentDetail->screenshots as $screenshot) {
@@ -121,6 +136,11 @@ final class ReviewQueueService
             lastReviewedId: $lastReviewedId,
             stateFingerprint: $stateFingerprint,
             selectedEvidenceId: $selectedEvidenceId,
+            notice: ($currentNotice?->observations ?? []) !== [],
+            triggeringObservations: $currentNotice?->observations ?? [],
+            lastAcknowledgedAt: $currentNotice?->lastAcknowledgedAt,
+            baselineKnown: $currentNotice?->baselineKnown ?? true,
+            noticesAvailable: $noticesAvailable,
         );
     }
 
@@ -130,7 +150,7 @@ final class ReviewQueueService
         $kind = $query['kind'] ?? 'all';
         $images = $query['images'] ?? 'ready';
         $after = $query['after'] ?? null;
-        if (!is_string($kind) || !in_array($kind, ['all', 'inconclusive', 'error', 'unchecked'], true)
+        if (!is_string($kind) || !in_array($kind, ['all', 'inconclusive', 'error', 'unchecked', 'changed'], true)
             || !is_string($images) || !in_array($images, ['ready', 'all', 'missing'], true)
             || ($after !== null && (!is_string($after) || ($after !== '' && !Uuid::isValid($after))))
         ) {
@@ -169,7 +189,7 @@ final class ReviewQueueService
     /** @throws \UnexpectedValueException when the displayed state changed */
     public function assess(string $id, string $assessment, ?string $reason, ?string $observationId, ?string $evidenceId, string $contextToken): void
     {
-        if (!in_array($assessment, ['confirmed', 'fixed', 'discarded'], true) || !in_array($reason, [null, 'duplicate'], true)
+        if (!in_array($assessment, ['confirmed', 'fixed', 'discarded', 'keep'], true) || !in_array($reason, [null, 'duplicate'], true)
             || ($assessment !== 'discarded' && $reason !== null)
         ) {
             throw new \InvalidArgumentException('Ungültige Bewertung oder ungültiger Verwerfungsgrund.');
@@ -186,7 +206,7 @@ final class ReviewQueueService
             [$fingerprint, $token] = array_pad(explode(':', $contextToken, 2), 2, '');
             if (!hash_equals($this->fingerprint($id), $fingerprint)
                 || !$this->csrf->isTokenValid(new CsrfToken('review_context_'.$id.'_'.$fingerprint, $token))
-                || $connection->fetchOne('SELECT id FROM ('.self::CANDIDATES.') c WHERE c.id = ?', [$id]) === false
+                || ($connection->fetchOne('SELECT id FROM ('.self::CANDIDATES.') c WHERE c.id = ?', [$id]) === false && ($this->notices->get($id)?->observations ?? []) === [])
             ) {
                 throw new \UnexpectedValueException('Der Fall oder seine letzte Beobachtung hat sich geändert. Bitte die angezeigten Daten erneut prüfen.');
             }
@@ -201,7 +221,29 @@ final class ReviewQueueService
                     throw new \UnexpectedValueException('Der gewählte Screenshot ist inzwischen nicht mehr lesbar. Bitte die Bewertungsgrundlage erneut prüfen.');
                 }
             }
-            $this->findings->assess($finding, $assessment, $reason, $observationId, $evidenceId);
+            if ($assessment === 'keep') {
+                $notice = $this->notices->get($id);
+                if ($notice === null || $notice->observations === []) {
+                    throw new \InvalidArgumentException('Ein Hinweis kann nur für einen bereits manuell bewerteten Fall erledigt werden.');
+                }
+                $snapshot = [];
+                if ($observationId !== null) {
+                    $run = $this->entityManager->find(RetestRun::class, $observationId);
+                    if (!$run instanceof RetestRun || $run->getFinding()->getId() !== $id) {
+                        throw new \InvalidArgumentException('Die gewählte Beobachtung gehört nicht zu diesem Fall.');
+                    }
+                    $snapshot['observation'] = ['id' => $run->getId(), 'result' => $run->getResult(), 'mode' => $run->getMode(), 'startedAt' => $run->getStartedAt()->format(DATE_ATOM), 'finishedAt' => $run->getFinishedAt()?->format(DATE_ATOM), 'screenshotPath' => $run->getScreenshotPath()];
+                }
+                if ($evidenceId !== null) {
+                    $item = $this->entityManager->find(Evidence::class, $evidenceId);
+                    $snapshot['evidence'] = ['id' => $item->getId(), 'kind' => $item->getKind(), 'storedAt' => $item->getCreatedAt()->format(DATE_ATOM), 'filePath' => $item->getFilePath(), 'sha256' => $item->getSha256()];
+                }
+                $ack = new FindingReviewAcknowledgement($finding, $notice->decisionKey, $finding->getManualAssessment(), $this->notices->states($id), array_column($notice->observations, 'id'), $observationId, $evidenceId, $snapshot === [] ? null : $snapshot);
+                $this->entityManager->persist($ack);
+                $this->entityManager->flush();
+            } else {
+                $this->findings->assess($finding, $assessment, $reason, $observationId, $evidenceId);
+            }
             $connection->commit();
         } catch (\Throwable $exception) {
             if ($connection->isTransactionActive()) {
@@ -215,11 +257,10 @@ final class ReviewQueueService
     {
         $connection = $this->entityManager->getConnection();
         $finding = $connection->fetchAssociative('SELECT * FROM finding WHERE id = ?', [$id]);
-        $observation = $connection->fetchAssociative(
-            'SELECT * FROM retest_run WHERE finding_id = ? ORDER BY COALESCE(finished_at, started_at) DESC, rowid DESC LIMIT 1',
-            [$id],
-        );
+        $observations = $connection->fetchAllAssociative('SELECT * FROM retest_run WHERE finding_id = ? ORDER BY rowid ASC', [$id]);
+        $decision = $connection->fetchAssociative('SELECT * FROM finding_assessment WHERE finding_id = ? ORDER BY assessed_at DESC, id DESC LIMIT 1', [$id]);
+        $ack = $this->notices->available() ? $connection->fetchAssociative('SELECT * FROM finding_review_acknowledgement WHERE finding_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT 1', [$id]) : false;
 
-        return hash('sha256', json_encode([$finding, $observation], JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode([$finding, $observations, $decision, $ack], JSON_THROW_ON_ERROR));
     }
 }

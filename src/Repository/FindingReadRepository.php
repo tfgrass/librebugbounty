@@ -5,6 +5,7 @@ namespace App\Repository;
 use App\Dto\FindingReadFilter;
 use App\Dto\FindingReadView;
 use App\Value\HostnameTld;
+use App\Service\ReviewNoticeService;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 
@@ -21,7 +22,7 @@ final class FindingReadRepository
     public const ACTIVE = "((f.manual_assessment IS NULL OR f.manual_assessment <> 'discarded') AND f.status NOT IN ('duplicate', 'discarded'))";
     public const DUPLICATES = "(f.status = 'duplicate' OR (f.manual_assessment = 'discarded' AND f.discard_reason = 'duplicate'))";
 
-    public function __construct(private readonly Connection $connection)
+    public function __construct(private readonly Connection $connection, private readonly ?ReviewNoticeService $reviewNotices = null)
     {
     }
 
@@ -47,7 +48,8 @@ final class FindingReadRepository
             ['limit' => ParameterType::INTEGER, 'offset' => ParameterType::INTEGER],
         );
 
-        return array_map(fn (array $row): FindingReadView => $this->view($row), $rows);
+        $notices = $this->reviewNotices?->forFindings(array_column($rows, 'id')) ?? [];
+        return array_map(fn (array $row): FindingReadView => $this->view($row, $notices[$row['id']] ?? null), $rows);
     }
 
     public function count(FindingReadFilter $filter): int
@@ -162,7 +164,7 @@ final class FindingReadRepository
         return [$conditions !== [] ? ' WHERE '.implode(' AND ', $conditions) : '', $parameters];
     }
 
-    private function view(array $row): FindingReadView
+    private function view(array $row, ?\App\Dto\ReviewNoticeView $notice = null): FindingReadView
     {
         return new FindingReadView(
             id: $row['id'],
@@ -185,6 +187,8 @@ final class FindingReadRepository
             discarded: (bool) $row['discarded'],
             url: $row['url'],
             sentAt: $this->date($row['sent_at']),
+            reviewNotice: ($notice?->observations ?? []) !== [],
+            noticeReasons: array_values(array_unique(array_column($notice?->observations ?? [], 'reason'))),
         );
     }
 

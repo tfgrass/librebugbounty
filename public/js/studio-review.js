@@ -7,6 +7,7 @@
   const form = root.querySelector('[data-review-form]');
   const fixed = root.querySelector('[data-review-fixed]');
   const confirm = root.querySelector('[data-review-confirm]');
+  const keep = root.querySelector('[data-review-keep]');
   const skip = root.querySelector('[data-review-skip]');
   const submitStatus = root.querySelector('[data-review-submit-status]');
   let submitting = false;
@@ -25,7 +26,7 @@
       }
       // A discard choice belongs only to the explicitly selected discard action.
       // Selecting "Duplikat" must not accidentally block a later confirmation.
-      if (['confirmed', 'fixed'].includes(event.submitter.value)) {
+      if (['confirmed', 'fixed', 'keep'].includes(event.submitter.value)) {
         const reason = form.querySelector('[name="discard_reason"]');
         if (reason) reason.value = '';
       }
@@ -35,8 +36,10 @@
       form.setAttribute('aria-busy', 'true');
       fixed?.setAttribute('aria-disabled', 'true');
       confirm?.setAttribute('aria-disabled', 'true');
+      keep?.setAttribute('aria-disabled', 'true');
       skip?.setAttribute('aria-disabled', 'true');
-      if (submitStatus) submitStatus.textContent = 'Bewertung wird gespeichert …';
+      if (submitStatus) submitStatus.textContent = event.submitter.value === 'keep'
+        ? 'Sichtung wird gespeichert …' : 'Bewertung wird gespeichert …';
     });
   }
 
@@ -51,6 +54,7 @@
     delete root.dataset.reviewSubmitting;
     fixed?.removeAttribute('aria-disabled');
     confirm?.removeAttribute('aria-disabled');
+    keep?.removeAttribute('aria-disabled');
     skip?.removeAttribute('aria-disabled');
     if (form) {
       delete form.dataset.submitting;

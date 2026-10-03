@@ -23,19 +23,24 @@ final class ResetService
         private readonly EvidenceStorageInterface $storage,
         private readonly ?ScreenshotJobRepository $screenshotJobs = null,
         private readonly ?ScreenshotOperationLock $screenshotOperationLock = null,
+        private readonly ?ReviewNoticeService $reviewNotices = null,
     ) {
     }
 
     /** @return array<string, int> Read-only preview of the explicit reset's scope. */
     public function preview(): array
     {
-        return [
+        $preview = [
             'Findings reset (not deleted)' => count($this->findings->findAllOrdered(PHP_INT_MAX)),
             'Evidence records deleted' => count($this->evidenceRepository->findAll()),
             'Run records deleted' => count($this->retestRuns->findAll()),
             'Screenshot jobs deleted' => count($this->screenshotJobs?->findAll() ?? []),
             'Files in configured artifact storage' => count($this->storage->listPaths()),
         ];
+        if ($this->reviewNotices?->available()) {
+            $preview['Review acknowledgements retained'] = (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM finding_review_acknowledgement');
+        }
+        return $preview;
     }
 
     public function resetAll(): ResetResult
@@ -80,6 +85,9 @@ final class ResetService
 
     private function resetVerificationStateWithLock(): ResetResult
     {
+        // Assessment and acknowledgement history intentionally survive this
+        // reset. Their plain IDs/snapshots retain provenance without run/evidence
+        // foreign keys; newly inserted run UUIDs create a new review occasion.
         $result = new ResetResult();
 
         $this->removeScreenshotJobs($result);

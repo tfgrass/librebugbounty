@@ -89,6 +89,7 @@ final class ReviewController
             'confirmed' => 'Vulnerable bestätigt.',
             'fixed' => 'Not vulnerable bestätigt.',
             'discarded' => 'Fall verworfen.',
+            'keep' => 'Hinweis geprüft. Bewertung beibehalten.',
         };
         $nextPath = $this->queue->path($view->kind, $view->images, $id);
 

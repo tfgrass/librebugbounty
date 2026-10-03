@@ -25,6 +25,8 @@ final readonly class FindingReadView
         public bool $discarded,
         public string $url = '',
         public ?\DateTimeImmutable $sentAt = null,
+        public bool $reviewNotice = false,
+        public array $noticeReasons = [],
     ) {
     }
 }

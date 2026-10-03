@@ -6,6 +6,7 @@ use App\Dto\FindingCreateResult;
 use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
+use App\Entity\FindingReviewAcknowledgement;
 use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
 use App\Repository\FindingRepository;
@@ -27,6 +28,7 @@ final class FindingService
         private readonly ?SettingsService $settings = null,
         private readonly ?ScreenshotOperationLock $screenshotOperationLock = null,
         private readonly ?ScreenshotQueueService $screenshotQueue = null,
+        private readonly ?ReviewNoticeService $reviewNotices = null,
     ) {
     }
 
@@ -220,7 +222,9 @@ final class FindingService
             // SQLite foreign-key enforcement is not guaranteed for every
             // existing Doctrine connection. Remove every dependent record
             // explicitly so deleting a finding cannot create new orphans.
-            foreach ([FindingAssessment::class, ScreenshotJob::class, Evidence::class, RetestRun::class] as $entityClass) {
+            $relatedClasses = [FindingAssessment::class, ScreenshotJob::class, Evidence::class, RetestRun::class];
+            if ($this->reviewNotices?->available()) { array_unshift($relatedClasses, FindingReviewAcknowledgement::class); }
+            foreach ($relatedClasses as $entityClass) {
                 foreach ($this->entityManager->getRepository($entityClass)->findBy(['finding' => $finding]) as $related) {
                     $this->entityManager->remove($related);
                 }
@@ -291,6 +295,15 @@ final class FindingService
         ?string $evidenceId = null,
     ): void {
         ManualAssessment::validate($assessment, $discardReason);
+        $withObservationStates = $this->reviewNotices?->available() === true;
+        $connection = $this->entityManager->getConnection();
+        if ($withObservationStates) {
+            $connection->beginTransaction();
+        }
+        try {
+        if ($withObservationStates) {
+            $connection->executeStatement('UPDATE finding SET id = id WHERE id = ?', [$finding->getId()]);
+        }
         $snapshot = [];
         if ($observationId !== null) {
             $observation = $this->entityManager->find(RetestRun::class, $observationId);
@@ -328,10 +341,12 @@ final class FindingService
             [$finding->getId()],
         );
         $assessedAt = new \DateTimeImmutable();
+        $knownObservationStates = $withObservationStates ? $this->reviewNotices->states($finding->getId()) : null;
         $history = new FindingAssessment(
             $finding, $assessment, $discardReason, $assessedAt,
             $observationId, $evidenceId, $snapshot !== [] ? $snapshot : null,
             $knownObservationIds,
+            $knownObservationStates,
         );
         $finding->setManualAssessment($assessment, $discardReason, $assessedAt);
         // Keep existing list/CLI fields compatible; only this explicit manual
@@ -350,6 +365,14 @@ final class FindingService
         // Doctrine's flush transaction writes current assessment and history
         // together; a failure cannot commit either half on its own.
         $this->entityManager->flush();
+        if ($withObservationStates) {
+            $connection->executeStatement('UPDATE finding_assessment SET known_observation_states = ? WHERE id = ?', [json_encode($knownObservationStates, JSON_THROW_ON_ERROR), $history->getId()]);
+            $connection->commit();
+        }
+        } catch (\Throwable $exception) {
+            if ($withObservationStates && $connection->isTransactionActive()) { $connection->rollBack(); }
+            throw $exception;
+        }
     }
 
     public function markManualChecking(Finding $finding): void

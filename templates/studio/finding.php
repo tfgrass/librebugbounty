@@ -186,8 +186,8 @@ $jobTone = static fn (string $status): string => match ($status) {
               <h3>Technische Beobachtung</h3>
               <p><?= $escape(FindingReadLabels::observation($latestRun?->getResult())) ?></p>
               <?php if ($latestRun !== null): ?><span class="studio-detail-muted"><?= $escape($formatTime($state->latestAt)) ?> · <?= $escape($latestRun->getMode()) ?></span><?php endif; ?>
-              <?php if ($state->newerObservation): ?><p class="studio-observation-callout">Neue technische Beobachtung seit deiner Bewertung. Die Bewertung bleibt erhalten.</p><?php endif; ?>
-              <?php if ($state->needsConfirmation): ?><p class="studio-observation-callout">Manuelle Beurteilung erforderlich. Ein uneindeutiges Ergebnis bedeutet keine Behebung.</p><?php endif; ?>
+              <?php if ($state->newerObservation): ?><p class="studio-observation-callout" data-review-detail-notice>Neue Widersprüche, Unklarheiten oder Fehler sind noch nicht gesichtet. Die Bewertung bleibt erhalten. <a href="/review?kind=changed&amp;images=all">Neue Hinweise im Review prüfen ↗</a></p><?php endif; ?>
+              <?php if ($state->needsConfirmation && !$state->newerObservation): ?><p class="studio-observation-callout">Manuelle Beurteilung erforderlich. Ein uneindeutiges Ergebnis bedeutet keine Behebung.</p><?php endif; ?>
             </div>
 
             <form method="post" action="<?= $escape($findingPath) ?>/assessment" class="studio-assessment-form" id="assessment-form">
@@ -269,7 +269,7 @@ $jobTone = static fn (string $status): string => match ($status) {
 
       <section class="studio-technical-section" id="verlauf" aria-label="Technik und Historie" tabindex="-1">
         <details class="studio-technical-history" data-studio-history>
-          <summary><span>Technik &amp; Historie</span><span class="studio-detail-muted"><?= count($view->assessments) ?> Bewertungen · <?= count($view->screenshotJobs) ?> Aufnahmen · <?= count($view->runs) ?> Beobachtungen</span></summary>
+          <summary><span>Technik &amp; Historie</span><span class="studio-detail-muted"><?= count($view->assessments) ?> Bewertungen<?= ($view->reviewAcknowledgements ?? []) !== [] ? ' · '.count($view->reviewAcknowledgements).' Sichtungen' : '' ?> · <?= count($view->screenshotJobs) ?> Aufnahmen · <?= count($view->runs) ?> Beobachtungen</span></summary>
           <div class="studio-history-sections">
             <section aria-labelledby="studio-assessment-history-title">
               <h2 id="studio-assessment-history-title">Bewertungshistorie</h2>
@@ -292,6 +292,25 @@ $jobTone = static fn (string $status): string => match ($status) {
                 <?php endforeach; ?>
               </ol>
             </section>
+            <?php if (($view->reviewAcknowledgements ?? []) !== []): ?>
+              <section aria-labelledby="studio-review-history-title">
+                <h2 id="studio-review-history-title">Gesichtete Hinweise</h2>
+                <ol class="studio-record-list">
+                  <?php foreach ($view->reviewAcknowledgements as $entry): ?>
+                    <?php $snapshot = $entry->getReferenceSnapshot() ?? []; ?>
+                    <li class="studio-record" data-review-acknowledgement="<?= $escape($entry->getId()) ?>">
+                      <div class="studio-record-heading"><strong>Geprüft · Bewertung behalten</strong><span><?= $escape($formatTime($entry->getReviewedAt())) ?></span></div>
+                      <p class="studio-detail-hint">Beibehaltenes Urteil: <?= $escape(FindingReadLabels::assessment($entry->getAssessment(), null)) ?>. Das Bewertungsdatum wurde nicht geändert.</p>
+                      <dl class="studio-record-data">
+                        <dt>Gesichtete Hinweise</dt><dd><?php foreach ($entry->getTriggeringObservationIds() as $triggerId): ?><code><?= $escape($triggerId) ?></code><br><?php endforeach; ?></dd>
+                        <dt>Beobachtungsgrundlage</dt><dd><?= $entry->getObservationId() !== null ? '<code>'.$escape($entry->getObservationId()).'</code>' : 'Unbekannt / keine konkrete Beobachtung' ?><?php if (isset($snapshot['observation'])): ?><br><?= $escape(($snapshot['observation']['finishedAt'] ?? $snapshot['observation']['startedAt'] ?? 'Zeitpunkt unbekannt').' · '.($snapshot['observation']['result'] ?? 'Ergebnis unbekannt').' · '.($snapshot['observation']['mode'] ?? 'Herkunft unbekannt')) ?><?php endif; ?></dd>
+                        <dt>Beleggrundlage</dt><dd><?= $entry->getEvidenceId() !== null ? '<code>'.$escape($entry->getEvidenceId()).'</code>' : 'Unbekannt / kein konkreter Beleg' ?><?php if (isset($snapshot['evidence'])): ?><br>Ablage: <?= $escape(($snapshot['evidence']['storedAt'] ?? 'unbekannt').' · '.($snapshot['evidence']['kind'] ?? 'Art unbekannt')) ?><?php endif; ?></dd>
+                      </dl>
+                    </li>
+                  <?php endforeach; ?>
+                </ol>
+              </section>
+            <?php endif; ?>
             <section aria-labelledby="studio-job-history-title">
               <h2 id="studio-job-history-title">Screenshot-Aufträge</h2>
               <?php if ($view->screenshotJobs === []): ?><p class="studio-detail-hint">Noch kein Auftrag aufgezeichnet.</p><?php endif; ?>

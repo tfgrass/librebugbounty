@@ -1,5 +1,38 @@
 # SQLite und Belege sichern
 
+## Sicherung vor dem Review-Hinweis-Ausbau am 2026-10-03
+
+Review v1 wurde vor dem Folgepaket als `7a37dac` committed. Eine aktuelle
+konsistente Sicherung wurde mit dem vorhandenen Werkzeug erstellt und separat
+wiederhergestellt:
+
+`/home/tomka/.local/share/librebugbounty/backups/20261003T193607Z-efc801fa`
+
+Sie enthält 8 Migrationen, 5.703 Findings, 5.039 Domains, 8.673 Evidence-Zeilen,
+8.897 RetestRuns, 75 Bewertungen, 660 Screenshot-Aufträge und 4 Settings.
+661 vorhandene Artefaktdateien sind gesichert. Die 382 historischen fehlenden
+Referenzen bleiben als solche ausgewiesen.
+
+`Version20261003000000` wurde zunächst ausschließlich auf einer erneuten
+getrennten Wiederherstellung angewendet. Vorher-/Nachher-Vergleich aller
+ursprünglichen Spalten sämtlicher Anwendungstabellen ergab identische Inhalte.
+Die neue Sichtungstabelle blieb leer; bestehende Bewertungen erhielten `NULL`
+für den neuen Beobachtungsstand. Es wurden keine menschlichen Entscheidungen
+erfunden. SQLite-Integrität ist `ok`; Anzahl und SHA-256 aller 661 Artefaktdateien
+stimmen unverändert mit der Sicherung überein.
+
+Da die Anwendung während der Umsetzung weiter genutzt wurde, entstand vor dem
+abschließenden Migrationsschritt eine zweite aktuelle restore-validierte Sicherung:
+
+`/home/tomka/.local/share/librebugbounty/backups/20261003T200554Z-fdf836c8`
+
+Sie enthält 5.715 Findings, 5.051 Domains, 8.685 Evidence-Zeilen, 8.897 RetestRuns,
+75 Bewertungen, 672 Screenshot-Aufträge, 4 Settings und 8 Migrationen.
+673 Artefaktdateien und weiterhin 382 historische Fehlverweise sind gesichert.
+Alle vom Werkzeug pausierten Container wurden wieder freigegeben.
+
+## Bestehender Nachweis und Verfahren
+
 Stand: 2026-10-02. Umsetzung des zusätzlich beauftragten Sicherungsschritts und
 Nachweis für N03. Vor der Queue-Migration wurde ein neuer konsistenter Stand
 erstellt und wiederhergestellt; die danach verwendete Installation wurde gegen
