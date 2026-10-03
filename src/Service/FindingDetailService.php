@@ -16,6 +16,8 @@ use App\Repository\ScreenshotJobRepository;
 use App\Value\EvidenceKind;
 use App\Value\FindingStatus;
 use App\Value\ReviewState;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
 
 /** Shared, read-only detail projection for Classic and Studio. */
 final class FindingDetailService
@@ -27,16 +29,34 @@ final class FindingDetailService
         private readonly ScreenshotJobRepository $screenshotJobRepository,
         private readonly FindingAssessmentRepository $assessmentRepository,
         private readonly EvidenceStorageInterface $storage,
+        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
-    public function get(string $id): FindingDetailView
+    public function get(string $id, bool $refresh = false): FindingDetailView
     {
         $finding = $this->findingService->getFindingOrFail($id);
+        if ($refresh) {
+            $this->entityManager->refresh($finding);
+        }
         $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC']);
         $runs = $this->retestRunRepository->findRecentByFinding($finding, 20);
         $screenshotJobs = $this->screenshotJobRepository->findRecentByFinding($finding, null);
         $assessments = $this->assessmentRepository->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']);
+        if ($refresh) {
+            // A rejected concurrent POST may already have these records in the
+            // identity map. Refresh the current case in batches before deriving
+            // image availability and the next form's visible decision state.
+            foreach ([Evidence::class => $evidence, RetestRun::class => $runs, ScreenshotJob::class => $screenshotJobs, FindingAssessment::class => $assessments] as $entityClass => $records) {
+                if ($records === []) {
+                    continue;
+                }
+                $this->entityManager->createQuery('SELECT record FROM '.$entityClass.' record WHERE record.id IN (:ids)')
+                    ->setParameter('ids', array_map(static fn ($record): string => $record->getId(), $records))
+                    ->setHint(Query::HINT_REFRESH, true)
+                    ->getResult();
+            }
+        }
 
         return new FindingDetailView(
             finding: $finding,

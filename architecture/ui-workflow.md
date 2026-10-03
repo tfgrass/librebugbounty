@@ -639,7 +639,7 @@ manuellen Export gut genug. E-Mail- und Kontaktmanagement werden vorerst
 zurückgestellt. Zuerst sollen die übrigen wichtigen Grundlagen fertig werden.
 Das ist eine Priorität, keine Aussage, dass Meldungsverwaltung dauerhaft entfällt.
 
-**Beobachteter offener Stand:** Beim Betriebsabschluss fehlt noch der strenge
+**Beobachteter offener Stand vor Studio-Review v1:** Beim Betriebsabschluss fehlt noch der strenge
 N01-Nachweis aus einer vollständig frischen, isolierten DDEV-Projektkopie.
 Studio-Eingang, Bestand, Detail und Statistiken sind umgesetzt. Ein eigener
 Review-Arbeitsvorrat mit Sichtungsgründen und gezieltem Abarbeiten fehlt; die
@@ -647,7 +647,8 @@ vorhandene manuelle Bewertung darf durch technische Beobachtungen nicht ersetzt
 werden. Alte Fälle ohne neue Bewertungshistorie sind nicht automatisch neue
 Sichtungsaufgaben.
 
-**Meine Empfehlung für die Reihenfolge, noch nicht vom Nutzer festgelegt:**
+**Frühere Empfehlung für die Reihenfolge, durch den neuen Review-Wunsch als
+Priorisierung überholt:**
 
 1. **Betriebsabschluss N01:** Eine frische isolierte DDEV-Kopie starten,
    Abhängigkeiten und Migrationen aus der Projektkonfiguration aufbauen,
@@ -674,6 +675,159 @@ sichtbar. Wenn sie den Review-Ablauf konkret behindern, ist eine gezielte
 Belegpflege ein eigenes Folgepaket; eine neue Aufnahme wäre ein neuer Beleg zum
 neuen Zeitpunkt und keine Wiederherstellung des historischen Bilds.
 
+## Neuer Vorschlag: bildzentrierte Review-Seite
+
+**Nutzerwunsch vom 2026-10-03:** Vor dem Kontaktmanagement und nach den bereits
+gebauten Studio-Seiten soll zuerst eine eigene Seite für Fälle entstehen, die
+technisch nicht eindeutig bestätigt werden konnten. Screenshot und PoC sollen
+nebeneinander eine manuelle Verifikation ermöglichen. Die Fälle sollen sich
+schnell wie ein Kartenstapel mit Links/Rechts-Aktion bestätigen oder „rejecten“
+lassen. Der Nutzer zieht damit Review gegenüber der früher empfohlenen
+N01-zuerst-Reihenfolge vor. N01 bleibt ein eigener offener Betriebsnachweis; die
+Sicherungs- und Übernahmeprüfung vor schreibenden Änderungen gilt weiter.
+
+**Beobachteter Stand:** Das Studio-Falldetail zeigt gespeicherte Screenshots,
+Aufnahmezustand und manuelle Bewertung. URL, Methode, Parameter, Payload und
+erwartetes Kennzeichen sind vorhanden, aber teils eingeklappt. Ein eigener
+Review-Vorrat oder ein Erledigungszustand für einzelne Sichtungsanlässe fehlt.
+`confirmed`, `fixed` und `discarded` sind bestehende manuelle Urteile;
+`discarded` entfernt den Fall aus der normalen Arbeit. Ein neuer Eingang startet
+keinen automatischen Retest. Die aktuelle Anzeige bietet „Bestätigen“ zudem
+nicht allgemein für jeden Fall ohne technischen Lauf an, obwohl der bestehende
+Schreibweg das manuelle Bestätigen bereits unterstützt. Eine bloße neue
+Seitengestaltung bildet den gewünschten Ablauf deshalb noch nicht ab. In den
+aktuellen Bestandsdaten sind Payload und Request-Parameter selten beziehungsweise
+nicht aufgezeichnet; URL und erwartetes Kennzeichen sind deshalb häufig der
+gesamte vorhandene PoC-Kontext und dürfen nicht als vollständige Reproduktions-
+anleitung bezeichnet werden.
+
+**Bestandsprüfung vom 2026-10-03, rein lesend:** Von 5.538 aktiven Fällen haben
+218 als letzte technische Beobachtung `inconclusive` (0 mit lesbarer Bilddatei),
+78 `error` (1 mit lesbarer Bilddatei) und 196 keinen Retest (188 mit lesbarer
+Bilddatei). Diese Einmalaufnahme prüfte 501 referenzierte Dateipfade; sie ist
+keine Aussage über künftige Bildaufträge. Der zunächst erwogene Standardvorrat
+nur aus `inconclusive`/`error` würde das gewünschte bildgestützte Review heute
+praktisch leer lassen.
+
+**Revidierter vorläufiger Zuschnitt für Review v1:** Ein eigener Studio-
+Arbeitsbereich zeigt zuerst aktive Fälle **ohne technischen Lauf und mit
+verfügbarem Bild**, soweit kein manuelles Urteil gespeichert ist.
+Uneindeutige und fehlgeschlagene technische Läufe sowie Fälle ohne Bild sind
+getrennt auswählbar; sie dürfen nicht wie bildbereite Karten aussehen. Der
+fehlende Lauf bedeutet nicht, dass ein alter Fall sicher noch nie von einem
+Menschen gesichtet wurde; Altmarker bleiben als solche sichtbar. Der Vorrat
+ist paginiert und stabil sortiert. Jeder Fall erscheint einmal mit seinen
+Sichtungsgründen. Die Karte zeigt ein großes, auswählbares Bild, dessen bekannten
+Aufnahmezeitpunkt und Dateistand sowie daneben alle gespeicherten PoC-Angaben und
+den bisherigen manuellen/technischen Status. Ein fehlendes Bild, eine laufende
+Aufnahme oder unbekannte historische Herkunft werden offen angezeigt. Die
+Bildauswahl behauptet keinen Bezug zu einem Retest, wenn keiner gespeichert ist.
+Auf großen Fenstern stehen Bild und PoC nebeneinander; bei halbbreiten Fenstern
+bleibt das Bild dominant und der PoC unmittelbar erreichbar. Die Seite dockt als
+eigener Bereich in der unteren Studio-Navigation an; das Speichern muss einen
+validierten Rückweg in den Review-Vorrat erhalten.
+
+Sichtbare Schaltflächen sind der primäre Bedienweg; Pfeiltasten und Wischgesten
+lösen dieselben bewusst beschrifteten Aktionen aus. Nach einer **erfolgreich
+gespeicherten** Entscheidung wird zum nächsten Fall gewechselt. Fehler halten
+den aktuellen Fall mit Eingaben und Fehlermeldung offen. Die Bewertungshistorie
+bleibt erhalten; ein späteres technisches Ergebnis überschreibt ein manuelles
+Urteil nicht. Der Fall ist weiterhin im vollständigen Falldetail erreichbar.
+
+**Damals vor Umsetzung offen:** Bedeutet „Reject“ einen fachlichen
+Fehlalarm (`discarded`, aus dem normalen Bestand entfernt), oder nur „dieser
+Nachweis reicht nicht“ (Fall behalten und zur erneuten Prüfung zurückstellen)?
+Ein undeutliches Bild allein belegt keinen Fehlalarm. Davon hängen die linke
+Wischaktion, der nötige Sichtungszustand und die Beschriftung ab. Ebenso muss
+feststehen, ob der Nutzer im ersten Arbeitsvorrat die bildbereiten Fälle ohne
+Retest und ältere Fälle ohne protokollierte Bewertung gemeinsam bearbeiten
+möchte. Die genauen Regeln für Erledigen, Wiedervorlage und erneute Beobachtungen
+werden am gewählten Anfangsumfang festgemacht. Dieser Abschnitt dokumentiert den
+damaligen Vorschlag; der anschließend beauftragte Umfang folgt unten.
+
+**Nach dem Screenshot-Backfill ausdrücklich zur Umsetzung beauftragt:** Der
+Nutzer hat die nötigen Aufträge selbst eingereiht und danach die Review-Ansicht
+beauftragt. Für v1 wird die Menge dieses Backfills als Vorrat verwendet:
+aktive Fälle ohne protokolliertes manuelles Urteil mit `inconclusive`, `error`
+oder ohne Lauf. Die vorhandene Bildverfügbarkeit entscheidet über den
+Standardfilter; alle drei Anlässe sind nun wählbar. Das ersetzt den nur wegen
+fehlender Bilder erwogenen Einstieg allein mit Fällen ohne Retest.
+
+**Zunächst umgesetzter Zuschnitt, linke Aktion durch den Folgewunsch ersetzt:**
+Bestätigen und bewusstes Verwerfen verwenden vorhandene
+Urteile. Neutrales Überspringen verändert keinen Fall; eine dauerhafte
+Wiedervorlage wird damit nicht vorgetäuscht. Die linke Geste überspringt, die
+rechte bestätigt; Verwerfen ist eine separate ausdrückliche Aktion. Dies löst
+den ersten Anwendungsfall, ohne die offenen Regeln für späteres Hinweis-
+Management vorwegzunehmen. [Vertrag und Grenzen](studio-review.md).
+
+**Ausdrückliche Präzisierung nach der ersten Umsetzung:** Der Nutzer möchte
+zwei bewertende Hauptaktionen: rechts „Vulnerable“ = `confirmed`, links
+„Not vulnerable“ = `fixed` mit dem vorhandenen Marker `confirmed_fixed`.
+Beide Aktionen speichern die vorhandene manuelle Bewertung und Historie und
+wechseln erst bei Erfolg zum nächsten Fall. Pfeiltasten und Wischgesten erhalten
+dieselbe Bedeutung. Neutrales Überspringen bleibt als kleiner separater Link;
+bewusstes Verwerfen bleibt eine eigene Aktion. Damit ist die offene Bedeutung
+der linken Hauptaktion für dieses Vorhaben geklärt.
+
+## Nach Review v1: verbliebene Grundlagen vor Kontakten
+
+**Nutzerrückmeldung:** Die Links-/Rechts-Bewertung wurde ausprobiert und scheint
+zu funktionieren. Kontakte bleiben zurückgestellt; gefragt ist jetzt eine
+Einordnung der noch unfertigen Grundlagen. Die folgende Reihenfolge ist eine
+Empfehlung, kein neuer Umsetzungsauftrag.
+
+**Prüfgrundlage:** Lesender Abgleich der Architektur mit den aktuellen
+Controller-, Review-, Detail-, Export- und Artefaktpfaden einschließlich der
+uncommitteten Review-Dateien. Keine neuen Tests, Datenbankprüfungen, Aufnahmen
+oder Dienstaktionen für dieses Sparring. Die zuletzt ausgeführte Review-Abnahme
+ist in [Studio-Review v1](studio-review.md) dokumentiert.
+
+Als Abschluss des gerade nutzbaren Abschnitts empfiehlt sich ein Commit des
+Review-Stands und eine aktuelle konsistente Sicherung. Beides wurde durch
+diesen Sparringsauftrag nicht ausgeführt. Backup und getrennte Restore-Prüfung
+sind bereits implementiert und nachgewiesen; sie müssen nicht neu gebaut werden.
+
+1. **Schreibaktionen absichern (N04):** Die neuen Bewertungswege prüfen
+   Formular-Tokens. In `WebController` fehlt diese Prüfung weiterhin bei
+   Einstellungen, Löschen und den älteren Screenshot-/Retest-Aktionen.
+   `framework.csrf_protection: true` allein prüft handgebaute Formulare nicht.
+   Das lässt die bestätigte lokale Anwendungsgrenze aus N04 unvollständig.
+   Ein begrenztes Folgepaket sollte diese übrigen Wege mit dem bestehenden
+   Schutz versehen. Abnahme: Fehlende oder ungültige Tokens ändern keine Daten
+   und erzeugen keine Aufträge; gültige eigene Formulare erhalten die bisherigen
+   Abläufe. Das ist die stärkste konkrete Grundlage für das nächste Paket.
+2. **Betriebsabschluss N01:** Versionierte Konfiguration und Neustart der
+   bestehenden Installation sind belegt. Der Aufbau aus einer vollständig
+   frischen isolierten Kopie ist weiter offen. Ergebnis wäre ein dokumentierter
+   Start aus Projektkonfiguration, funktionierender lokaler Belegablage und
+   erneuter Funktion nach Neustart. Die vorhandene Installation und ihre
+   Nutzerdaten bleiben außerhalb dieses Nachweises.
+3. **Review für neue gespeicherte Hinweise:** Die Detailprojektion erkennt
+   Beobachtungen nach einer manuellen Bewertung und zeigt einen Hinweis.
+   `/review` verlangt dagegen `manual_assessment IS NULL` und erfasst solche
+   Fälle nicht. Offen bleibt ein Arbeitsvorrat für neue Hinweise samt
+   ausdrücklichem Erledigen bei unverändertem Urteil. Empfehlung: Eine
+   Sichtung kann das Urteil ändern oder den konkreten Hinweis als geprüft
+   markieren, während Urteil und dessen Datum erhalten bleiben. Welche neuen
+   Beobachtungen einen Anlass erzeugen und welcher Stand als erledigt gilt,
+   ist vor der Umsetzung zu klären. Dieses Paket gewinnt an Bedeutung, sobald
+   neue technische Beobachtungen zu bereits bewerteten Fällen bearbeitet werden.
+
+**Bedingtes Folgepaket Belegpflege:** Fehlende Dateien und fehlgeschlagene Aufträge
+sind sichtbar, und der lesende Artefakt-Audit existiert. Nach dem manuellen
+Backfill fehlt in diesem Sparring eine aktuelle Bestandsaufnahme. Historische
+Zahlen wie 382 Fehlverweise oder die frühere Bildverfügbarkeit sind kein Beleg
+für heutige Lücken. Erst eine aktuelle Sichtung sollte den Umfang einer
+Belegpflege begründen. Historische Metadaten bleiben erhalten; ein späterer
+Beleg dokumentiert seinen tatsächlichen neuen Zeitpunkt.
+
+Dauerhafte Wiedervorlage, bequemer Bildvergleich, eine schnelle Rücknahme im
+Review, ähnliche URLs und automatische Gruppierung bleiben mögliche spätere
+Erweiterungen. Korrektur im Falldetail, Notizen, Suche, getrennte Bewertungen,
+Belegzustände und der manuelle Export sind bereits vorhanden. Ein neues
+Kontaktpaket braucht nicht sämtliche dieser Komforterweiterungen als Vorlauf.
+
 ## Szenarien für die jeweiligen Funktionspakete
 
 Die früher für einen frühen UI-Prototyp vorgeschlagenen Szenarien bleiben als
@@ -696,6 +850,6 @@ Prüfideen für die schrittweisen Erweiterungen erhalten:
 Vor dem Ausbau der Duplikaterkennung über die exakt gleiche URL hinaus ist die
 Duplikatdefinition zu klären; vor CLI-Integration sind Betriebsweg und
 Ergebnisvertrag zu konkretisieren. Die Screenshot-Stabilisierung ist umgesetzt.
-Die Trennung von manueller Bewertung und Sichtungshinweis aus Abschnitt 3 bleibt
-vor dem Review-Paket ausdrücklich zu klären. Die aktuelle, noch nicht bestätigte
-Reihenfolge steht unter [Grundlagen und Review vor Kontaktmanagement](#aktuelle-richtung-grundlagen-und-review-vor-kontaktmanagement).
+Die Regeln für spätere Sichtungshinweise bleiben für das Review-Folgepaket zu
+klären. Die aktuelle Empfehlung steht unter
+[Verbliebene Grundlagen vor Kontakten](#nach-review-v1-verbliebene-grundlagen-vor-kontakten).

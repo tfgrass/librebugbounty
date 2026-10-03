@@ -90,8 +90,25 @@ assessment basis. Notes are explicitly saved with the CSRF-protected
 `POST /findings/{id}/notes` form; there is no autosave. The collapsed technical
 history shows assessments with their explicit basis, screenshot jobs, evidence,
 and the 20 most recent technical observations. Opening either detail view starts
-no retest or capture. A separate review workspace and image comparison remain
-future work.
+no retest or capture. Image comparison remains future work.
+
+Open `/review` from the bottom navigation for manual review of unresolved cases.
+The supply includes active cases without a recorded manual assessment whose
+latest observation is inconclusive, an error, or absent. Available screenshots
+are shown by default; filters expose cases with missing images and each technical
+reason separately. The large image, stored URL/request data, marker, and notes
+are visible together. Selecting an image does not select an assessment basis.
+
+The right action, **Vulnerable**, records `confirmed`; the left action,
+**Not vulnerable**, records `fixed` (confirmed fixed). Both move to the next case
+after a successful save. Arrow keys and touch gestures use the same left/right
+decisions. A smaller, separate Skip link changes no case data and advances through
+the current pass; the case can reappear when restarting. Discard remains a
+separate explicit action that archives the case. Native forms work without JavaScript.
+Stale submissions cannot overwrite a newer decision. The last reviewed case can
+be opened in the full detail to correct its assessment. Opening review starts no
+browser or screenshot work. Persistent deferral and reopening review hints after
+later technical observations are outside this first version.
 
 Submitting a supported URL stores the finding and its first persistent screenshot
 job atomically in one database transaction. A committed new finding therefore

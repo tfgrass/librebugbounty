@@ -148,7 +148,8 @@ Einzeleingaben waren erfolgreich.
 
 Weiter offen bleibt **4: Betriebsnachweise abschließen**,
 einschließlich des frischen isolierten DDEV-Aufbaus. Die Regeln zum Abarbeiten von
-Hinweisen folgen vor dem späteren Review-Paket.
+Hinweisen bleiben für ein späteres Review-Folgepaket offen; der erste begrenzte
+Sichtungsablauf ist unter [Studio-Review v1](studio-review.md) beschrieben.
 [Zuschnitt und spätere offene Fragen](ui-workflow.md#erneutes-sparring-zum-zuschnitt-von-abschnitt-3).
 Historische Mehrdeutigkeit bleibt erhalten, statt frühere Entscheidungen zu erfinden.
 
@@ -241,6 +242,20 @@ Die neue Daten-/Listenabnahme ist mit 199 Tests und 2.837 Assertions erfolgreich
 elf isolierte Browser-Szenarien prüfen historische Rückblicke, genaue Falllinks
 und den Extremfall mit 500 neuen Fällen neben einer Kontaktmarkierung.
 
+**Studio-Review v1 am 2026-10-03 beauftragt und umgesetzt:** Nach dem manuellen
+Nachholen der Screenshot-Aufträge steht unter `/review` eine eigene
+bildzentrierte Review-Seite bereit, verlinkt in der unteren Studio-Navigation.
+Der begrenzte erste Umfang bearbeitet aktive Fälle ohne gespeichertes manuelles
+Urteil mit letzter Beobachtung `inconclusive`, `error` oder ohne technischen Lauf.
+Standardmäßig werden tatsächlich verfügbare Bilder gezeigt. Auf ausdrücklichen
+Folgewunsch speichert rechts „Vulnerable“ das Urteil `confirmed`, links
+„Not vulnerable“ das Urteil `fixed` mit Schutzmarker `confirmed_fixed`.
+Überspringen bleibt als separater Link neutral; Verwerfen ist eine ausdrücklich
+beschriftete eigene Aktion. Gespeicherte PoC-Angaben stehen
+neben dem Bild; die Aktionsleiste bleibt auch bei langen Angaben erreichbar.
+Veraltete Entscheidungen überschreiben keine neueren Daten.
+[Umfang, Datenfluss und Abnahme](studio-review.md).
+
 Weitere bekannte Grenzen:
 
 - Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet.
@@ -285,18 +300,32 @@ Das [UI-Arbeitsmodell](ui-workflow.md) hält die bestätigte Richtung fest:
 - Bestand mit Dashboard, Suche und verständlichen Statistiken.
 
 Studio-Eingang und Studio-Falldetail übernehmen bereits nutzbare Anwendungsfälle.
-Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Studio-Bestand, Suche und Routenwechsel sind inzwischen umgesetzt. Review benötigt
-zuerst seine noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
-Anwendungsfälle und Daten weiter.
+Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten.
+Studio-Bestand, Suche, Routenwechsel und der erste Review-Umfang sind umgesetzt.
+Der Review-Ablauf
+verwendet die vorhandenen Bewertungen und Belege; dauerhafte Wiedervorlage,
+Erledigen einzelner Hinweise und Bildvergleich bleiben spätere Erweiterungen.
 
 **Aktuelle Priorität nach dem Dashboard:** Der Nutzer hat
 [Meldungen v1](ui-workflow.md#vorschlag-nach-dem-dashboard-meldungen-v1)
 zurückgestellt: Der manuelle E-Mail-Export funktioniert gut, und wichtige
-Grundlagen sollen vor einem Kontaktmanagement fertig werden. Als nächstes
-empfehle ich [N01 aus einer frischen isolierten DDEV-Kopie und danach
-Studio-Review v1](ui-workflow.md#aktuelle-richtung-grundlagen-und-review-vor-kontaktmanagement).
-Diese Reihenfolge ist ein Vorschlag; die Review-Regeln zu Sichtungsgründen,
-Erledigen, Zurückstellen und Vergleichsbasis sind vor dessen Umsetzung offen.
+Grundlagen sollen vor einem Kontaktmanagement fertig werden. Er hat nach dem
+manuellen Nachholen der Bilder die inzwischen umgesetzte
+[Review-Ansicht](studio-review.md) beauftragt:
+Screenshot und gespeicherte PoC-Angaben zusammen, schnelles Bewerten und Weitergehen.
+Die frühere Empfehlung „N01 vor Review“ ist dadurch als Priorisierung überholt;
+N01 bleibt als separater offener Betriebsnachweis bestehen. Die getrennten
+Aktionen Vulnerable, Not vulnerable, neutrales Überspringen und bewusstes Verwerfen vermeiden,
+dass eine unzureichende Aufnahme allein den Fall archiviert. Neue Bilder aus dem
+Backfill ermöglichen nun auch die Sichtung technisch uneindeutiger Fälle.
+
+**Sparring nach der ersten Nutzung:** Der Nutzer hat die Review-Bewertung
+ausprobiert; sie scheint zu funktionieren. Als nächste Grundlagen werden
+Schutz der übrigen älteren Schreibaktionen (N04), der frische isolierte
+Betriebsnachweis (N01) und später Review für neue Hinweise zu bereits bewerteten
+Fällen empfohlen. Die fehlenden Formularprüfungen wurden im aktuellen Code
+festgestellt; Backup/Restore und Artefakt-Audit existieren bereits. Die Reihenfolge
+ist ein Vorschlag, kein Umsetzungsauftrag. [Befunde und Zuschnitt](ui-workflow.md#nach-review-v1-verbliebene-grundlagen-vor-kontakten).
 
 ## Dokumente
 
@@ -314,6 +343,7 @@ Erledigen, Zurückstellen und Vergleichsbasis sind vor dessen Umsetzung offen.
 - [Abnahme Studio-Bestand und Routen](abnahme-studio-bestand.md)
 - [Studio-Statistiken v1 – Umfang und Datenvertrag](studio-statistiken.md)
 - [Abnahme Studio-Statistiken v1](abnahme-studio-statistiken.md)
+- [Studio-Review v1 – Umfang und Datenfluss](studio-review.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

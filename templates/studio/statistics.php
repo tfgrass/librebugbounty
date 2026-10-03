@@ -241,12 +241,7 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
       </div>
     </main>
 
-    <nav class="studio-workspace-nav" aria-label="Arbeitsbereiche">
-      <a class="studio-workspace-link" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Eingang</span></a>
-      <a class="studio-workspace-link" href="/findings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Bestand</span></a>
-      <a class="studio-workspace-link studio-workspace-link-active" href="/statistics" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16M7 16V9m5 7V4m5 12v-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Statistiken</span></a>
-      <a class="studio-settings-link" href="/legacy/settings" aria-label="Einstellungen · klassische Ansicht"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg></a>
-    </nav>
+    <?php $activeWorkspace = 'statistics'; require __DIR__.'/navigation.php'; ?>
   </div>
   <script id="statistics-data" type="application/json"><?= $payload ?></script>
 </body>
