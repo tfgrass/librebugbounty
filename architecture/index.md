@@ -200,6 +200,13 @@ Classic-/Studio-Zustand. Nachweise und Grenzen dokumentiert
 [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md). Eine Studio-Bestandsliste,
 ein Review-Arbeitsvorrat und Bildvergleich sind nicht Teil dieses Abschnitts.
 
+**Nächster diskutierter Ausbau:** Der Nutzer möchte Liste und Suche in Studio
+übernehmen und die Studio-Oberfläche später unter `/` zur normalen Ansicht
+machen; die bisherige Gestaltung soll unter `/legacy` erreichbar bleiben.
+„Fall öffnen“ im bisherigen Eingang und Bestand führt bereits nach Studio.
+[Ausgangslage, Routenvorschlag und offene Startseitenwahl](studio-bestand-routen.md)
+sind als Vorschlag dokumentiert, noch nicht als umgesetzte Migration.
+
 Weitere bekannte Grenzen:
 
 - Standardmäßig werden Dialoge drei Sekunden nach `domcontentloaded` beobachtet.
@@ -260,6 +267,7 @@ Anwendungsfälle und Daten weiter.
 - [Umsetzungsplan Studio-Ingest v1 / Half-Screen](plan-studio-ingest.md)
 - [Abnahme Studio-Ingest v1](abnahme-studio-ingest.md)
 - [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md)
+- [Diskussionsstand Studio-Bestand und Routen](studio-bestand-routen.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 
