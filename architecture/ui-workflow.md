@@ -498,6 +498,13 @@ die bestehende Seite `/findings/{id}` bleibt parallel und beide verlinken densel
 Fall in der anderen Oberfläche. Studio-Eingang und seine Toasts führen zur neuen
 Detailseite, klassische Intake-Links behalten ihre bisherige Zieloberfläche.
 
+**Spätere Richtungsänderung:** Der Nutzer möchte beim Öffnen eines Falls auch aus
+dem klassischen Eingang und der bisherigen Übersicht die Studio-Detailseite
+sehen. Diese Links wurden umgestellt. Die vorstehende Beschreibung hält den
+Abnahmestand des ersten Studio-Falldetails fest und ist für die aktuelle
+Navigation an dieser Stelle ersetzt. Die geplante Verlegung von Studio nach
+`/` und Classic nach `/legacy` ist ein eigener nächster Routenschritt.
+
 Die Belegfläche dominiert den breiten Arbeitsplatz; rechts liegt ein kompakter
 Inspector für manuelle Bewertung, technische Beobachtung, Notiz und Kontakt.
 Bis 1100 CSS-Pixel werden die Bereiche gestapelt. Beleg, Entscheidung und Verlauf

@@ -123,8 +123,8 @@ use App\Value\RetestResult;
       <tbody>
         <?php foreach ($findings as $finding): ?>
           <tr data-finding-id="<?= $escape($finding->id) ?>">
-            <td><a class="row-link" href="/findings/<?= $escape($finding->id) ?>"><code><?= $escape(substr($finding->id, 0, 8)) ?></code></a><br>
-              <a class="row-link" href="/findings/<?= $escape($finding->id) ?>"><code><?= $escape($finding->domain) ?></code></a><br><span class="hint"><?= $escape($finding->title) ?><br><?= $escape($finding->type) ?> · <?= $escape($finding->severity) ?></span>
+            <td><a class="row-link" href="/studio/findings/<?= $escape($finding->id) ?>"><code><?= $escape(substr($finding->id, 0, 8)) ?></code></a><br>
+              <a class="row-link" href="/studio/findings/<?= $escape($finding->id) ?>"><code><?= $escape($finding->domain) ?></code></a><br><span class="hint"><?= $escape($finding->title) ?><br><?= $escape($finding->type) ?> · <?= $escape($finding->severity) ?></span>
             </td>
             <td data-dimension="assessment"><?= $escape(FindingReadLabels::assessment($finding->assessment, $finding->discardReason)) ?>
               <?php if ($finding->assessment !== null): ?><br><span class="hint">Manuell · <?= $escape($finding->assessedAt?->format(DATE_ATOM) ?? 'Zeitpunkt unbekannt') ?></span><?php endif; ?>

@@ -55,9 +55,9 @@ after storage is confirmed. Optional marker and note fields sit under details;
 the session history shows compact storage and screenshot states. The classic
 overview remains at `/`, and both pages link to each other. Switching between
 them in the same tab retains the current draft and up to 50 intake entries.
-Studio history and toast links open `/studio/findings/{id}`. Classic intake links
-continue to open `/findings/{id}`; both detail views link to the same finding in
-the other surface.
+Studio history, toast links, classic intake links and overview rows open
+`/studio/findings/{id}`. Both detail views link to the same finding in the other
+surface.
 
 The Studio detail uses a large evidence area and a compact inspector for manual
 assessment, notes, and contact. Windows up to 1100 CSS pixels stack those areas;

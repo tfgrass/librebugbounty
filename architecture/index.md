@@ -176,9 +176,14 @@ Folgeabschnitt ausdrücklich zur Umsetzung beauftragt. Unter
 `/studio/findings/{id}` stehen große Belegansicht und ein kompakter Inspector für
 Bewertung, Notiz und Kontakt bereit. Bis 1100 CSS-Pixel werden die Bereiche
 gestapelt; die Anker Beleg, Entscheidung und Verlauf bleiben direkt erreichbar.
-Der Studio-Eingang öffnet diese Ansicht, der klassische Eingang weiterhin die
-klassische Einzelseite. Beide Detailseiten verlinken denselben Fall in der anderen
-Oberfläche.
+Zum ersten Abnahmezeitpunkt öffnete der Studio-Eingang diese Ansicht, der
+klassische Eingang noch die klassische Einzelseite. Beide Detailseiten verlinken
+denselben Fall in der anderen Oberfläche.
+
+**Nachtrag:** Auf Wunsch des Nutzers führen jetzt auch „Fall öffnen“ im klassischen
+Eingang und die Falllinks in der bisherigen Übersicht zur Studio-Detailseite.
+Die früher beschriebene klassische Zielseite dieser Links ist damit ersetzt;
+die klassische Detailseite bleibt direkt erreichbar.
 
 Classic und Studio lesen `FindingDetailService` und verwenden dieselben
 Bewertungs-/Kontaktregeln. Die vorhandenen Schreibendpunkte erhalten optional
