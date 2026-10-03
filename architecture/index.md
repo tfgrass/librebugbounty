@@ -18,10 +18,10 @@ Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
   ScreenshotJob und kehrt dann ohne automatischen Retest zurück. Die nächste URL
   lässt sich sofort erfassen; Sitzungsverlauf und unbestätigte Eingaben bleiben
   im aktuellen Tab erreichbar.
-- Vorhandene Abläufe wurden zuerst in der aktuellen Ansicht stabilisiert. Nach
-  dem schnellen Eingang wird jetzt ein schmaler paralleler Studio-Eingang als
-  erster echter Arbeitsbereich umgesetzt; der vollständige Resolve-Umbau folgt
-  weiterhin erst mit weiteren brauchbaren Arbeitsbereichen.
+- Vorhandene Abläufe wurden zuerst in der aktuellen Ansicht stabilisiert. Der
+  parallele Studio-Eingang ist umgesetzt; nach dem ausdrücklichen Folgeauftrag
+  erhält auch die Fallbearbeitung eine Studio-Ansicht mit großem Belegfeld und
+  kompaktem Inspector. Der weitere Resolve-Umbau folgt in eigenen Vorhaben.
 
 ## Umgesetzter Stand
 
@@ -139,7 +139,7 @@ nur im sichtbaren und fokussierten Tab und nach einem Reload nicht erneut für a
 Zustände. Polling liest ausschließlich persistierte Zustände und startet keine
 Browserarbeit.
 
-Der API-Umfang ist bewusst auf die klassische und die spätere parallele
+Der API-Umfang ist bewusst auf die klassische und die parallele
 Studio-Ansicht begrenzt. Eine allgemeine Drittclient-API, eine neue Queue für
 technische Prüfungen und die Studio-Oberfläche selbst gehören nicht zu diesem
 Abschnitt. [Vertrag, Nachweise und Grenzen](abnahme-schneller-eingang.md): 155
@@ -169,6 +169,31 @@ aktuellen Stand neu ein.
 [Prüfstand und Grenzen](abnahme-studio-ingest.md),
 [Umsetzungsplan und Abnahmevertrag](plan-studio-ingest.md),
 [Entscheidungsweg](ui-workflow.md#nächstes-vorhaben-studio-ingest-v1--half-screen).
+
+**Studio-Falldetail v1 implementiert:** Nach dem Eingang hat der Nutzer den Bruch
+beim Öffnen der weiterhin klassischen Einzelseiten benannt und den vorgeschlagenen
+Folgeabschnitt ausdrücklich zur Umsetzung beauftragt. Unter
+`/studio/findings/{id}` stehen große Belegansicht und ein kompakter Inspector für
+Bewertung, Notiz und Kontakt bereit. Bis 1100 CSS-Pixel werden die Bereiche
+gestapelt; die Anker Beleg, Entscheidung und Verlauf bleiben direkt erreichbar.
+Der Studio-Eingang öffnet diese Ansicht, der klassische Eingang weiterhin die
+klassische Einzelseite. Beide Detailseiten verlinken denselben Fall in der anderen
+Oberfläche.
+
+Classic und Studio lesen `FindingDetailService` und verwenden dieselben
+Bewertungs-/Kontaktregeln. Die vorhandenen Schreibendpunkte erhalten optional
+`surface=studio`; Notizen haben einen ausdrücklichen, CSRF-geschützten
+Speicherweg. Bildauswahl wählt keine Bewertungsgrundlage voraus. Aktuelle
+Queue-/Fehlerzustände bleiben auch neben älteren Bildern sichtbar, Aufnahme- und
+Ablagezeit werden getrennt. Fehlende Dateien werden erklärt, die Belege bleiben
+erhalten. GET löst keine Prüfung und keine Aufnahme aus.
+
+Die fokussierte HTTP-Abnahme ist mit zehn Tests und 271 Assertions erfolgreich;
+die Gesamtsuite mit 172 Tests und 1.788 Assertions. Der isolierte Browserlauf
+bestand 20 Prüfungen an fünf Fenstergrößen, einschließlich NoJS und gemeinsamem
+Classic-/Studio-Zustand. Nachweise und Grenzen dokumentiert
+[Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md). Eine Studio-Bestandsliste,
+ein Review-Arbeitsvorrat und Bildvergleich sind nicht Teil dieses Abschnitts.
 
 Weitere bekannte Grenzen:
 
@@ -212,8 +237,10 @@ Das [UI-Arbeitsmodell](ui-workflow.md) hält die bestätigte Richtung fest:
   Domain, Betreiber, Entwickler oder begründeter Ähnlichkeit.
 - Bestand mit Dashboard, Suche und verständlichen Statistiken.
 
-Diese Funktionen wachsen zunächst in der vorhandenen Oberfläche. Der spätere
-Resolve-Umbau ändert Navigation und Anordnung, verwendet aber die erprobten
+Studio-Eingang und Studio-Falldetail übernehmen bereits nutzbare Anwendungsfälle.
+Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Ein
+Studio-Bestand als nächster Ausbau bleibt Vorschlag; Review benötigt zuerst seine
+noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
 Anwendungsfälle und Daten weiter.
 
 ## Dokumente
@@ -227,6 +254,7 @@ Anwendungsfälle und Daten weiter.
 - [Abnahme schneller Einzeleingang](abnahme-schneller-eingang.md)
 - [Umsetzungsplan Studio-Ingest v1 / Half-Screen](plan-studio-ingest.md)
 - [Abnahme Studio-Ingest v1](abnahme-studio-ingest.md)
+- [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

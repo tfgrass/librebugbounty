@@ -4,17 +4,18 @@ namespace App\Controller;
 
 use App\Dto\FindingReadFilter;
 use App\Dto\FindingReadView;
+use App\Dto\FindingDetailView;
+use App\Dto\FindingAssessmentState;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
 use App\Entity\Evidence;
 use App\Entity\RetestRun;
-use App\Entity\ScreenshotJob;
 use App\Repository\EvidenceRepository;
-use App\Repository\FindingAssessmentRepository;
 use App\Repository\FindingReadRepository;
 use App\Repository\RetestRunRepository;
 use App\Repository\ScreenshotJobRepository;
 use App\Service\FindingService;
+use App\Service\FindingDetailService;
 use App\Service\EvidenceStorageInterface;
 use App\Service\SettingsService;
 use App\Service\RetestService;
@@ -22,8 +23,6 @@ use App\Service\ScreenshotStatusService;
 use App\Service\ScreenshotQueueService;
 use App\Value\FindingStatus;
 use App\Value\FindingReadLabels;
-use App\Value\EvidenceKind;
-use App\Value\ReviewState;
 use App\Value\ScreenshotJobStatus;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -45,9 +44,9 @@ final class WebController
         private readonly ScreenshotStatusService $screenshotStatus,
         private readonly ScreenshotQueueService $screenshotQueue,
         private readonly ScreenshotJobRepository $screenshotJobs,
-        private readonly FindingAssessmentRepository $assessments,
         private readonly CsrfTokenManagerInterface $csrf,
         private readonly FindingReadRepository $findingRead,
+        private readonly FindingDetailService $findingDetail,
     ) {
     }
 
@@ -236,15 +235,8 @@ final class WebController
     public function showFinding(string $id, Request $request): Response
     {
         try {
-            $finding = $this->findingService->getFindingOrFail($id);
-            $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC']);
-
             return new Response($this->renderFindingPage(
-                finding: $finding,
-                evidence: $evidence,
-                runs: $this->retestRunRepository->findRecentByFinding($finding, 20),
-                screenshotJobs: $this->screenshotJobs->findRecentByFinding($finding, null),
-                assessments: $this->assessments->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']),
+                view: $this->findingDetail->get($id),
                 message: $request->query->getString('message') ?: null,
                 error: $request->query->getString('error') ?: null,
             ));
@@ -260,11 +252,12 @@ final class WebController
             return new Response('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.', Response::HTTP_FORBIDDEN);
         }
         $parameters = $request->request->all();
-        foreach (['assessment', 'discard_reason', 'observation_id', 'evidence_id'] as $field) {
+        foreach (['assessment', 'discard_reason', 'observation_id', 'evidence_id', 'surface'] as $field) {
             if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
                 return new Response('Ungültige Bewertungsangaben.', Response::HTTP_BAD_REQUEST);
             }
         }
+        $returnPath = $this->findingReturnPath($id, $parameters);
 
         try {
             $finding = $this->findingService->getFindingOrFail($id);
@@ -301,11 +294,34 @@ final class WebController
                 $evidenceId,
             );
 
-            return $this->redirectMessage('Bewertung gespeichert: '.$this->assessmentLabel($assessment, $assessment === 'discarded' ? $reason : null).'.', '/findings/'.$finding->getId());
+            return $this->redirectMessage('Bewertung gespeichert: '.$this->assessmentLabel($assessment, $assessment === 'discarded' ? $reason : null).'.', $returnPath);
         } catch (\InvalidArgumentException $exception) {
             return new Response($exception->getMessage(), Response::HTTP_BAD_REQUEST);
         } catch (\Throwable $exception) {
-            return $this->redirectError($exception->getMessage());
+            return $this->redirectError($exception->getMessage(), $returnPath);
+        }
+    }
+
+    #[Route(path: 'findings/{id}/notes', name: 'finding_notes', methods: ['POST'])]
+    public function updateFindingNotes(string $id, Request $request): Response
+    {
+        if (!$this->validCsrf($request, 'finding_notes_'.$id)) {
+            return new Response('Die Notiz wurde nicht gespeichert. Formular bitte neu laden.', Response::HTTP_FORBIDDEN);
+        }
+        $parameters = $request->request->all();
+        if (!is_string($parameters['notes'] ?? null)
+            || (array_key_exists('surface', $parameters) && !is_string($parameters['surface']))
+        ) {
+            return new Response('Ungültige Notizangaben.', Response::HTTP_BAD_REQUEST);
+        }
+        $returnPath = $this->findingReturnPath($id, $parameters);
+        try {
+            $finding = $this->findingService->getFindingOrFail($id);
+            $this->findingService->updateNotes($finding, $parameters['notes']);
+
+            return $this->redirectMessage('Notiz gespeichert.', $returnPath);
+        } catch (\Throwable $exception) {
+            return $this->redirectError($exception->getMessage(), $returnPath);
         }
     }
 
@@ -334,22 +350,32 @@ final class WebController
         if (!$this->validCsrf($request, 'finding_mark_contacted_'.$id)) {
             return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
         }
+        $parameters = $request->request->all();
+        foreach (['surface', 'return_to'] as $field) {
+            if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
+                return new Response('Ungültige Kontaktangaben.', Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $returnPath = $this->findingReturnPath($id, $parameters);
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $this->findingService->markContacted($finding);
 
             $message = sprintf(
-                'Marked %s as contacted.',
+                'Kontaktzeitpunkt für %s gespeichert.',
                 $this->shortId($finding),
             );
+            if (($parameters['surface'] ?? null) === 'studio') {
+                return $this->redirectMessage($message, $returnPath);
+            }
             $returnTo = trim($request->request->getString('return_to'));
             if ($returnTo !== '' && str_starts_with($returnTo, '/') && !str_starts_with($returnTo, '//')) {
                 return new RedirectResponse($returnTo.(str_contains($returnTo, '?') ? '&' : '?').'message='.rawurlencode($message));
             }
 
-            return $this->redirectMessage($message, '/findings/'.$finding->getId());
+            return $this->redirectMessage($message, $returnPath);
         } catch (\Throwable $exception) {
-            return $this->redirectError($exception->getMessage());
+            return $this->redirectError($exception->getMessage(), $returnPath);
         }
     }
 
@@ -650,47 +676,35 @@ final class WebController
         return ob_get_clean();
     }
 
-    /**
-     * @param list<Evidence> $evidence
-     * @param list<RetestRun> $runs
-     * @param list<ScreenshotJob> $screenshotJobs
-     * @param list<FindingAssessment> $assessments
-     */
-    private function renderFindingPage(Finding $finding, array $evidence, array $runs, array $screenshotJobs, array $assessments, ?string $message, ?string $error): string
+    private function renderFindingPage(FindingDetailView $view, ?string $message, ?string $error): string
     {
+        $finding = $view->finding;
+        $evidence = $view->evidence;
+        $runs = $view->runs;
+        $screenshotJobs = $view->screenshotJobs;
+        $assessments = $view->assessments;
         $messageBox = $message ? '<div class="notice success">'.$this->escape($message).'</div>' : '';
         $errorBox = $error ? '<div class="notice error">'.$this->escape($error).'</div>' : '';
 
-        $jobsByPath = [];
-        foreach ($screenshotJobs as $job) {
-            if ($job->getScreenshotPath() !== null) {
-                $jobsByPath[$job->getScreenshotPath()] = $job;
-            }
-        }
-
         $screenshotCards = [];
-        foreach ($evidence as $item) {
-            if ($item->getKind() !== EvidenceKind::SCREENSHOT || $item->getFilePath() === null) {
-                continue;
-            }
-
-            if (!$this->storage->exists($item->getFilePath())) {
+        foreach ($view->screenshots as $shot) {
+            $item = $shot['evidence'];
+            if (!$shot['available']) {
                 $screenshotCards[] = '<figure class="shot-card"><p class="notice error">Screenshot file is missing or unavailable. The evidence record has been retained.</p>'
                     .'<figcaption>Stored: '.$this->escape($item->getCreatedAt()->format(DATE_ATOM)).'<br><code>'.$this->escape($item->getFilePath()).'</code></figcaption></figure>';
                 continue;
             }
 
-            $captureJob = $jobsByPath[$item->getFilePath()] ?? null;
-            $captureTime = $captureJob instanceof ScreenshotJob && $captureJob->getCapturedAt() !== null
-                ? 'Captured: '.$captureJob->getCapturedAt()->format(DATE_ATOM)
+            $captureTime = $shot['capturedAt'] !== null
+                ? 'Captured: '.$shot['capturedAt']->format(DATE_ATOM)
                 : 'Stored: '.$item->getCreatedAt()->format(DATE_ATOM).' (capture time unavailable)';
             $screenshotCards[] = sprintf(
                 '<figure class="shot-card">'
-                .'<a href="/artifacts/%s" target="_blank" rel="noreferrer"><img src="/artifacts/%s" alt="Screenshot for %s"></a>'
+                .'<a href="%s" target="_blank" rel="noreferrer"><img src="%s" alt="Screenshot for %s"></a>'
                 .'<figcaption>%s<br><code>%s</code></figcaption>'
                 .'</figure>',
-                $this->escape($this->artifactRelativeUrl($item->getFilePath() ?? '')),
-                $this->escape($this->artifactRelativeUrl($item->getFilePath() ?? '')),
+                $this->escape($shot['url']),
+                $this->escape($shot['url']),
                 $this->escape($finding->getId()),
                 $this->escape($captureTime),
                 $this->escape($item->getFilePath()),
@@ -778,11 +792,14 @@ final class WebController
     <div>
       <h2>Finding <?= $this->escape($this->shortId($finding)) ?></h2>
     </div>
-    <a class="button ghost" href="/">Back to overview</a>
+    <div class="row-actions">
+      <a class="button ghost" href="/studio/findings/<?= $this->escape($finding->getId()) ?>">Fall im Studio öffnen</a>
+      <a class="button ghost" href="/">Back to overview</a>
+    </div>
   </div>
   <div class="detail-grid">
     <div>
-      <?= $this->renderAssessmentCard($finding, $runs, $evidence, $assessments[0] ?? null) ?>
+      <?= $this->renderAssessmentCard($finding, $runs, $evidence, $view->assessmentState) ?>
       <dl class="detail-list">
         <div><dt>Title</dt><dd><?= $this->escape($finding->getTitle()) ?></dd></div>
         <div><dt>URL</dt><dd><code><?= $this->escape($finding->getUrl()) ?></code></dd></div>
@@ -892,29 +909,14 @@ final class WebController
      * @param list<RetestRun> $runs
      * @param list<Evidence> $evidence
      */
-    private function renderAssessmentCard(Finding $finding, array $runs, array $evidence, ?FindingAssessment $newestAssessment): string
+    private function renderAssessmentCard(Finding $finding, array $runs, array $evidence, FindingAssessmentState $state): string
     {
         $assessment = $finding->getManualAssessment();
-        $latestRun = $runs[0] ?? null;
-        $latestAt = $latestRun?->getFinishedAt() ?? $latestRun?->getStartedAt();
-        $newerObservation = $assessment !== null && $latestAt !== null
-            && $finding->getAssessedAt() !== null && $latestAt > $finding->getAssessedAt();
-        if ($assessment !== null && $newestAssessment !== null) {
-            // This boundary records which runs existed when the decision was
-            // saved, without claiming that any of them was actually reviewed.
-            // It also distinguishes observations within the same SQLite second.
-            $newerObservation = $this->retestRunRepository->hasObservationAfterAssessment(
-                $finding,
-                $newestAssessment->getKnownObservationIds(),
-            );
-        }
-        $needsConfirmation = ($assessment === null || $newerObservation)
-            && ($latestRun?->getResult() === 'inconclusive'
-                || ($assessment === null && $finding->getReviewState() === ReviewState::MANUAL_CHECKING));
-        // Manual protection must still permit an explicit correction from fixed
-        // to confirmed. Only technical activity is prevented from changing it.
-        $canConfirm = $needsConfirmation || $assessment === 'fixed' || $finding->isDiscarded()
-            || ($assessment === null && $finding->getStatus() === FindingStatus::FIXED);
+        $latestRun = $state->latestRun;
+        $latestAt = $state->latestAt;
+        $newerObservation = $state->newerObservation;
+        $needsConfirmation = $state->needsConfirmation;
+        $canConfirm = $state->canConfirm;
 
         ob_start();
         ?>
@@ -976,10 +978,10 @@ final class WebController
       <?php if ($canConfirm): ?>
         <button type="submit" name="assessment" value="confirmed" class="secondary">Bestätigen</button>
       <?php endif; ?>
-      <?php if ($assessment !== 'fixed'): ?>
+      <?php if ($state->canMarkFixed): ?>
         <button type="submit" name="assessment" value="fixed" class="ghost">Behoben</button>
       <?php endif; ?>
-      <?php if ($assessment !== 'discarded' || $finding->getDiscardReason() !== 'duplicate'): ?>
+      <?php if ($state->canDiscard): ?>
         <button type="submit" name="assessment" value="discarded" class="ghost">Verwerfen</button>
       <?php endif; ?>
     </div>
@@ -1069,9 +1071,14 @@ final class WebController
         return new RedirectResponse('/?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
     }
 
-    private function redirectError(string $error): RedirectResponse
+    private function findingReturnPath(string $id, array $parameters): string
     {
-        return new RedirectResponse('/?error='.rawurlencode($error));
+        return (($parameters['surface'] ?? null) === 'studio' ? '/studio/findings/' : '/findings/').rawurlencode($id);
+    }
+
+    private function redirectError(string $error, string $path = '/'): RedirectResponse
+    {
+        return new RedirectResponse($path.'?error='.rawurlencode($error));
     }
 
     private function rowsOrEmpty(array $rows, int $colspan, string $message): string
@@ -1086,12 +1093,6 @@ final class WebController
     private function shortId(Finding $finding): string
     {
         return substr($finding->getId(), 0, 8);
-    }
-
-    private function artifactRelativeUrl(string $filePath): string
-    {
-        $normalized = ltrim(str_replace('\\', '/', $filePath), '/');
-        return preg_replace('#^storage/artifacts/#', '', $normalized) ?: $normalized;
     }
 
     private function escape(mixed $value): string

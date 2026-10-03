@@ -55,7 +55,27 @@ after storage is confirmed. Optional marker and note fields sit under details;
 the session history shows compact storage and screenshot states. The classic
 overview remains at `/`, and both pages link to each other. Switching between
 them in the same tab retains the current draft and up to 50 intake entries.
-Finding details still open in the classic view.
+Studio history and toast links open `/studio/findings/{id}`. Classic intake links
+continue to open `/findings/{id}`; both detail views link to the same finding in
+the other surface.
+
+The Studio detail uses a large evidence area and a compact inspector for manual
+assessment, notes, and contact. Windows up to 1100 CSS pixels stack those areas;
+the `Beleg`, `Entscheidung`, and `Verlauf` links reach them directly. Multiple
+images can be selected, and the original local artifact opens at full size.
+Without JavaScript, all retained images and the native forms remain usable.
+Capture time and storage time are separate. Missing files and the latest queued,
+running, failed, or completed screenshot job remain visible alongside older
+images, including browser-protection metadata.
+
+Classic and Studio read the same detail projection and use the same assessment
+and contact operations. The selected image is not automatically recorded as an
+assessment basis. Notes are explicitly saved with the CSRF-protected
+`POST /findings/{id}/notes` form; there is no autosave. The collapsed technical
+history shows assessments with their explicit basis, screenshot jobs, evidence,
+and the 20 most recent technical observations. Opening either detail view starts
+no retest or capture. The Studio inventory and a separate review workspace remain
+future work.
 
 Submitting a supported URL stores the finding and its first persistent screenshot
 job atomically in one database transaction. A committed new finding therefore

@@ -208,6 +208,12 @@ final class FindingService
         return $finding;
     }
 
+    public function updateNotes(Finding $finding, string $notes): void
+    {
+        $finding->setPrivateNotes($notes === '' ? null : $notes);
+        $this->entityManager->flush();
+    }
+
     public function deleteFinding(Finding $finding): void
     {
         $delete = function () use ($finding): void {

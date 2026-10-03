@@ -2,7 +2,8 @@
 
 Stand: 2026-10-03. Fortgeschriebener Diskussions- und Entscheidungsstand aus dem
 Architektur-Sparring. Der schnelle Einzeleingang und der erste parallele,
-halbbreitentaugliche Studio-Eingang sind umgesetzt.
+halbbreitentaugliche Studio-Eingang sind umgesetzt. Studio-Falldetail v1 folgt als
+ausdrücklich beauftragter, implementierter und abgenommener Abschnitt.
 Andere als solche gekennzeichnete Ideen bleiben Vorschläge. Geltender Stand:
 [Index](index.md), [Lastenheft](lastenheft.md).
 
@@ -44,6 +45,13 @@ wird kein vollständiger UI-Prototyp vorgezogen. Der bereits funktionierende Int
 wird als erster echter paralleler Studio-Arbeitsbereich angeordnet und für ein
 halbbreites Fenster optimiert; Review, Meldungen und ein Studio-Bestand bleiben
 eigenständige spätere Vorhaben.
+
+**Folgeauftrag vom 2026-10-03:** Nach dem Studio-Eingang benennt der Nutzer den
+Gestaltungsbruch zu den noch klassischen Einzelseiten. Der vorgeschlagene nächste
+Abschnitt Studio-Falldetail v1 wird ausdrücklich zur Umsetzung beauftragt: große
+Belegfläche, kompakter Inspector für die vorhandene Fallbearbeitung und parallele
+klassische Detailseite. Dies erweitert den tatsächlich nutzbaren Studio-Umfang,
+ohne die noch offenen Review-Regeln oder einen Studio-Bestand vorwegzunehmen.
 
 ## Beobachteter Ausgangspunkt
 
@@ -479,6 +487,60 @@ Wiederherstellung aus dem BFCache liest neuere Änderungen vor dem nächsten
 Schreiben neu ein. [Abnahme und Grenzen](abnahme-studio-ingest.md).
 Bestand, Inspector, Review und Meldungen erweitern diesen ersten Arbeitsbereich
 nicht stillschweigend.
+
+## Beauftragter Folgeabschnitt: Studio-Falldetail v1
+
+**Begründung und Festlegung:** „Fall öffnen“ führte aus dem Studio-Eingang zurück
+in die dichter dargestellte klassische Einzelseite. Der Nutzer hat den konkreten
+Vorschlag zur Angleichung dieser Fallbearbeitung mit „setz es um“ beauftragt. Unter
+`/studio/findings/{id}` ist deshalb eine eigene Studio-Einzelseite implementiert;
+die bestehende Seite `/findings/{id}` bleibt parallel und beide verlinken denselben
+Fall in der anderen Oberfläche. Studio-Eingang und seine Toasts führen zur neuen
+Detailseite, klassische Intake-Links behalten ihre bisherige Zieloberfläche.
+
+Die Belegfläche dominiert den breiten Arbeitsplatz; rechts liegt ein kompakter
+Inspector für manuelle Bewertung, technische Beobachtung, Notiz und Kontakt.
+Bis 1100 CSS-Pixel werden die Bereiche gestapelt. Beleg, Entscheidung und Verlauf
+sind echte Anker für Tastatur und schmale Fenster. Die untere Navigation zeigt
+den aktuellen Fallkontext und nur funktionierende Ziele; sie führt weiterhin zum
+klassischen Bestand und zu den vorhandenen Einstellungen.
+
+Mehrere Bildbelege sind auswählbar und ihr Original ist lokal erreichbar. Die
+Bildauswahl setzt keine Bewertungsgrundlage voraus. Aufnahme- und Ablagezeit sind
+getrennt; fehlt die Aufnahmezeit, bleibt sie unbekannt. Der letzte Screenshot-
+Auftrag mit `queued`, `running`, `available` oder `failed` bleibt sichtbar, auch
+wenn ein älterer Bildbeleg vorhanden ist. Fehlende Bilddateien werden erklärt,
+die Evidence-Zeilen bleiben erhalten. Browser-Schutz-Erkennung und ihre Details
+erscheinen als Aufnahmemetadaten und ändern keine manuelle Bewertung.
+
+`FindingDetailService` liefert für Classic und Studio denselben lesenden
+Fallkontext und die gleichen Bewertungsregeln. Die vorhandenen
+`/findings/{id}/assessment`- und `/mark-contacted`-Endpunkte speichern die
+Entscheidung beziehungsweise den Kontaktzeitpunkt. Optionales `surface=studio`
+bestimmt die interne Rückkehr; das ist kein frei wählbares Weiterleitungsziel.
+Notizen werden über `/findings/{id}/notes` mit eigenem CSRF-Zweck ausdrücklich
+gespeichert. Ohne ausdrückliche Auswahl bleibt eine Bewertungsgrundlage unbekannt.
+Es gibt weder automatische technische Prüfung beim Öffnen noch Autosave.
+
+Technik und Historie sind standardmäßig eingeklappt: Bewertungshistorie mit
+ausdrücklicher oder unbekannter Grundlage, Screenshot-Aufträge mit Fehlern und
+Challenges, alle Evidence und die 20 jüngsten gespeicherten technischen Läufe.
+Native Formulare und Details sind ohne JavaScript bedienbar; dann werden die
+Bildbelege gemeinsam dargestellt. Ein laufender Screenshotstand braucht in der
+Detailseite aktuell Reload. Der Studio-Eingang behält seinen lesenden Statusabruf.
+
+Der Abschnitt ist implementiert und abgenommen. Zehn fokussierte HTTP-Tests mit
+271 Assertions, die Gesamtsuite mit 172 Tests und 1.788 Assertions sowie 20
+isolierte Browserprüfungen an fünf Fenstergrößen sind erfolgreich. Nachweise und
+praktische Grenzen:
+[Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md).
+
+**Weiterhin Vorschlag:** Als folgenden UI-Ausbau einen Studio-Bestand mit Liste
+und wiederverwendetem Falldetail vorsehen. Auswahl-, Filter- und Rückkehrkontext
+dieses Arbeitsbereichs sind damit noch nicht festgelegt. Review benötigt vor
+seiner Umsetzung weiterhin Antworten zu Sichtungsgründen, Erledigen,
+Zurückstellen und Vergleichsreferenzen. Bildvergleich, Mailvorbereitung und
+Meldungsgruppen gehören nicht in den gelieferten Falldetailabschnitt.
 
 ## Szenarien für die jeweiligen Funktionspakete
 

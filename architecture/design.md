@@ -24,11 +24,13 @@ Bestätigte Speicherung hat im Eingang Vorrang. Details und Grenzen stehen im
 [UI-Arbeitsmodell](ui-workflow.md#schneller-eingang-und-parallele-resolve-ansicht--sparring-nach-3b).
 
 **UI-Fortschreibung vom 2026-10-03:** Nach der Umsetzung bewertet der Nutzer die
-klassische Gesamtseite für den Eingang als zu überladen. Als nächster begrenzter
-Abschnitt wird deshalb ein paralleler Studio-Eingang für halbbreite Fenster
-vorbereitet. Das revidiert nicht die Reihenfolge für den vollständigen
-Resolve-Umbau: Zunächst wird nur der bereits funktionierende Intake übernommen;
-Bestand, Review, Inspector und Meldungen bleiben spätere Arbeitsbereiche.
+klassische Gesamtseite für den Eingang als zu überladen. Der daraufhin vorbereitete
+Studio-Eingang für halbbreite Fenster ist umgesetzt. Anschließend benennt der
+Nutzer die noch klassischen Einzelseiten und beauftragt den vorgeschlagenen
+Studio-Falldetailabschnitt: große Belegfläche, kompakter Inspector und parallele
+klassische Detailseite. Dieser zweite Abschnitt übernimmt die vorhandene
+Fallbearbeitung. Ein vollständiger Studio-Bestand, Review und Meldungen bleiben
+eigene spätere Vorhaben.
 
 ## Bestätigte Anforderungen
 
@@ -65,6 +67,10 @@ Grundlage: Nutzerauftrag und Antworten in den Architekturgesprächen vom
 - Klassische und spätere Studio-Oberfläche verwenden zunächst dieselbe schmale
   Backend-Schnittstelle und Fallverwaltung. Weitere API-Clients sind derzeit kein
   Produktziel.
+- Der ausdrücklich beauftragte Studio-Falldetailabschnitt führt Eingang und
+  Einzelseite in derselben Gestaltung zusammen. Belege stehen im Mittelpunkt,
+  Entscheidungen, Notizen und Kontakt im Inspector; bei halbbreiten Fenstern
+  bleiben die Bereiche durch Stapelung und direkte Navigation bedienbar.
 
 Die damalige automatische Verarbeitung im analysierten Ausgangscode war
 beobachteter Bestand, keine vollständig bestätigte Spezifikation sämtlicher
@@ -77,8 +83,10 @@ gemeinsamer Entwickler sowie Bestand/Dashboard/Statistiken. Entscheidungen,
 Lösungsvorschläge und offene Regeln stehen im [UI-Arbeitsmodell](ui-workflow.md).
 Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt und
 umgesetzt. Studio-Ingest v1 wurde danach als erster paralleler Arbeitsbereich
-umgesetzt; vollständige
-Studio-Ansicht, Review und Meldungen bleiben getrennte spätere Vorhaben.
+umgesetzt. Studio-Falldetail v1 ist als Folgeabschnitt implementiert und anhand
+der HTTP-/Gesamtsuite sowie eines isolierten Browserlaufs abgenommen.
+Vollständiger Studio-Bestand, Review und Meldungen bleiben getrennte spätere
+Vorhaben.
 
 ## Beobachteter Aufbau
 
@@ -332,6 +340,40 @@ Bildvergleich und Review-Arbeitsliste bleiben wie im
 diese Trennung: Sein Statusabruf zeigt gespeicherte Beobachtungen nur lesend und
 startet selbst keine Prüfung.
 
+## Gemeinsame Fallbearbeitung in Classic und Studio
+
+**Akzeptierter Folgeabschnitt vom 2026-10-03:** Der Nutzer wollte die nach dem
+Studio-Eingang noch klassischen Einzelseiten ebenfalls in der Resolve-artigen
+Gestaltung verwenden und hat den vorgeschlagenen Studio-Falldetailabschnitt
+ausdrücklich zur Umsetzung beauftragt. Die neue Route
+`/studio/findings/{id}` hat eine große Belegfläche und einen kompakten Inspector.
+Bis 1100 CSS-Pixel wird gestapelt; die Navigation Beleg, Entscheidung und Verlauf
+führt direkt zu den Bereichen. Eine Fallliste neben dieser Einzelseite ist damit
+noch nicht beschlossen oder geliefert.
+
+**Implementierter Datenfluss:** `FindingDetailService` liefert für beide
+Darstellungen das Finding, Evidence, die 20 jüngsten gespeicherten technischen
+Beobachtungen, ScreenshotJobs und Bewertungshistorie. Die DTOs
+`FindingDetailView` und `FindingAssessmentState` tragen dieselbe Ordnung und
+dieselben Aktionsregeln. Die Auswahl eines Bildes bleibt Darstellungszustand und
+wählt ausdrücklich keinen Beobachtungs- oder Belegbezug im Bewertungsformular.
+Fehlende Dateien bleiben als Evidence sichtbar, Aufnahme- und Ablagezeit werden
+auseinandergehalten; ein fehlender Aufnahmezeitpunkt wird nicht aus der Ablage
+abgeleitet. Aktuelle Screenshotfehler, laufende Aufträge und Browser-Schutz-
+Metadaten bleiben auch neben älteren Bildbelegen sichtbar.
+
+Schreiben erfolgt weiterhin über die vorhandenen Bewertungs- und Kontaktwege;
+`surface=studio` wählt nur die interne Rückkehr auf dieselbe Fall-ID. Der neue
+Notizweg `/findings/{id}/notes` verwendet `FindingService`, speichert ausdrücklich
+und verlangt seinen eigenen CSRF-Token. Kontakt bleibt ein unabhängiger Zeitpunkt.
+GET startet weder Retest noch Capture und bereinigt keine Daten. Studio lädt nur
+lokale Artefaktbilder; gemeldete Ziel-URLs bleiben kopierbarer Text. Native
+Formulare, Details und Bildlinks sind auch ohne JavaScript verwendbar.
+
+[Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md) hält die erfolgreichen
+HTTP-/Gesamtsuiten- und isolierten Browsernachweise samt praktischen Grenzen fest.
+Es gibt keine neue Migration, Retest-Queue oder eigene Fachlogik der Studio-Seite.
+
 ## Entscheidende offene Punkte
 
 Das angeforderte [Lastenheft](lastenheft.md) beschreibt den Zielzustand und die
@@ -344,8 +386,9 @@ Resolve-artige Pages für Erfassen, Sichten und Mailvorbereitung bleiben das
 spätere Ziel. Bestätigt ist der Vorrang funktionierender Abläufe in der aktuellen
 Ansicht; der schnelle Eingang ist der erste dafür umgesetzte Arbeitsbereich. Seine
 parallele Half-Screen-Studioansicht ist anschließend als begrenzter Abschnitt
-umgesetzt worden. Weitergehende Seiten-, Navigations- und Modellvorschläge für Bestand,
-Review und Meldungen bleiben Vorschläge.
+umgesetzt worden, gefolgt von Studio-Falldetail v1. Ein Studio-Bestand als nächster
+Ausbau bleibt Vorschlag. Weitergehende Seiten-, Navigations- und Modellvorschläge
+für Review und Meldungen bleiben ebenfalls Vorschläge.
 
 - **Geklärt:** Eine neue technische Beobachtung hebt eine manuelle Entscheidung
   nicht auf. Entscheidung erhalten und neue Beobachtung als Hinweis zeigen;

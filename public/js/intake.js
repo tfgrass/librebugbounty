@@ -38,7 +38,7 @@
     let statusController;
     const restored = new Set();
     const text = (value) => typeof value === 'string' ? value : '';
-    const findingLink = (id) => uuidPattern.test(text(id)) ? '/findings/' + encodeURIComponent(id) : null;
+    const findingLink = (id) => uuidPattern.test(text(id)) ? (compact ? '/studio/findings/' : '/findings/') + encodeURIComponent(id) : null;
     const draft = () => ({ url: urlInput.value, payload: payloadInput.value, notes: notesInput.value });
 
     function persist() {
@@ -178,7 +178,7 @@
       if (entry.findingId && !entry.missing) {
         const link = element('a', 'Fall öffnen ↗', 'studio-entry-link');
         link.href = findingLink(entry.findingId);
-        link.title = 'Fall in der klassischen Ansicht öffnen';
+        link.title = compact ? 'Fall im Studio öffnen' : 'Fall in der klassischen Ansicht öffnen';
         actions.append(link);
       }
       if (['failed', 'unconfirmed'].includes(entry.saveState)) actions.append(retryButton(entry, 'studio-entry-retry'));
