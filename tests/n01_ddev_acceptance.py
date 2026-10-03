@@ -125,9 +125,16 @@ class Acceptance:
         self.report.setdefault("schemaDiagnostics", []).append(diagnostic)
         self.ddev("exec", "php", "bin/console", "doctrine:migrations:up-to-date", "--no-interaction")
         self.check(True, "All committed migrations are applied")
-        health = self.ddev("exec", "curl", "--fail", "--silent", "http://playwright:3000/health")
+        worker_url = self.ddev("exec", "printenv", "PLAYWRIGHT_WORKER_URL")
+        networks = json.loads(self.run("docker", "inspect", "--format", "{{json .NetworkSettings.Networks}}", f"ddev-{self.name}-playwright"))
+        own_addresses = {network["IPAddress"] for network in networks.values() if network["IPAddress"]}
+        resolution = self.ddev("exec", "getent", "ahostsv4", urllib.parse.urlsplit(worker_url).hostname)
+        resolved_addresses = {line.split()[0] for line in resolution.splitlines()}
+        self.check(bool(resolved_addresses) and resolved_addresses <= own_addresses,
+                   "Configured worker hostname resolves exclusively to the isolated Playwright container")
+        health = self.ddev("exec", "curl", "--max-time", "10", "--fail", "--silent", worker_url.rstrip("/") + "/health")
         self.report["health"] = health
-        version = self.ddev("exec", "--service", "playwright", "node", "-p", "require('/var/www/html/playwright-worker/node_modules/playwright/package.json').version")
+        version = json.loads((self.checkout / "playwright-worker/node_modules/playwright/package.json").read_text())["version"]
         self.check(version == "1.61.1", "Fresh npm installation matches pinned Playwright 1.61.1")
         self.check(self.report["locks"] == {p: self.sha(self.checkout / p) for p in self.report["locks"]}, "Dependency lockfiles remain byte-identical")
 
