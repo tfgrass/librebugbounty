@@ -331,6 +331,10 @@ aktuelles Backup wurde restore-validiert. Nur neue Widersprüche, Unklarheiten
 und Fehler sollen erneut im Review erscheinen. [Befunde und Zuschnitt](ui-workflow.md#nach-review-v1-verbliebene-grundlagen-vor-kontakten),
 [Hinweis-Regeln](studio-review.md#neue-hinweise-nach-einem-urteil).
 
+**Korrektur während der Umsetzung:** Der Nutzer hat die zusätzliche
+CSRF-Absicherung der vier älteren Aktionen ausdrücklich zurückgestellt; die
+Ergänzung wurde wieder entfernt. Hinweis-Review und N01 bleiben beauftragt.
+
 ## Dokumente
 
 - [Lastenheft und Arbeitsabschnitte](lastenheft.md)

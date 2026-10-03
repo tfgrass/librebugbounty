@@ -22,7 +22,8 @@ umgesetzt: [Studio-Ingest v1](abnahme-studio-ingest.md). Das spätere
 Review-Paket wurde danach ebenfalls umgesetzt. Der Nutzer hat anschließend den
 Commit und drei Grundlagen beauftragt: übrige Formularaktionen absichern,
 frischen DDEV-Betrieb nachweisen und neue Hinweise nach einem Urteil im Review
-bearbeiten. Kontakte bleiben zurückgestellt.
+bearbeiten. Die zusätzliche CSRF-Ergänzung wurde während der Umsetzung auf
+ausdrücklichen Nutzerwunsch zurückgestellt. Kontakte bleiben zurückgestellt.
 
 ## 1. Zweck und Verbindlichkeit
 
@@ -334,13 +335,11 @@ geschützt; reine Leseaufrufe bleiben ohne fachliche Nebenwirkung. Private Notiz
 vollständige Ziel-URLs und Browserinhalte werden nicht unnötig in Diagnoseausgaben
 oder versionierte Testdaten übernommen. Kein öffentlicher Betrieb wird vorausgesetzt.
 
-**Umsetzungsstand am 2026-10-03:** Auch Einstellungen, Recheck,
-Screenshot-Einreihung und Löschen prüfen jetzt vorhandene Session-/Aktions-Tokens.
-Native eigene Formulare enthalten die passenden Tokens. Isolierte HTTP-Prüfungen
-belegen bei zwölf bestehenden Schreibpfaden, dass fehlende, ungültige und
-missgebildete Tokens weder Daten noch Dateien ändern oder Dienste aufrufen.
-Aktion, Fall und Session sind gebunden; gültige eigene Formulare funktionieren.
-Der Review-POST besitzt zusätzlich den vorhandenen CSRF- und Kontextschutz.
+**Nutzerentscheidung am 2026-10-03:** Die gerade ergänzten CSRF-Prüfungen für
+Einstellungen, Recheck, Screenshot-Einreihung und Löschen sollen vorerst entfallen.
+Diese Ergänzung wurde zurückgenommen; der vollständige N04-Abschluss ist damit
+ausdrücklich zurückgestellt. Der bereits bestehende Schutz anderer Formulare und
+der Kontextschutz im Review gehören zum bisherigen Stand.
 
 ## 6. Architekturleitplanken
 

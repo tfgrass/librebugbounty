@@ -168,6 +168,10 @@ Grundlagen aus dem folgenden Sparring ausdrücklich beauftragt: ältere
 Schreibaktionen absichern, frischen DDEV-Betrieb nachweisen und neue gespeicherte
 Hinweise zu bereits bewerteten Fällen im Review bearbeiten.
 
+**Spätere Nutzerkorrektur:** Die zusätzliche CSRF-Absicherung der vier älteren
+Aktionen wird vorerst zurückgestellt und ihre Ergänzung zurückgenommen. Der
+Hinweis-Ausbau und der frische Installationsnachweis werden weiter umgesetzt.
+
 **Verbindliche Präzisierung:** Nur widersprüchliche Ergebnisse, Unklarheiten und
 Fehler sollen erneut erscheinen. Die zunächst vorgeschlagene Variante „alle
 neuen Ergebnisse“ ist dadurch verworfen. Bei `confirmed` widerspricht ein neues

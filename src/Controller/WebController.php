@@ -122,9 +122,6 @@ final class WebController
     public function settings(Request $request): Response
     {
         if ($request->isMethod('POST')) {
-            if (!$this->validCsrf($request, 'settings_save')) {
-                return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
-            }
             $payload = trim($request->request->getString('default_payload'));
             $timeoutMs = trim($request->request->getString('review_timeout_ms'));
 
@@ -155,11 +152,8 @@ final class WebController
     }
 
     #[Route(path: 'findings/{id}/retest', name: 'finding_retest', methods: ['POST'])]
-    public function retestFinding(string $id, Request $request): Response
+    public function retestFinding(string $id): Response
     {
-        if (!$this->validCsrf($request, 'finding_retest_'.$id)) {
-            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
-        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             if ($finding->isDiscarded()) {
@@ -197,11 +191,8 @@ final class WebController
     }
 
     #[Route(path: 'findings/{id}/screenshots', name: 'finding_screenshot_queue', methods: ['POST'])]
-    public function queueScreenshot(string $id, Request $request): Response
+    public function queueScreenshot(string $id): Response
     {
-        if (!$this->validCsrf($request, 'finding_screenshot_queue_'.$id)) {
-            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
-        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             if ($finding->isDiscarded()) {
@@ -414,11 +405,8 @@ final class WebController
     }
 
     #[Route(path: 'findings/{id}/delete', name: 'finding_delete', methods: ['POST'])]
-    public function deleteFinding(string $id, Request $request): Response
+    public function deleteFinding(string $id): Response
     {
-        if (!$this->validCsrf($request, 'finding_delete_'.$id)) {
-            return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
-        }
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $hostname = $finding->getDomain()->getHostname();
@@ -540,7 +528,6 @@ final class WebController
     </div>
   </div>
   <form method="post" action="/settings">
-    <?= $this->csrfField('settings_save') ?>
     <label>Default Payload
       <input name="default_payload" value="<?= $this->escape($defaultPayload) ?>" placeholder="OPENBUGBOUNTY">
     </label>
@@ -772,7 +759,7 @@ final class WebController
       <p class="hint">Screenshots run serially in the background and never change the finding assessment.</p>
     </div>
     <?php if (!$finding->isDiscarded()): ?>
-      <form method="post" action="/findings/<?= $this->escape($finding->getId()) ?>/screenshots" class="inline-form"><?= $this->csrfField('finding_screenshot_queue_'.$finding->getId()) ?><button type="submit">Queue Screenshot</button></form>
+      <form method="post" action="/findings/<?= $this->escape($finding->getId()) ?>/screenshots" class="inline-form"><button type="submit">Queue Screenshot</button></form>
     <?php endif; ?>
   </div>
   <div class="table-wrap">
@@ -829,13 +816,9 @@ final class WebController
                 .'<button type="submit" class="secondary">Kontaktiert</button></form>';
         }
         if (!$finding->isDiscarded()) {
-            $actions .= '<form method="post" action="/findings/'.$id.'/retest" class="inline-form">'
-                .$this->csrfField('finding_retest_'.$finding->getId())
-                .'<button type="submit">Recheck + Queue Screenshot</button></form>';
+            $actions .= '<form method="post" action="/findings/'.$id.'/retest" class="inline-form"><button type="submit">Recheck + Queue Screenshot</button></form>';
         }
-        $actions .= '<form method="post" action="/findings/'.$id.'/delete" class="inline-form">'
-            .$this->csrfField('finding_delete_'.$finding->getId())
-            .'<button type="submit" class="danger">Delete</button></form>';
+        $actions .= '<form method="post" action="/findings/'.$id.'/delete" class="inline-form"><button type="submit" class="danger">Delete</button></form>';
 
         return $actions;
     }

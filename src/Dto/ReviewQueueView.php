@@ -4,7 +4,10 @@ namespace App\Dto;
 
 final readonly class ReviewQueueView
 {
-    /** @param array{all: int, inconclusive: int, error: int, unchecked: int, ready: int, missing: int} $counts Global candidate counts, before filters/cursor. */
+    /**
+     * @param array{all: int, inconclusive: int, error: int, unchecked: int, changed: int, ready: int, missing: int} $counts Global candidate counts, before filters/cursor.
+     * @param list<array<string, mixed>> $triggeringObservations Unresolved stored runs including their review reason.
+     */
     public function __construct(
         public ?FindingDetailView $detail,
         public string $kind,

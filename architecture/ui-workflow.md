@@ -798,9 +798,9 @@ sind bereits implementiert und nachgewiesen; sie müssen nicht neu gebaut werden
    Ein begrenztes Folgepaket sollte diese übrigen Wege mit dem bestehenden
    Schutz versehen. Abnahme: Fehlende oder ungültige Tokens ändern keine Daten
    und erzeugen keine Aufträge; gültige eigene Formulare erhalten die bisherigen
-   Abläufe. **Jetzt umgesetzt und geprüft:** 17 isolierte HTTP-Tests mit
-   422 Assertions, einschließlich Aktion/Fall/Session-Bindung, missgebildeter
-   Tokens und gültiger nativer Formulare.
+   Abläufe. **Spätere Nutzerkorrektur:** Die zusätzliche CSRF-Ergänzung soll
+   vorerst entfallen. Die vier neuen Formularprüfungen wurden zurückgenommen;
+   dieser Teil von N04 bleibt ausdrücklich zurückgestellt.
 2. **Betriebsabschluss N01:** Versionierte Konfiguration und Neustart der
    bestehenden Installation sind belegt. Der Aufbau aus einer vollständig
    frischen isolierten Kopie ist weiter offen. Ergebnis wäre ein dokumentierter
