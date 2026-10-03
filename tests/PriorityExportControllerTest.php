@@ -37,7 +37,7 @@ final class PriorityExportControllerTest extends UnitTestCase
 
         $csrf = $this->createMock(CsrfTokenManagerInterface::class);
         $csrf->method('getToken')->willReturn(new CsrfToken('fixture', 'fixture-token'));
-        $response = (new PriorityExportController($repository, $csrf))(Request::create('/operator-priority?days=14'));
+        $response = (new PriorityExportController($repository, $csrf))(Request::create('/legacy/operator-priority?days=14'));
 
         self::assertSame(200, $response->getStatusCode());
         self::assertStringContainsString('Live Betreiber-Priorität', $response->getContent());

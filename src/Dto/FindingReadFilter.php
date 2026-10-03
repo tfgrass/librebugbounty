@@ -20,6 +20,7 @@ final readonly class FindingReadFilter
         public string $type = '',
         public string $severity = '',
         public bool $exactDomain = false,
+        public string $q = '',
     ) {
         self::validate('assessment', $assessment, ['', 'unknown', ...ManualAssessment::values()]);
         self::validate('observation', $observation, ['', 'none', ...RetestResult::values()]);

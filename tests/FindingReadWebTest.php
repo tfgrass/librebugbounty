@@ -19,7 +19,7 @@ final class FindingReadWebTest extends DatabaseTestCase
         $before = $this->snapshot();
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
-        $html = $this->get('/')->getContent();
+        $html = $this->get('/legacy')->getContent();
         $this->sameIds([$cases['manual']->getId(), $cases['auto']->getId(), $cases['confirmed']->getId(), $cases['empty']->getId()], $this->ids($html));
         $manual = $this->row($html, $cases['manual']->getId());
         self::assertStringContainsString('Behoben', $manual);
@@ -37,16 +37,16 @@ final class FindingReadWebTest extends DatabaseTestCase
         self::assertStringNotContainsString('private fixture note', $html);
         self::assertStringNotContainsString('retained evidence fixture', $html);
         foreach ([
-            '/?assessment=fixed' => ['manual'],
-            '/?observation=fixed' => ['auto'],
-            '/?assessment=unknown' => ['auto', 'empty'],
-            '/?observation=none' => ['empty'],
-            '/?observation=still_vulnerable&contact=yes' => ['confirmed'],
-            '/?legacy_status=fixed&assessment=unknown' => ['auto'],
+            '/legacy?assessment=fixed' => ['manual'],
+            '/legacy?observation=fixed' => ['auto'],
+            '/legacy?assessment=unknown' => ['auto', 'empty'],
+            '/legacy?observation=none' => ['empty'],
+            '/legacy?observation=still_vulnerable&contact=yes' => ['confirmed'],
+            '/legacy?legacy_status=fixed&assessment=unknown' => ['auto'],
         ] as $url => $expected) {
             $this->sameIds(array_map(fn ($key) => $cases[$key]->getId(), $expected), $this->ids($this->get($url)->getContent()));
         }
-        $detail = $this->get('/findings/'.$cases['auto']->getId())->getContent();
+        $detail = $this->get('/legacy/findings/'.$cases['auto']->getId())->getContent();
         self::assertStringContainsString('Kein Nachweis (fixed)', $detail);
         self::assertStringContainsString('Altbestand · Herkunft unklar', $detail);
         self::assertStringNotContainsString('<strong>Behoben</strong>', $detail);
@@ -58,14 +58,14 @@ final class FindingReadWebTest extends DatabaseTestCase
     {
         $cases = $this->mixedCases();
         foreach ([
-            '/?scope=discarded' => ['discarded', 'duplicate', 'legacy_duplicate'],
-            '/?scope=duplicates' => ['duplicate', 'legacy_duplicate'],
-            '/?scope=all' => array_keys($cases),
-            '/?scope=active&assessment=discarded' => [],
-            '/?status=duplicate' => ['duplicate', 'legacy_duplicate'],
-            '/?status=discarded' => ['discarded', 'duplicate', 'legacy_duplicate'],
-            '/?status=fixed' => ['manual', 'auto'],
-            '/?bucket=manual_review' => ['auto'],
+            '/legacy?scope=discarded' => ['discarded', 'duplicate', 'legacy_duplicate'],
+            '/legacy?scope=duplicates' => ['duplicate', 'legacy_duplicate'],
+            '/legacy?scope=all' => array_keys($cases),
+            '/legacy?scope=active&assessment=discarded' => [],
+            '/legacy?status=duplicate' => ['duplicate', 'legacy_duplicate'],
+            '/legacy?status=discarded' => ['discarded', 'duplicate', 'legacy_duplicate'],
+            '/legacy?status=fixed' => ['manual', 'auto'],
+            '/legacy?bucket=manual_review' => ['auto'],
         ] as $url => $expected) {
             $html = $this->get($url)->getContent();
             $this->sameIds(array_map(fn ($key) => $cases[$key]->getId(), $expected), $this->ids($html));
@@ -73,7 +73,7 @@ final class FindingReadWebTest extends DatabaseTestCase
                 self::assertStringContainsString('Diagnosefilter aktiv:', $html);
             }
         }
-        $html = $this->get('/?scope=duplicates')->getContent();
+        $html = $this->get('/legacy?scope=duplicates')->getContent();
         self::assertStringContainsString('Verworfen · Duplikat', $this->row($html, $cases['duplicate']->getId()));
         self::assertStringContainsString('Keine aufgezeichnete manuelle Bewertung', $this->row($html, $cases['legacy_duplicate']->getId()));
         self::assertStringContainsString('Im Archiv · Altkennzeichnung', $this->row($html, $cases['legacy_duplicate']->getId()));
@@ -82,7 +82,7 @@ final class FindingReadWebTest extends DatabaseTestCase
     public function testGlobalDashboardLinksOpenExactlyTheirCountsAndResetOtherFilters(): void
     {
         $this->mixedCases();
-        $html = $this->get('/?scope=all&domain=absent.localhost&assessment=unknown&contact=no&observation=error&legacy_status=reported')->getContent();
+        $html = $this->get('/legacy?scope=all&domain=absent.localhost&assessment=unknown&contact=no&observation=error&legacy_status=reported')->getContent();
         self::assertSame([], $this->ids($html));
         $expectedCounts = ['active' => 4, 'confirmed' => 1, 'fixed' => 1, 'unknown' => 2, 'inconclusive' => 1, 'unobserved' => 1, 'contacted' => 1, 'discarded' => 3, 'duplicates' => 2];
         $stats = $this->xpath($html)->query('//a[@data-stat]');
@@ -115,7 +115,7 @@ final class FindingReadWebTest extends DatabaseTestCase
         $this->entityManager->flush();
         $before = $this->snapshot();
         $query = ['domain' => 'localhost', 'exact_domain' => '1', 'assessment' => 'fixed', 'observation' => 'inconclusive', 'contact' => 'yes', 'scope' => 'active', 'legacy_status' => 'fixed', 'type' => 'other', 'severity' => 'high', 'pageSize' => '10'];
-        $html = $this->get('/?'.http_build_query($query))->getContent();
+        $html = $this->get('/legacy?'.http_build_query($query))->getContent();
         self::assertSame(12, $this->resultCount($html));
         self::assertCount(10, $this->ids($html));
         $nextLink = $this->xpath($html)->query('//a[@data-page="next"]')->item(0)->getAttribute('href');
@@ -130,10 +130,10 @@ final class FindingReadWebTest extends DatabaseTestCase
         foreach ($query as $name => $value) {
             self::assertSame($name === 'pageSize' ? '25' : $value, $formQuery[$name]);
         }
-        $this->sameIds($expected, $this->ids($this->get('/?'.http_build_query($formQuery))->getContent()));
+        $this->sameIds($expected, $this->ids($this->get('/legacy?'.http_build_query($formQuery))->getContent()));
         $filterQuery = $this->formQuery($html, 'finding-filters');
         $filterQuery['pageSize'] = 'all';
-        $this->sameIds($expected, $this->ids($this->get('/?'.http_build_query($filterQuery))->getContent()));
+        $this->sameIds($expected, $this->ids($this->get('/legacy?'.http_build_query($filterQuery))->getContent()));
         self::assertSame($before, $this->snapshot());
     }
 
@@ -142,7 +142,7 @@ final class FindingReadWebTest extends DatabaseTestCase
         $this->finding('invalid');
         $before = $this->snapshot();
         foreach (['assessment=unrecognised-text', 'observation=unrecognised', 'scope=missing', 'contact=maybe', 'status=unknown', 'bucket=invalid', 'assessment%5B%5D=fixed', 'pageSize=13', 'page=0', 'status=new&legacy_status=fixed'] as $query) {
-            $response = $this->get('/?'.$query, false);
+            $response = $this->get('/legacy?'.$query, false);
             self::assertSame(400, $response->getStatusCode());
             self::assertSame('text/plain; charset=UTF-8', $response->headers->get('Content-Type'));
             self::assertSame($before, $this->snapshot());

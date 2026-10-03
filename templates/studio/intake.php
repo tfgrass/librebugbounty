@@ -17,7 +17,7 @@
 <body data-studio>
   <div class="studio-shell">
     <header class="studio-header">
-      <a class="studio-brand" href="/studio" aria-label="LibreBugBounty Studio, Eingang">
+      <a class="studio-brand" href="/" aria-label="LibreBugBounty Studio, Eingang">
         <svg class="studio-brand-mark" width="27" height="27" viewBox="0 0 28 28" fill="none" aria-hidden="true">
           <path d="M14 2.5 24 8.3v11.4l-10 5.8-10-5.8V8.3L14 2.5Z" stroke="currentColor" stroke-width="1.5"/>
           <path d="M10 11h8v7a4 4 0 0 1-8 0v-7Zm2-3h4v3h-4V8Zm2 4v10M7 13h3m8 0h3M7 17h3m8 0h3m-10 5 2-2m5 0 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -25,7 +25,7 @@
         <span class="studio-brand-name">LibreBugBounty</span>
         <span class="studio-brand-tag">STUDIO</span>
       </a>
-      <a class="studio-classic-link" href="/">
+      <a class="studio-classic-link" href="/legacy">
         Klassisch
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 12 12 4M4 4h8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
@@ -41,8 +41,12 @@
           <span class="studio-key-hint" aria-hidden="true"><kbd>↵</kbd> zum Erfassen</span>
         </div>
 
+        <?php if ($message !== null && $message !== ''): ?><p class="studio-notice" role="status"><?= $escape($message) ?></p><?php endif; ?>
+        <?php if ($error !== null && $error !== ''): ?><p class="studio-notice studio-entry-error" role="alert"><?= $escape($error) ?></p><?php endif; ?>
+
         <form method="post" action="/findings" id="intake-form" class="studio-form">
           <input type="hidden" name="_token" value="<?= $escape($csrfToken) ?>">
+          <input type="hidden" name="surface" value="studio">
           <div class="studio-url-row">
             <label class="studio-url-field" for="studio-url">
               <span class="studio-sr-only">URL</span>
@@ -72,7 +76,7 @@
 
         <p class="studio-composer-hint">Speichern, nächste URL. Der Screenshot entsteht im Hintergrund.</p>
         <p id="intake-notice" class="studio-notice" role="status" aria-live="polite"></p>
-        <noscript><p class="studio-notice">JavaScript ist deaktiviert. Erfassen speichert den Fall und öffnet die klassische Oberfläche.</p></noscript>
+        <noscript><p class="studio-notice">JavaScript ist deaktiviert. Erfassen speichert den Fall und öffnet seine Detailseite.</p></noscript>
       </section>
 
       <section id="intake-history" class="studio-history" aria-labelledby="studio-history-title">
@@ -98,15 +102,15 @@
     </main>
 
     <nav class="studio-workspace-nav" aria-label="Arbeitsbereiche">
-      <a class="studio-workspace-link studio-workspace-link-active" href="/studio" aria-current="page">
+      <a class="studio-workspace-link studio-workspace-link-active" href="/" aria-current="page">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Eingang</span>
       </a>
-      <a class="studio-workspace-link" href="/#findings">
+      <a class="studio-workspace-link" href="/findings">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-        <span>Bestand <span class="studio-nav-qualifier">klassisch</span></span>
+        <span>Bestand</span>
       </a>
-      <a class="studio-settings-link" href="/settings" aria-label="Einstellungen">
+      <a class="studio-settings-link" href="/legacy/settings" aria-label="Einstellungen · klassische Ansicht">
         <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg>
       </a>
     </nav>

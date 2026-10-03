@@ -298,7 +298,7 @@ final class ScreenshotQueueTest extends DatabaseTestCase
         ]);
 
         self::assertSame(302, $response->getStatusCode());
-        self::assertStringContainsString('/findings/'.$finding->getId(), $response->headers->get('Location'));
+        self::assertStringContainsString('/legacy/findings/'.$finding->getId(), $response->headers->get('Location'));
         self::assertStringContainsString('URL%20not%20imported', $response->headers->get('Location'));
         self::assertCount(1, $this->entityManager->getRepository(Finding::class)->findBy(['url' => $finding->getUrl()]));
         $jobs = $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]);

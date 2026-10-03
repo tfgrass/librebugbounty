@@ -4,6 +4,8 @@ namespace App\Controller;
 
 use App\Service\SettingsService;
 use App\Service\FindingDetailService;
+use App\Service\FindingListService;
+use App\Service\FindingNavigation;
 use App\Repository\FindingRepository;
 use App\Entity\Finding;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -20,12 +22,20 @@ final class StudioController
         private readonly CsrfTokenManagerInterface $csrf,
         private readonly FindingDetailService $findingDetail,
         private readonly FindingRepository $findings,
+        private readonly FindingListService $findingList,
+        private readonly FindingNavigation $navigation,
     ) {
     }
 
-    #[Route(path: '/studio', name: 'studio', methods: ['GET'])]
-    public function intake(): Response
+    #[Route(path: '/', name: 'studio', methods: ['GET'])]
+    public function intake(Request $request): Response
     {
+        if ($this->findingList->hasListQuery($request->query->all())) {
+            return $this->redirectWithQuery('/findings', $request);
+        }
+        $query = $request->query->all();
+        $message = is_string($query['message'] ?? null) ? $query['message'] : null;
+        $error = is_string($query['error'] ?? null) ? $query['error'] : null;
         $defaultPayload = $this->settings->getDefaultPayload();
         $csrfToken = $this->csrf->getToken('finding_create')->getValue();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -40,13 +50,56 @@ final class StudioController
         ]);
     }
 
-    #[Route(path: '/studio/', name: 'studio_trailing_slash', methods: ['GET'])]
-    public function canonicalIntake(): RedirectResponse
+    #[Route(path: '/studio', name: 'studio_alias', methods: ['GET'])]
+    public function canonicalIntake(Request $request): RedirectResponse
     {
-        return new RedirectResponse('/studio', Response::HTTP_PERMANENTLY_REDIRECT);
+        return $this->redirectWithQuery('/', $request);
     }
 
-    #[Route(path: '/studio/findings/{id}', name: 'studio_finding_show', methods: ['GET'])]
+    #[Route(path: '/findings', name: 'studio_findings', methods: ['GET'])]
+    public function inventory(Request $request): Response
+    {
+        try {
+            $view = $this->findingList->get($request->query->all(), '/findings');
+        } catch (\InvalidArgumentException $exception) {
+            return new Response('Ungültiger Filter: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, ['Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store']);
+        }
+        $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $query = $request->query->all();
+        $message = is_string($query['message'] ?? null) ? $query['message'] : null;
+        $error = is_string($query['error'] ?? null) ? $query['error'] : null;
+        ob_start();
+        require dirname(__DIR__, 2).'/templates/studio/inventory.php';
+        $html = ob_get_clean();
+
+        return new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8', 'Cache-Control' => 'no-store']);
+    }
+
+    #[Route(path: '/studio/findings', name: 'studio_findings_alias', methods: ['GET'])]
+    public function canonicalInventory(Request $request): RedirectResponse
+    {
+        return $this->redirectWithQuery('/findings', $request);
+    }
+
+    #[Route(path: '/studio/findings/{id}', name: 'studio_finding_alias', methods: ['GET'])]
+    public function canonicalFinding(string $id, Request $request): RedirectResponse
+    {
+        return $this->redirectWithQuery('/findings/'.rawurlencode($id), $request);
+    }
+
+    #[Route(path: '/settings', name: 'settings_alias', methods: ['GET'])]
+    public function canonicalSettings(Request $request): RedirectResponse
+    {
+        return $this->redirectWithQuery('/legacy/settings', $request);
+    }
+
+    #[Route(path: '/operator-priority', name: 'operator_priority_alias', methods: ['GET'])]
+    public function canonicalPriority(Request $request): RedirectResponse
+    {
+        return $this->redirectWithQuery('/legacy/operator-priority', $request);
+    }
+
+    #[Route(path: '/findings/{id}', name: 'studio_finding_show', methods: ['GET'])]
     public function finding(string $id, Request $request): Response
     {
         if (!Uuid::isValid($id) || !$this->findings->find($id) instanceof Finding) {
@@ -60,6 +113,8 @@ final class StudioController
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
 
+        $returnPath = $this->navigation->listReturnPath($query['return_to'] ?? null);
+
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/finding.php';
         $html = ob_get_clean();
@@ -68,5 +123,12 @@ final class StudioController
             'Content-Type' => 'text/html; charset=UTF-8',
             'Cache-Control' => 'no-store',
         ]);
+    }
+
+    private function redirectWithQuery(string $path, Request $request): RedirectResponse
+    {
+        $query = $request->getQueryString();
+
+        return new RedirectResponse($path.($query === null ? '' : '?'.$query), Response::HTTP_PERMANENTLY_REDIRECT);
     }
 }

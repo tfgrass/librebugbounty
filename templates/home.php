@@ -50,7 +50,8 @@ use App\Value\RetestResult;
       Diese Filter verwenden die gespeicherten Statusfelder mit unklarer historischer Herkunft.
     </p>
   <?php endif; ?>
-  <form method="get" action="/#findings" class="filters" id="finding-filters">
+  <form method="get" action="/legacy#findings" class="filters" id="finding-filters">
+    <label>Suche (Domain, Titel oder URL)<input type="search" name="q" value="<?= $escape($filter->q) ?>"></label>
     <div class="split">
       <label>Domain <input name="domain" value="<?= $escape($filter->domain) ?>" placeholder="example.com"></label>
       <label>Bestand / Archiv
@@ -115,16 +116,17 @@ use App\Value\RetestResult;
       </div>
     </details>
     <input type="hidden" name="pageSize" value="<?= $escape($pagination['pageSize']) ?>">
-    <div class="filter-actions"><button type="submit">Filtern</button><a class="button ghost" href="/">Zurücksetzen</a></div>
+    <div class="filter-actions"><button type="submit">Filtern</button><a class="button ghost" href="/legacy">Zurücksetzen</a></div>
   </form>
   <div class="table-wrap">
     <table>
       <thead><tr><th>ID / Domain</th><th>Manuelle Bewertung</th><th>Letzte technische Beobachtung</th><th>Kontakt</th><th>Altwerte (Diagnose)</th><th>Eingang</th></tr></thead>
       <tbody>
         <?php foreach ($findings as $finding): ?>
+          <?php $detailUrl = '/findings/'.rawurlencode($finding->id).'?'.http_build_query(['return_to' => $studioReturnPath], '', '&', PHP_QUERY_RFC3986); ?>
           <tr data-finding-id="<?= $escape($finding->id) ?>">
-            <td><a class="row-link" href="/studio/findings/<?= $escape($finding->id) ?>"><code><?= $escape(substr($finding->id, 0, 8)) ?></code></a><br>
-              <a class="row-link" href="/studio/findings/<?= $escape($finding->id) ?>"><code><?= $escape($finding->domain) ?></code></a><br><span class="hint"><?= $escape($finding->title) ?><br><?= $escape($finding->type) ?> · <?= $escape($finding->severity) ?></span>
+            <td><a class="row-link" href="<?= $escape($detailUrl) ?>"><code><?= $escape(substr($finding->id, 0, 8)) ?></code></a><br>
+              <a class="row-link" href="<?= $escape($detailUrl) ?>"><code><?= $escape($finding->domain) ?></code></a><br><span class="hint"><?= $escape($finding->title) ?><br><?= $escape($finding->type) ?> · <?= $escape($finding->severity) ?></span>
             </td>
             <td data-dimension="assessment"><?= $escape(FindingReadLabels::assessment($finding->assessment, $finding->discardReason)) ?>
               <?php if ($finding->assessment !== null): ?><br><span class="hint">Manuell · <?= $escape($finding->assessedAt?->format(DATE_ATOM) ?? 'Zeitpunkt unbekannt') ?></span><?php endif; ?>
@@ -147,7 +149,7 @@ use App\Value\RetestResult;
   <div class="pagination-footer">
     <div class="pagination-summary">
       <span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>">Ergebnisse: <?= $escape($pagination['totalFiltered']) ?> Fälle</span>
-      <form method="get" action="/#findings" class="per-page-form" id="page-size-form">
+      <form method="get" action="/legacy#findings" class="per-page-form" id="page-size-form">
         <?php foreach ($filterQuery as $name => $value): ?><input type="hidden" name="<?= $escape($name) ?>" value="<?= $escape($value) ?>"><?php endforeach; ?>
         <input type="hidden" name="page" value="1">
         <label class="sr-only" for="page-size-select">Zeilen pro Seite</label>

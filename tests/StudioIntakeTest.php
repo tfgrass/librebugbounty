@@ -41,7 +41,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
 
-        $response = $this->request('/studio');
+        $response = $this->request('/');
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         self::assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
@@ -53,7 +53,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::assertSame(1, $xpath->query('.//textarea[@name="annotate"]', $form)->length);
         self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $this->payload($xpath));
 
-        $classicLinks = $xpath->query('//a[@href="/" and (contains(., "Klass") or contains(., "Classic"))]');
+        $classicLinks = $xpath->query('//a[@href="/legacy" and (contains(., "Klass") or contains(., "Classic"))]');
         self::assertGreaterThanOrEqual(1, $classicLinks->length);
         self::assertNotSame('', trim($classicLinks->item(0)->textContent));
         self::assertSame(Response::HTTP_OK, $this->request($classicLinks->item(0)->getAttribute('href'))->getStatusCode());
@@ -68,7 +68,12 @@ final class StudioIntakeTest extends DatabaseTestCase
 
         self::assertContains($response->getStatusCode(), [Response::HTTP_MOVED_PERMANENTLY, Response::HTTP_PERMANENTLY_REDIRECT]);
         $location = $response->headers->get('Location');
-        self::assertSame('/studio', parse_url($location, PHP_URL_PATH));
+        if (parse_url($location, PHP_URL_PATH) === '/studio') {
+            $canonical = $this->request($location);
+            self::assertSame(Response::HTTP_PERMANENTLY_REDIRECT, $canonical->getStatusCode());
+            $location = $canonical->headers->get('Location');
+        }
+        self::assertSame('/', parse_url($location, PHP_URL_PATH));
         self::assertContains(parse_url($location, PHP_URL_HOST), [null, 'localhost']);
         self::assertSame(Response::HTTP_OK, $this->request($location)->getStatusCode());
         self::assertSame($before, $this->snapshot());
@@ -90,7 +95,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::getContainer()->get(SettingsService::class)->save(['intake.default_payload' => $payload]);
         $before = $this->snapshot();
 
-        $response = $this->request('/studio');
+        $response = $this->request('/');
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         $xpath = $this->xpath($response->getContent());
@@ -104,7 +109,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::getContainer()->get(SettingsService::class)->save(['intake.default_payload' => '   ']);
         $before = $this->snapshot();
 
-        $response = $this->request('/studio');
+        $response = $this->request('/');
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $this->payload($this->xpath($response->getContent())));
@@ -113,7 +118,7 @@ final class StudioIntakeTest extends DatabaseTestCase
 
     public function testStudioCsrfWorksWithExistingApiForStoredAndDuplicateResponses(): void
     {
-        $response = $this->request('/studio');
+        $response = $this->request('/');
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         $xpath = $this->xpath($response->getContent());
         $form = $this->intakeForm($xpath);

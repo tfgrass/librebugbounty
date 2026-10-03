@@ -38,7 +38,7 @@
     let statusController;
     const restored = new Set();
     const text = (value) => typeof value === 'string' ? value : '';
-    const findingLink = (id) => uuidPattern.test(text(id)) ? '/studio/findings/' + encodeURIComponent(id) : null;
+    const findingLink = (id) => uuidPattern.test(text(id)) ? '/findings/' + encodeURIComponent(id) : null;
     const draft = () => ({ url: urlInput.value, payload: payloadInput.value, notes: notesInput.value });
 
     function persist() {

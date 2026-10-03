@@ -23,6 +23,7 @@ final readonly class FindingReadView
         public ?string $observationMode,
         public ?\DateTimeImmutable $observationAt,
         public bool $discarded,
+        public string $url = '',
     ) {
     }
 }

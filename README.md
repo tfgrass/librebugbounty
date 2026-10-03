@@ -49,15 +49,31 @@ ddev exec php bin/console app:db:init
 
 ## Fast intake, verification, and screenshots
 
-Open `/studio` for the compact, dark intake workspace. It is designed for a
+Open `/` for the compact, dark Studio intake workspace. It is designed for a
 half-width window beside a list of URLs: paste one URL, press Enter, then continue
 after storage is confirmed. Optional marker and note fields sit under details;
-the session history shows compact storage and screenshot states. The classic
-overview remains at `/`, and both pages link to each other. Switching between
-them in the same tab retains the current draft and up to 50 intake entries.
-Studio history, toast links, classic intake links and overview rows open
-`/studio/findings/{id}`. Both detail views link to the same finding in the other
-surface.
+the session history shows compact storage and screenshot states.
+
+Open `/findings` for the Studio inventory. Search matches literal text in the
+domain, title, and full URL, including punctuation such as `%` and `_`. Combine
+it with assessment, latest observation, contact, archive, and diagnostic filters.
+Filter state and paging live in the URL and survive opening a case, saving its
+notes/assessment/contact, and returning to the list. Global counters open the
+exact counted selection and reset other filters. At half width the rows become
+cards with independent assessment, observation, and contact fields.
+
+The classic overview remains at `/legacy`, with classic details at
+`/legacy/findings/{id}`, settings at `/legacy/settings`, and the priority export
+at `/legacy/operator-priority`. Both surfaces share list/detail services and
+business rules. Switching intake surfaces in the same tab retains the current
+draft and up to 50 entries. History, toast links, and overview rows open the
+Studio detail at `/findings/{id}`. Each detail links to the same finding in the
+other surface.
+
+Former `/studio` and `/studio/findings...` bookmarks redirect to canonical Studio
+routes. Old filtered root links redirect to `/findings` with their parameters;
+old settings/export GET links redirect under `/legacy`. Symfony also normalizes
+trailing slashes. POST, JSON API, and artifact URLs remain unchanged.
 
 The Studio detail uses a large evidence area and a compact inspector for manual
 assessment, notes, and contact. Windows up to 1100 CSS pixels stack those areas;
@@ -74,7 +90,7 @@ assessment basis. Notes are explicitly saved with the CSRF-protected
 `POST /findings/{id}/notes` form; there is no autosave. The collapsed technical
 history shows assessments with their explicit basis, screenshot jobs, evidence,
 and the 20 most recent technical observations. Opening either detail view starts
-no retest or capture. The Studio inventory and a separate review workspace remain
+no retest or capture. A separate review workspace and image comparison remain
 future work.
 
 Submitting a supported URL stores the finding and its first persistent screenshot

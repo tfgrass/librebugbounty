@@ -188,6 +188,45 @@ final class FindingReadRepositoryTest extends DatabaseTestCase
         $this->assertMatches([$plain, $sub, $unrelated], new FindingReadFilter());
     }
 
+    public function testFreeTextSearchCombinesTitleHostnameAndFullUrlAndTreatsSqlWildcardsLiterally(): void
+    {
+        $title = $this->finding('title')->setTitle('Review NEEDLE in title');
+        $host = $this->finding('host', $this->domain('needle.example.test'));
+        $url = $this->finding('url')->setUrl('https://url.example.test/deep/path?value=Needle');
+        $percent = $this->finding('percent')->setTitle('Progress 100%');
+        $underscore = $this->finding('underscore')->setTitle('literal_under_score');
+        $backslash = $this->finding('backslash')->setTitle('literal\\backslash');
+        $this->finding('decoy')->setTitle('Progress 1000 literalXunderXscore literalXbackslash');
+        $title->setContactedAt(new \DateTimeImmutable('2026-10-02'));
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+        $this->entityManager->clear();
+
+        foreach ([
+            ['NEEDLE', [$title, $host, $url]],
+            ['100%', [$percent]],
+            ['_under_', [$underscore]],
+            ['\\backslash', [$backslash]],
+            ["' OR 1=1 --", []],
+        ] as [$query, $expected]) {
+            $this->assertMatches($expected, new FindingReadFilter(q: $query));
+        }
+        $this->assertMatches([$title], new FindingReadFilter(q: 'needle', contact: 'yes'));
+        $this->assertMatches([$host, $url], new FindingReadFilter(q: 'needle', contact: 'no'));
+        $filter = new FindingReadFilter(q: 'needle');
+        self::assertSame(3, $this->repository()->count($filter));
+        $pages = [];
+        for ($offset = 0; $offset < 3; $offset++) {
+            $page = $this->repository()->findPage($filter, 1, $offset);
+            self::assertCount(1, $page);
+            $pages[] = $page[0]->id;
+        }
+        self::assertCount(3, array_unique($pages));
+        self::assertSame([], $this->repository()->findPage($filter, 1, 3));
+        self::assertSame([], $this->entityManager->getUnitOfWork()->getIdentityMap());
+        self::assertSame($before, $this->snapshot());
+    }
+
     public function testUnknownFilterValuesAndInvalidPageBoundsAreRejected(): void
     {
         foreach ([

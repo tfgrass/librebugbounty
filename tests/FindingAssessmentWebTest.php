@@ -35,7 +35,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $finding->setStatus('verified')->setReviewState('manual_checking');
         $this->observation($finding);
         $before = $this->snapshot();
-        $page = $this->request('/findings/'.$finding->getId());
+        $page = $this->request('/legacy/findings/'.$finding->getId());
         self::assertSame(200, $page->getStatusCode());
         $html = $page->getContent();
         self::assertStringContainsString('name="assessment" value="confirmed"', $html);
@@ -45,7 +45,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
 
         $response = $this->assess($finding, 'confirmed');
         self::assertSame(302, $response->getStatusCode());
-        self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        self::assertSame('/legacy/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
         $finding = $this->reload($finding);
         self::assertSame('confirmed', $finding->getManualAssessment());
         self::assertNull($finding->getContactedAt());
@@ -55,7 +55,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertNull($history[0]->getObservationId());
         self::assertNull($history[0]->getEvidenceId());
         self::assertNull($history[0]->getReferenceSnapshot());
-        $updated = $this->request('/findings/'.$finding->getId())->getContent();
+        $updated = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('Befund bestätigt', $updated);
         self::assertStringContainsString('Beobachtungsbezug unbekannt.', $updated);
         self::assertStringContainsString('Belegbezug unbekannt.', $updated);
@@ -75,7 +75,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertSame($assessedAt->format('Y-m-d H:i:s'), $finding->getAssessedAt()->format('Y-m-d H:i:s'));
         self::assertCount(1, $this->history($finding));
         $before = $this->snapshot();
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('<strong>Behoben</strong>', $html);
         self::assertStringContainsString('Letzte technische Beobachtung', $html);
         self::assertMatchesRegularExpression('/(?:Neue technische|Technische) Beobachtung vom/', $html);
@@ -95,7 +95,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $finding = $this->reload($finding);
         self::assertSame('discarded', $finding->getManualAssessment());
         self::assertSame('duplicate', $finding->getDiscardReason());
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('Verworfen · Duplikat', $html);
         self::assertStringContainsString('fixture private note', $html);
         self::assertStringContainsString('retained fixture evidence', $html);
@@ -113,7 +113,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $finding = $this->finding('contact');
         $this->assess($finding, 'fixed');
         $path = '/findings/'.$finding->getId().'/mark-contacted';
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         $token = $this->token($html, 'mark-contacted');
         self::assertSame(302, $this->request($path, 'POST', ['_token' => $token])->getStatusCode());
         $finding = $this->reload($finding);
@@ -124,7 +124,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertSame($firstContact->format(DATE_ATOM), $finding->getContactedAt()->format(DATE_ATOM));
         self::assertSame('fixed', $finding->getManualAssessment());
         self::assertCount(1, $this->history($finding));
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString($firstContact->format(DATE_ATOM), $html);
         self::assertStringNotContainsString($path, $html);
     }
@@ -133,7 +133,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
     {
         $finding = $this->finding('csrf');
         $other = $this->finding('csrf-other');
-        $otherHtml = $this->request('/findings/'.$other->getId())->getContent();
+        $otherHtml = $this->request('/legacy/findings/'.$other->getId())->getContent();
         $otherToken = $this->token($otherHtml, 'assessment');
         $before = $this->snapshot();
         foreach (['assessment', 'mark-contacted', 'mark-vulnerable', 'confirm-fixed'] as $action) {
@@ -170,7 +170,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertSame($observation->getId(), $history[0]->getObservationId());
         self::assertSame($evidence->getId(), $history[0]->getEvidenceId());
         self::assertSame('inconclusive', $history[0]->getReferenceSnapshot()['observation']['result']);
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('Ablagezeit:', $html);
         self::assertStringContainsString($observation->getId(), $html);
         self::assertStringContainsString($evidence->getId(), $html);
@@ -192,7 +192,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $finding->setStatus('fixed')->setReviewState('confirmed_fixed');
         $this->entityManager->flush();
         $before = $this->snapshot();
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('Altbestand · Herkunft unklar', $html);
         self::assertStringContainsString('Zeitpunkt und Entscheidungsgrundlage unbekannt.', $html);
         self::assertStringContainsString('Noch keine Bewertungsänderung aufgezeichnet.', $html);
@@ -210,13 +210,13 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $this->entityManager->flush();
         self::assertSame(302, $this->assess($finding, 'fixed')->getStatusCode());
         $finding = $this->reload($finding);
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('name="assessment" value="confirmed"', $html);
         self::assertSame(302, $this->assess($finding, 'confirmed', ['observation_id' => $positiveRun->getId()])->getStatusCode());
         $finding = $this->reload($finding);
         self::assertSame('confirmed', $finding->getManualAssessment());
         self::assertCount(2, $this->history($finding));
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringNotContainsString('name="assessment" value="confirmed"', $html);
 
         $finding = $this->reload($finding);
@@ -225,7 +225,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
             ->setStartedAt($laterAt)->setFinishedAt($laterAt);
         $this->entityManager->persist($laterRun);
         $this->entityManager->flush();
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('name="assessment" value="confirmed"', $html);
         self::assertStringContainsString('Neue technische Beobachtung vom', $html);
         self::assertSame(302, $this->assess($finding, 'confirmed', ['observation_id' => $laterRun->getId()])->getStatusCode());
@@ -243,7 +243,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $previousRun = $this->entityManager->find(RetestRun::class, $previousRun->getId());
         $previousRun->setStartedAt($at)->setFinishedAt($at)->setResult($previousResult);
         $this->entityManager->flush();
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringNotContainsString('name="assessment" value="confirmed"', $html);
 
         $finding = $this->reload($finding);
@@ -254,7 +254,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         $this->entityManager->clear();
         $finding = $this->reload($finding);
         self::assertSame($at->format(DATE_ATOM), $this->entityManager->find(RetestRun::class, $newRun->getId())->getFinishedAt()->format(DATE_ATOM));
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringContainsString('name="assessment" value="confirmed"', $html);
         self::assertStringContainsString('Neue technische Beobachtung vom', $html);
         $history = $this->history($finding);
@@ -264,7 +264,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
         self::assertNull($history[0]->getReferenceSnapshot());
         self::assertSame(302, $this->assess($finding, 'confirmed')->getStatusCode());
         self::assertCount(2, $this->history($finding));
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
         self::assertStringNotContainsString('name="assessment" value="confirmed"', $html);
     }
 
@@ -305,7 +305,7 @@ final class FindingAssessmentWebTest extends DatabaseTestCase
 
     private function assess(Finding $finding, string $assessment, array $parameters = []): Response
     {
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
 
         return $this->request('/findings/'.$finding->getId().'/assessment', 'POST', $parameters + [
             '_token' => $this->token($html, 'assessment'),

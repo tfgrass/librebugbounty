@@ -1,0 +1,180 @@
+<?php
+
+namespace App\Service;
+
+use App\Dto\FindingListView;
+use App\Dto\FindingReadFilter;
+use App\Repository\FindingReadRepository;
+use App\Repository\ScreenshotJobRepository;
+use App\Value\ScreenshotJobStatus;
+
+/** Shared read-only list semantics for Studio and the legacy interface. */
+final class FindingListService
+{
+    private const LIST_QUERY_FIELDS = [
+        'q', 'domain', 'assessment', 'observation', 'contact', 'scope',
+        'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket',
+        'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain',
+        'page', 'pageSize',
+    ];
+
+    public function __construct(
+        private readonly FindingReadRepository $findings,
+        private readonly ScreenshotJobRepository $screenshotJobs,
+    ) {
+    }
+
+    /** @param array<string, mixed> $query */
+    public function get(array $query, string $path): FindingListView
+    {
+        [$filter, $page, $pageSizeSelection] = $this->parse($query);
+        $totalFiltered = $this->findings->count($filter);
+        $pageSize = $pageSizeSelection === 'all' ? max(1, $totalFiltered) : (int) $pageSizeSelection;
+        $totalPages = max(1, (int) ceil($totalFiltered / $pageSize));
+        $page = min($page, $totalPages);
+
+        $stats = [
+            'active' => ['label' => 'Aktiver Bestand', 'filter' => new FindingReadFilter()],
+            'confirmed' => ['label' => 'Manuell bestätigt', 'filter' => new FindingReadFilter(assessment: 'confirmed')],
+            'fixed' => ['label' => 'Manuell behoben', 'filter' => new FindingReadFilter(assessment: 'fixed')],
+            'unknown' => ['label' => 'Ohne aufgezeichnete manuelle Bewertung', 'filter' => new FindingReadFilter(assessment: 'unknown')],
+            'inconclusive' => ['label' => 'Technisch uneindeutig', 'filter' => new FindingReadFilter(observation: 'inconclusive')],
+            'unobserved' => ['label' => 'Ohne technische Beobachtung', 'filter' => new FindingReadFilter(observation: 'none')],
+            'contacted' => ['label' => 'Kontaktiert', 'filter' => new FindingReadFilter(contact: 'yes')],
+            'discarded' => ['label' => 'Archiv: Verworfen', 'filter' => new FindingReadFilter(scope: 'discarded')],
+            'duplicates' => ['label' => 'Archiv: Duplikate', 'filter' => new FindingReadFilter(scope: 'duplicates')],
+        ];
+        $statViews = [];
+        foreach ($stats as $name => $stat) {
+            $statViews[$name] = [
+                'label' => $stat['label'],
+                'count' => $this->findings->count($stat['filter']),
+                'url' => $path.'?'.http_build_query($this->filterQuery($stat['filter'])),
+            ];
+        }
+
+        return new FindingListView(
+            findings: $this->findings->findPage($filter, $pageSize, ($page - 1) * $pageSize),
+            filter: $filter,
+            pagination: [
+                'page' => $page,
+                'pageSize' => $pageSizeSelection,
+                'totalFiltered' => $totalFiltered,
+                'totalPages' => $totalPages,
+            ],
+            stats: $statViews,
+            screenshotStats: [
+                'queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
+                'running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
+                'failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
+            ],
+            filterQuery: $this->filterQuery($filter),
+            path: $path,
+        );
+    }
+
+    /** @return array<string, string> */
+    public function filterQuery(FindingReadFilter $filter): array
+    {
+        return array_filter([
+            'scope' => $filter->scope,
+            'q' => $filter->q,
+            'domain' => $filter->domain,
+            'assessment' => $filter->assessment,
+            'observation' => $filter->observation,
+            'contact' => $filter->contact,
+            'legacy_status' => $filter->legacyStatus,
+            'legacy_bucket' => $filter->legacyBucket,
+            'type' => $filter->type,
+            'severity' => $filter->severity,
+            'exact_domain' => $filter->exactDomain ? '1' : '',
+        ], static fn (string $value): bool => $value !== '');
+    }
+
+    /** @param array<string, mixed> $query */
+    public function hasListQuery(array $query): bool
+    {
+        foreach (self::LIST_QUERY_FIELDS as $field) {
+            if (array_key_exists($field, $query)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     * @return array{FindingReadFilter, int, string}
+     */
+    public function parse(array $query): array
+    {
+        foreach ([...self::LIST_QUERY_FIELDS, 'message', 'error'] as $field) {
+            if (array_key_exists($field, $query) && !is_string($query[$field])) {
+                throw new \InvalidArgumentException('Filterangaben müssen einzelne Textwerte sein.');
+            }
+        }
+        $get = static fn (string $name, string $default = ''): string => trim($query[$name] ?? $default);
+        $pick = static function (array $names) use ($query, $get): string {
+            $values = [];
+            foreach ($names as $name) {
+                if (array_key_exists($name, $query)) {
+                    $values[] = $get($name);
+                }
+            }
+            if (count(array_unique($values)) > 1) {
+                throw new \InvalidArgumentException('Widersprüchliche Angaben für denselben Filter.');
+            }
+
+            return $values[0] ?? '';
+        };
+        $legacyStatus = $pick(['legacy_status', 'legacyStatus']);
+        $legacyBucket = $pick(['legacy_bucket', 'legacyBucket', 'bucket']);
+        $oldStatus = $get('status');
+        if ($oldStatus !== '') {
+            if (in_array($oldStatus, ['open', 'manual_review', 'unchecked'], true)) {
+                if ($legacyBucket !== '' && $legacyBucket !== $oldStatus) {
+                    throw new \InvalidArgumentException('Widersprüchliche Altgruppenfilter.');
+                }
+                $legacyBucket = $oldStatus;
+            } else {
+                if ($legacyStatus !== '' && $legacyStatus !== $oldStatus) {
+                    throw new \InvalidArgumentException('Widersprüchliche Altstatusfilter.');
+                }
+                $legacyStatus = $oldStatus;
+            }
+        }
+        $scope = $get('scope', 'active');
+        if (!array_key_exists('scope', $query)) {
+            $scope = match ($legacyStatus) {
+                'duplicate' => 'duplicates',
+                'discarded' => 'discarded',
+                default => 'active',
+            };
+        }
+        $exactDomain = $pick(['exact_domain', 'exactDomain']);
+        if (!in_array($exactDomain, ['', '0', '1'], true)) {
+            throw new \InvalidArgumentException('Der exakte Domainfilter muss 0 oder 1 sein.');
+        }
+        $page = filter_var($get('page', '1'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $pageSize = strtolower($get('pageSize', '10'));
+        if ($page === false || !in_array($pageSize, ['10', '25', '50', '100', 'all'], true)) {
+            throw new \InvalidArgumentException('Ungültige Seite oder Seitengröße.');
+        }
+        $filter = new FindingReadFilter(
+            domain: $get('domain'),
+            assessment: $get('assessment'),
+            observation: $get('observation'),
+            contact: $get('contact'),
+            scope: $scope,
+            legacyStatus: $legacyStatus,
+            legacyBucket: $legacyBucket,
+            type: $get('type'),
+            severity: $get('severity'),
+            exactDomain: $exactDomain === '1',
+            q: $get('q'),
+        );
+
+        return [$filter, $page, $pageSize];
+    }
+}

@@ -11,11 +11,12 @@ use App\Entity\FindingAssessment;
 use App\Entity\Evidence;
 use App\Entity\RetestRun;
 use App\Repository\EvidenceRepository;
-use App\Repository\FindingReadRepository;
 use App\Repository\RetestRunRepository;
 use App\Repository\ScreenshotJobRepository;
 use App\Service\FindingService;
 use App\Service\FindingDetailService;
+use App\Service\FindingListService;
+use App\Service\FindingNavigation;
 use App\Service\EvidenceStorageInterface;
 use App\Service\SettingsService;
 use App\Service\RetestService;
@@ -45,63 +46,31 @@ final class WebController
         private readonly ScreenshotQueueService $screenshotQueue,
         private readonly ScreenshotJobRepository $screenshotJobs,
         private readonly CsrfTokenManagerInterface $csrf,
-        private readonly FindingReadRepository $findingRead,
+        private readonly FindingListService $findingList,
+        private readonly FindingNavigation $navigation,
         private readonly FindingDetailService $findingDetail,
     ) {
     }
 
-    #[Route(name: 'home', methods: ['GET'])]
+    #[Route(path: 'legacy', name: 'home', methods: ['GET'])]
     public function home(Request $request): Response
     {
         try {
-            [$filter, $page, $pageSizeSelection] = $this->readFilter($request);
+            $view = $this->findingList->get($request->query->all(), '/legacy');
         } catch (\InvalidArgumentException $exception) {
-            return new Response('Ungültiger Filter: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, ['Content-Type' => 'text/plain; charset=UTF-8']);
+            return new Response('Ungültiger Filter: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, ['Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store']);
         }
-
-        $totalFiltered = $this->findingRead->count($filter);
-        $pageSize = $pageSizeSelection === 'all' ? max(1, $totalFiltered) : (int) $pageSizeSelection;
-        $totalPages = max(1, (int) ceil($totalFiltered / $pageSize));
-        $page = min($page, $totalPages);
-        $offset = ($page - 1) * $pageSize;
-
-        $findings = $this->findingRead->findPage($filter, $pageSize, $offset);
-        $stats = [
-            'active' => ['label' => 'Aktiver Bestand', 'filter' => new FindingReadFilter()],
-            'confirmed' => ['label' => 'Manuell bestätigt', 'filter' => new FindingReadFilter(assessment: 'confirmed')],
-            'fixed' => ['label' => 'Manuell behoben', 'filter' => new FindingReadFilter(assessment: 'fixed')],
-            'unknown' => ['label' => 'Ohne aufgezeichnete manuelle Bewertung', 'filter' => new FindingReadFilter(assessment: 'unknown')],
-            'inconclusive' => ['label' => 'Technisch uneindeutig', 'filter' => new FindingReadFilter(observation: 'inconclusive')],
-            'unobserved' => ['label' => 'Ohne technische Beobachtung', 'filter' => new FindingReadFilter(observation: 'none')],
-            'contacted' => ['label' => 'Kontaktiert', 'filter' => new FindingReadFilter(contact: 'yes')],
-            'discarded' => ['label' => 'Archiv: Verworfen', 'filter' => new FindingReadFilter(scope: 'discarded')],
-            'duplicates' => ['label' => 'Archiv: Duplikate', 'filter' => new FindingReadFilter(scope: 'duplicates')],
-        ];
-        foreach ($stats as &$stat) {
-            $stat['count'] = $this->findingRead->count($stat['filter']);
-            $stat['url'] = '/?'.http_build_query($this->filterQuery($stat['filter']));
-        }
-        unset($stat);
 
         return new Response($this->renderHomePage(
-            findings: $findings,
-            stats: $stats,
-            screenshotStats: [
-                'queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
-                'running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
-                'failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
-            ],
+            findings: $view->findings,
+            stats: $view->stats,
+            screenshotStats: $view->screenshotStats,
             defaultPayload: $this->settings->getDefaultPayload(),
-            filter: $filter,
-            pagination: [
-                'page' => $page,
-                'pageSize' => $pageSizeSelection,
-                'totalFiltered' => $totalFiltered,
-                'totalPages' => $totalPages,
-            ],
+            filter: $view->filter,
+            pagination: $view->pagination,
             message: $request->query->getString('message') ?: null,
             error: $request->query->getString('error') ?: null,
-        ));
+        ), Response::HTTP_OK, ['Cache-Control' => 'no-store']);
     }
 
     #[Route(path: 'findings', name: 'finding_create', methods: ['POST'])]
@@ -110,6 +79,15 @@ final class WebController
         if (!$this->validCsrf($request, 'finding_create')) {
             return new Response('Ungültiges Formular. Bitte neu laden.', Response::HTTP_FORBIDDEN);
         }
+
+        $parameters = $request->request->all();
+        foreach (['url', 'payload', 'annotate', 'surface'] as $field) {
+            if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
+                return new Response('Ungültige Eingabe.', Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $studio = ($parameters['surface'] ?? null) === 'studio';
+        $intakePath = $studio ? '/' : '/legacy';
 
         try {
             $payload = trim($request->request->getString('payload'));
@@ -124,22 +102,23 @@ final class WebController
                 return $this->redirectMessage(sprintf(
                     'URL not imported because it already exists as finding %s.',
                     $this->shortId($finding),
-                ), '/findings/'.$finding->getId());
+                ), $this->findingReturnPath($finding->getId(), $parameters));
             }
 
             return $this->redirectMessage(sprintf(
                 'Finding %s stored for %s. Screenshot queued.',
                 $this->shortId($finding),
                 $finding->getDomain()->getHostname(),
-            ));
+            ), $studio ? '/findings/'.rawurlencode($finding->getId()) : '/legacy');
         } catch (\InvalidArgumentException $exception) {
-            return $this->redirectError($exception->getMessage());
+            return $this->redirectError($exception->getMessage(), $intakePath);
         } catch (\Throwable) {
-            return $this->redirectError('Die Speicherung konnte nicht bestätigt werden. Bitte prüfe den Bestand, bevor du die Eingabe erneut sendest.');
+            return $this->redirectError('Die Speicherung konnte nicht bestätigt werden. Bitte prüfe den Bestand, bevor du die Eingabe erneut sendest.', $intakePath);
         }
     }
 
-    #[Route(path: 'settings', name: 'settings', methods: ['GET', 'POST'])]
+    #[Route(path: 'legacy/settings', name: 'settings', methods: ['GET'])]
+    #[Route(path: 'settings', name: 'settings_save', methods: ['POST'])]
     public function settings(Request $request): Response
     {
         if ($request->isMethod('POST')) {
@@ -169,7 +148,7 @@ final class WebController
     #[Route(path: 'about', name: 'about', methods: ['GET'])]
     public function about(): Response
     {
-        return $this->redirectToRoute('home', ['_fragment' => 'about-modal']);
+        return new RedirectResponse('/legacy#about-modal');
     }
 
     #[Route(path: 'findings/{id}/retest', name: 'finding_retest', methods: ['POST'])]
@@ -204,8 +183,8 @@ final class WebController
             );
 
             return $errors === []
-                ? $this->redirectMessage($message, '/findings/'.$finding->getId())
-                : $this->redirectMessageAndError($message, implode(' ', $errors), '/findings/'.$finding->getId());
+                ? $this->redirectMessage($message, '/legacy/findings/'.$finding->getId())
+                : $this->redirectMessageAndError($message, implode(' ', $errors), '/legacy/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -225,13 +204,13 @@ final class WebController
                 'Screenshot for %s %s.',
                 $this->shortId($finding),
                 $queued->created ? 'queued' : 'is already '.$queued->job->getStatus(),
-            ), '/findings/'.$finding->getId());
+            ), '/legacy/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
     }
 
-    #[Route(path: 'findings/{id}', name: 'finding_show', methods: ['GET'])]
+    #[Route(path: 'legacy/findings/{id}', name: 'finding_show', methods: ['GET'])]
     public function showFinding(string $id, Request $request): Response
     {
         try {
@@ -252,7 +231,7 @@ final class WebController
             return new Response('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.', Response::HTTP_FORBIDDEN);
         }
         $parameters = $request->request->all();
-        foreach (['assessment', 'discard_reason', 'observation_id', 'evidence_id', 'surface'] as $field) {
+        foreach (['assessment', 'discard_reason', 'observation_id', 'evidence_id', 'surface', 'return_to'] as $field) {
             if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
                 return new Response('Ungültige Bewertungsangaben.', Response::HTTP_BAD_REQUEST);
             }
@@ -311,6 +290,7 @@ final class WebController
         $parameters = $request->request->all();
         if (!is_string($parameters['notes'] ?? null)
             || (array_key_exists('surface', $parameters) && !is_string($parameters['surface']))
+            || (array_key_exists('return_to', $parameters) && !is_string($parameters['return_to']))
         ) {
             return new Response('Ungültige Notizangaben.', Response::HTTP_BAD_REQUEST);
         }
@@ -338,7 +318,7 @@ final class WebController
             return $this->redirectMessage(sprintf(
                 'Befund %s manuell bestätigt.',
                 $this->shortId($finding),
-            ), '/findings/'.$finding->getId());
+            ), '/legacy/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -369,7 +349,10 @@ final class WebController
                 return $this->redirectMessage($message, $returnPath);
             }
             $returnTo = trim($request->request->getString('return_to'));
-            if ($returnTo !== '' && str_starts_with($returnTo, '/') && !str_starts_with($returnTo, '//')) {
+            if (str_starts_with($returnTo, '/operator-priority')) {
+                $returnTo = '/legacy'.$returnTo;
+            }
+            if (preg_match('~^/legacy/operator-priority(?:\?days=[0-9]{1,3})?$~D', $returnTo)) {
                 return new RedirectResponse($returnTo.(str_contains($returnTo, '?') ? '&' : '?').'message='.rawurlencode($message));
             }
 
@@ -392,7 +375,7 @@ final class WebController
             return $this->redirectMessage(sprintf(
                 'Fall %s manuell als behoben bewertet.',
                 $this->shortId($finding),
-            ), '/findings/'.$finding->getId());
+            ), '/legacy/findings/'.$finding->getId());
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage());
         }
@@ -452,101 +435,13 @@ final class WebController
         ]);
     }
 
-    /** @return array{FindingReadFilter, int, string} */
-    private function readFilter(Request $request): array
-    {
-        $query = $request->query->all();
-        foreach (['domain', 'assessment', 'observation', 'contact', 'scope', 'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket', 'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain', 'page', 'pageSize', 'message', 'error'] as $field) {
-            if (array_key_exists($field, $query) && !is_string($query[$field])) {
-                throw new \InvalidArgumentException('Filterangaben müssen einzelne Textwerte sein.');
-            }
-        }
-        $get = static fn (string $name, string $default = ''): string => trim($query[$name] ?? $default);
-        $pick = static function (array $names) use ($query, $get): string {
-            $values = [];
-            foreach ($names as $name) {
-                if (array_key_exists($name, $query)) {
-                    $values[] = $get($name);
-                }
-            }
-            if (count(array_unique($values)) > 1) {
-                throw new \InvalidArgumentException('Widersprüchliche Angaben für denselben Filter.');
-            }
-
-            return $values[0] ?? '';
-        };
-        $legacyStatus = $pick(['legacy_status', 'legacyStatus']);
-        $legacyBucket = $pick(['legacy_bucket', 'legacyBucket', 'bucket']);
-        $oldStatus = $get('status');
-        if ($oldStatus !== '') {
-            if (in_array($oldStatus, ['open', 'manual_review', 'unchecked'], true)) {
-                if ($legacyBucket !== '' && $legacyBucket !== $oldStatus) {
-                    throw new \InvalidArgumentException('Widersprüchliche Altgruppenfilter.');
-                }
-                $legacyBucket = $oldStatus;
-            } else {
-                if ($legacyStatus !== '' && $legacyStatus !== $oldStatus) {
-                    throw new \InvalidArgumentException('Widersprüchliche Altstatusfilter.');
-                }
-                $legacyStatus = $oldStatus;
-            }
-        }
-        $scope = $get('scope', 'active');
-        if (!array_key_exists('scope', $query)) {
-            $scope = match ($legacyStatus) {
-                'duplicate' => 'duplicates',
-                'discarded' => 'discarded',
-                default => 'active',
-            };
-        }
-        $exactDomain = $pick(['exact_domain', 'exactDomain']);
-        if (!in_array($exactDomain, ['', '0', '1'], true)) {
-            throw new \InvalidArgumentException('Der exakte Domainfilter muss 0 oder 1 sein.');
-        }
-        $page = filter_var($get('page', '1'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        $pageSize = strtolower($get('pageSize', '10'));
-        if ($page === false || !in_array($pageSize, ['10', '25', '50', '100', 'all'], true)) {
-            throw new \InvalidArgumentException('Ungültige Seite oder Seitengröße.');
-        }
-        $filter = new FindingReadFilter(
-            domain: $get('domain'),
-            assessment: $get('assessment'),
-            observation: $get('observation'),
-            contact: $get('contact'),
-            scope: $scope,
-            legacyStatus: $legacyStatus,
-            legacyBucket: $legacyBucket,
-            type: $get('type'),
-            severity: $get('severity'),
-            exactDomain: $exactDomain === '1',
-        );
-
-        return [$filter, $page, $pageSize];
-    }
-
-    /** @return array<string, string> */
-    private function filterQuery(FindingReadFilter $filter): array
-    {
-        return array_filter([
-            'scope' => $filter->scope,
-            'domain' => $filter->domain,
-            'assessment' => $filter->assessment,
-            'observation' => $filter->observation,
-            'contact' => $filter->contact,
-            'legacy_status' => $filter->legacyStatus,
-            'legacy_bucket' => $filter->legacyBucket,
-            'type' => $filter->type,
-            'severity' => $filter->severity,
-            'exact_domain' => $filter->exactDomain ? '1' : '',
-        ], static fn (string $value): bool => $value !== '');
-    }
-
     /** @param list<FindingReadView> $findings */
     private function renderHomePage(array $findings, array $stats, array $screenshotStats, string $defaultPayload, FindingReadFilter $filter, array $pagination, ?string $message, ?string $error): string
     {
         $escape = fn (mixed $value): string => $this->escape($value);
-        $filterQuery = $this->filterQuery($filter);
-        $pageUrl = static fn (int $page): string => '/?'.http_build_query($filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $page]).'#findings';
+        $filterQuery = $this->findingList->filterQuery($filter);
+        $pageUrl = static fn (int $page): string => '/legacy?'.http_build_query($filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $page]).'#findings';
+        $studioReturnPath = '/findings?'.http_build_query($filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $pagination['page']], '', '&', PHP_QUERY_RFC3986);
         ob_start();
         try {
             require dirname(__DIR__, 2).'/templates/home.php';
@@ -589,7 +484,7 @@ final class WebController
             .'</style>'
             .'</head>'
             .'<body>'
-            .'<div class="utility-nav"><a href="/">Overview</a><a href="/studio">Studio</a><a href="/operator-priority">Operator-Priorität</a><a href="/settings">Settings</a><a href="#about-modal">About</a></div>'
+            .'<div class="utility-nav"><a href="/legacy">Overview</a><a href="/">Studio</a><a href="/findings">Bestand</a><a href="/legacy/operator-priority">Operator-Priorität</a><a href="/legacy/settings">Settings</a><a href="#about-modal">About</a></div>'
             .'<main>'.$body.'</main>'
             .$this->renderAboutModal()
             .'</body>'
@@ -619,7 +514,7 @@ final class WebController
     <p class="hint">New URLs are stored immediately with a queued screenshot. Intake does not run a headless verification; explicit review and retest actions use the timeout below.</p>
     <div class="actions">
       <button type="submit">Save settings</button>
-      <a class="button ghost" href="/">Back to overview</a>
+      <a class="button ghost" href="/legacy">Back to overview</a>
     </div>
   </form>
 </section>
@@ -793,8 +688,8 @@ final class WebController
       <h2>Finding <?= $this->escape($this->shortId($finding)) ?></h2>
     </div>
     <div class="row-actions">
-      <a class="button ghost" href="/studio/findings/<?= $this->escape($finding->getId()) ?>">Fall im Studio öffnen</a>
-      <a class="button ghost" href="/">Back to overview</a>
+      <a class="button ghost" href="/findings/<?= $this->escape($finding->getId()) ?>">Fall im Studio öffnen</a>
+      <a class="button ghost" href="/legacy">Back to overview</a>
     </div>
   </div>
   <div class="detail-grid">
@@ -1048,14 +943,14 @@ final class WebController
         return is_string($token) && $this->csrf->isTokenValid(new CsrfToken($tokenId, $token));
     }
 
-    private function redirectMessage(string $message, string $path = '/'): RedirectResponse
+    private function redirectMessage(string $message, string $path = '/legacy'): RedirectResponse
     {
-        return new RedirectResponse($path.'?message='.rawurlencode($message));
+        return new RedirectResponse($path.(str_contains($path, '?') ? '&' : '?').'message='.rawurlencode($message));
     }
 
-    private function redirectMessageAndError(string $message, string $error, string $path = '/'): RedirectResponse
+    private function redirectMessageAndError(string $message, string $error, string $path = '/legacy'): RedirectResponse
     {
-        return new RedirectResponse($path.'?'.http_build_query(['message' => $message, 'error' => $error], '', '&', PHP_QUERY_RFC3986));
+        return new RedirectResponse($path.(str_contains($path, '?') ? '&' : '?').http_build_query(['message' => $message, 'error' => $error], '', '&', PHP_QUERY_RFC3986));
     }
 
     private function redirectRunResult(RetestRun $run, string $message): RedirectResponse
@@ -1068,17 +963,17 @@ final class WebController
             $params['error'] = $capture->label.'. See the finding details for capture information.';
         }
 
-        return new RedirectResponse('/?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
+        return new RedirectResponse('/legacy?'.http_build_query($params, '', '&', PHP_QUERY_RFC3986));
     }
 
     private function findingReturnPath(string $id, array $parameters): string
     {
-        return (($parameters['surface'] ?? null) === 'studio' ? '/studio/findings/' : '/findings/').rawurlencode($id);
+        return $this->navigation->findingReturnPath($id, $parameters);
     }
 
-    private function redirectError(string $error, string $path = '/'): RedirectResponse
+    private function redirectError(string $error, string $path = '/legacy'): RedirectResponse
     {
-        return new RedirectResponse($path.'?error='.rawurlencode($error));
+        return new RedirectResponse($path.(str_contains($path, '?') ? '&' : '?').'error='.rawurlencode($error));
     }
 
     private function rowsOrEmpty(array $rows, int $colspan, string $message): string

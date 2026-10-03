@@ -7,12 +7,17 @@ use App\Value\FindingReadLabels;
 /** @var callable $csrfField */
 /** @var ?string $message */
 /** @var ?string $error */
+/** @var ?string $returnPath */
 $finding = $view->finding;
 $assessment = $finding->getManualAssessment();
 $state = $view->assessmentState;
 $latestRun = $state->latestRun;
 $latestJob = $view->screenshotJobs[0] ?? null;
 $findingPath = '/findings/'.$finding->getId();
+$returnPath ??= null;
+$returnField = $returnPath !== null
+    ? '<input type="hidden" name="return_to" value="'.$escape($returnPath).'">'
+    : '';
 $formatTime = static fn (?\DateTimeImmutable $at): string => $at === null
     ? 'Zeitpunkt unbekannt'
     : $at->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y · H:i:s T');
@@ -45,12 +50,12 @@ $jobTone = static fn (string $status): string => match ($status) {
 <body data-studio data-studio-detail>
   <div class="studio-shell studio-detail-shell">
     <header class="studio-header">
-      <a class="studio-brand" href="/studio" aria-label="LibreBugBounty Studio, Eingang">
+      <a class="studio-brand" href="/" aria-label="LibreBugBounty Studio, Eingang">
         <svg class="studio-brand-mark" width="27" height="27" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 2.5 24 8.3v11.4l-10 5.8-10-5.8V8.3L14 2.5Z" stroke="currentColor" stroke-width="1.5"/><path d="M10 11h8v7a4 4 0 0 1-8 0v-7Zm2-3h4v3h-4V8Zm2 4v10M7 13h3m8 0h3M7 17h3m8 0h3m-10 5 2-2m5 0 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span class="studio-brand-name">LibreBugBounty</span>
         <span class="studio-brand-tag">STUDIO</span>
       </a>
-      <a class="studio-classic-link" href="<?= $escape($findingPath) ?>">Fall klassisch <span aria-hidden="true">↗</span></a>
+      <a class="studio-classic-link" href="<?= $escape('/legacy'.$findingPath) ?>">Fall klassisch <span aria-hidden="true">↗</span></a>
     </header>
 
     <main class="studio-detail-workspace" id="studio-detail-main">
@@ -60,7 +65,7 @@ $jobTone = static fn (string $status): string => match ($status) {
           <h1><?= $escape($finding->getDomain()->getHostname()) ?></h1>
           <p class="studio-case-subtitle"><?= $escape($finding->getTitle()) ?></p>
         </div>
-        <a class="studio-detail-back" href="/studio"><span aria-hidden="true">←</span> Zum Eingang</a>
+        <a class="studio-detail-back" href="<?= $escape($returnPath ?? '/findings') ?>"><span aria-hidden="true">←</span> Zum Bestand</a>
       </div>
 
       <?php if ($message !== null && $message !== ''): ?>
@@ -188,6 +193,7 @@ $jobTone = static fn (string $status): string => match ($status) {
             <form method="post" action="<?= $escape($findingPath) ?>/assessment" class="studio-assessment-form" id="assessment-form">
               <?= $csrfField('finding_assessment_'.$finding->getId()) ?>
               <input type="hidden" name="surface" value="studio">
+              <?= $returnField ?>
               <details class="studio-detail-fold studio-basis">
                 <summary>Bewertungsgrundlage <span>optional</span></summary>
                 <p class="studio-detail-hint">Nur auswählen, wenn du diesen Beleg oder diese Beobachtung beurteilt hast. Ohne Auswahl bleibt die Grundlage unbekannt.</p>
@@ -223,6 +229,7 @@ $jobTone = static fn (string $status): string => match ($status) {
             <form method="post" action="<?= $escape($findingPath) ?>/notes" data-studio-notes>
               <?= $csrfField('finding_notes_'.$finding->getId()) ?>
               <input type="hidden" name="surface" value="studio">
+              <?= $returnField ?>
               <label class="studio-sr-only" for="studio-case-notes">Notiz zu diesem Fall</label>
               <textarea id="studio-case-notes" name="notes" rows="4" placeholder="Deine Notiz zu diesem Fall"><?= $escape($finding->getPrivateNotes() ?? '') ?></textarea>
               <div class="studio-note-actions"><span class="studio-detail-muted" data-note-state role="status">Explizit speichern</span><button class="studio-detail-button" type="submit">Notiz speichern</button></div>
@@ -238,6 +245,7 @@ $jobTone = static fn (string $status): string => match ($status) {
               <form method="post" action="<?= $escape($findingPath) ?>/mark-contacted">
                 <?= $csrfField('finding_mark_contacted_'.$finding->getId()) ?>
                 <input type="hidden" name="surface" value="studio">
+                <?= $returnField ?>
                 <button class="studio-detail-button" type="submit">Als kontaktiert markieren</button>
               </form>
             <?php endif; ?>
@@ -331,10 +339,10 @@ $jobTone = static fn (string $status): string => match ($status) {
     </main>
 
     <nav class="studio-workspace-nav" aria-label="Arbeitsbereiche">
-      <a class="studio-workspace-link" href="/studio"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Eingang</span></a>
+      <a class="studio-workspace-link" href="/"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Eingang</span></a>
       <span class="studio-workspace-link studio-workspace-link-active studio-detail-context" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M14 4v16M4 14h10" stroke="currentColor" stroke-width="1.5"/></svg><span>Fall</span></span>
-      <a class="studio-workspace-link" href="/#findings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Bestand <span class="studio-nav-qualifier">klassisch</span></span></a>
-      <a class="studio-settings-link" href="/settings" aria-label="Einstellungen"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg></a>
+      <a class="studio-workspace-link" href="<?= $escape($returnPath ?? '/findings') ?>"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span>Bestand</span></a>
+      <a class="studio-settings-link" href="/legacy/settings" aria-label="Einstellungen · klassische Ansicht"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg></a>
     </nav>
   </div>
 </body>

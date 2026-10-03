@@ -31,7 +31,7 @@ final class FindingReadRepository
             throw new \InvalidArgumentException('Page limit must be positive and offset must not be negative.');
         }
         [$where, $parameters] = $this->where($filter);
-        $sql = 'SELECT f.id, d.hostname AS domain, f.title, f.type, f.severity, '
+        $sql = 'SELECT f.id, d.hostname AS domain, f.title, f.url, f.type, f.severity, '
             .'f.status AS legacy_status, f.review_state AS legacy_review_state, '
             .'f.manual_assessment AS assessment, f.discard_reason, f.assessed_at, '
             .'f.submitted_at, f.created_at, f.contacted_at, '
@@ -74,6 +74,13 @@ final class FindingReadRepository
         if ($domain !== '') {
             $conditions[] = $filter->exactDomain ? 'LOWER(d.hostname) = :domain' : 'LOWER(d.hostname) LIKE :domain';
             $parameters['domain'] = $filter->exactDomain ? $domain : '%'.$domain.'%';
+        }
+        $search = strtolower(trim($filter->q));
+        if ($search !== '') {
+            // Search terms are literal substrings, including URL punctuation.
+            // The shared WHERE keeps page results and counts in agreement.
+            $conditions[] = "(LOWER(d.hostname) LIKE :search ESCAPE '!' OR LOWER(f.title) LIKE :search ESCAPE '!' OR LOWER(f.url) LIKE :search ESCAPE '!')";
+            $parameters['search'] = '%'.strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
         }
         if ($filter->assessment === 'unknown') {
             $conditions[] = 'f.manual_assessment IS NULL';
@@ -142,6 +149,7 @@ final class FindingReadRepository
             observationMode: $row['observation_mode'],
             observationAt: $this->date($row['observation_at']),
             discarded: (bool) $row['discarded'],
+            url: $row['url'],
         );
     }
 

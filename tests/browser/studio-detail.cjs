@@ -55,7 +55,7 @@ async function main() {
   };
   const mark = (description) => { checks.push(description); console.log('PASS ' + description); };
   const gotoCase = async (id) => {
-    const response = await page.goto(base + '/studio/findings/' + id);
+    const response = await page.goto(base + '/findings/' + id);
     assert.equal(response.status(), 200);
     await page.locator('[data-studio-detail]').waitFor();
     assert.match(response.headers()['cache-control'], /(?:^|,\s*)no-store(?:,|$)/);
@@ -116,8 +116,8 @@ async function main() {
   try {
     const initial = await fixture();
     const main = initial.fixtures.main;
-    const studioPath = '/studio/findings/' + main.id;
-    const classicPath = '/findings/' + main.id;
+    const studioPath = '/findings/' + main.id;
+    const classicPath = '/legacy/findings/' + main.id;
     assert.equal(initial.snapshot.finding.length, 7);
     assert.equal(initial.snapshot.finding_assessment.length, 0);
     await gotoCase(main.id);
@@ -273,7 +273,7 @@ async function main() {
     assert.equal(normalizedLines(persistedFinding.private_notes), savedNote);
     mark('Discard as duplicate and explicit reactivation preserve note, contact timestamp and full assessment history');
 
-    await page.goto(base + '/studio');
+    await page.goto(base + '/');
     await page.locator('#intake-form [name="url"]').fill(main.url);
     const duplicateResponse = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/findings');
     await page.locator('#intake-form [name="url"]').press('Enter');
@@ -287,11 +287,16 @@ async function main() {
     await page.waitForURL(base + studioPath);
     assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'confirmed');
     mark('Studio intake opens the Studio detail and duplicate submission creates no additional case or screenshot job');
+    assert.equal(await page.locator('.studio-detail-back').getAttribute('href'), '/findings');
     await page.locator('.studio-detail-back').click();
-    await page.waitForURL(base + '/studio');
+    await page.waitForURL(base + '/findings');
+    await page.locator('[data-studio-list]').waitFor();
+    mark('A standalone detail returns to the canonical Studio inventory');
+    await page.locator('.studio-workspace-nav a[href="/"]').click();
+    await page.waitForURL(base + '/');
     assert.equal(await page.locator('#intake-form [name="url"]').inputValue(), nextDraft);
     assert.equal(await page.locator('[data-intake-entry]').count(), 1);
-    mark('Opening a detail and returning to intake preserves the unsent next URL and tab history');
+    mark('Opening a detail and navigating through inventory back to intake preserves the unsent next URL and tab history');
 
     const final = await fixture();
     assert.equal(final.snapshot.finding.length, initial.snapshot.finding.length);

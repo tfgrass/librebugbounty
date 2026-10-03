@@ -542,12 +542,38 @@ isolierte Browserprüfungen an fünf Fenstergrößen sind erfolgreich. Nachweise
 praktische Grenzen:
 [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md).
 
-**Weiterhin Vorschlag:** Als folgenden UI-Ausbau einen Studio-Bestand mit Liste
-und wiederverwendetem Falldetail vorsehen. Auswahl-, Filter- und Rückkehrkontext
-dieses Arbeitsbereichs sind damit noch nicht festgelegt. Review benötigt vor
-seiner Umsetzung weiterhin Antworten zu Sichtungsgründen, Erledigen,
+## Bestätigter und umgesetzter Ausbau: Studio-Bestand und Routen
+
+Der Nutzer wollte die vorhandene Liste, Suche und Filter nun ebenfalls in Studio
+verwenden und Studio auf `/` zur normalen Oberfläche machen. Den dokumentierten
+Vorschlag mit eigenständigem schnellen Eingang auf `/` und Bestand auf `/findings`
+hat er mit „genau bau das so“ bestätigt. Dieser Abschnitt ist umgesetzt.
+
+Studio-Liste und Falldetail `/findings/{id}` bilden den zusammenhängenden
+Bearbeitungsweg. Die klassische Oberfläche bleibt unter `/legacy` mit den
+entsprechenden Detail-, Einstellungs- und Exportseiten. Alte Studio- und gefilterte
+Root-GET-Links bleiben über Weiterleitungen mit ihren Parametern erreichbar.
+Schreib-, API- und Artefaktadressen ändern sich nicht.
+
+Suchtext, Filter und Seite stehen in der URL und werden über einen validierten
+internen Listenpfad bis nach der Fallbearbeitung erhalten. Bewertungs-, Notiz-
+und Kontaktformulare tragen diesen Kontext. Auch Classic-Listenlinks übernehmen
+die entsprechende Studio-Auswahl. Die globale Statistik ist einklappbar;
+ihre Links öffnen die gezählte Menge mit zurückgesetzten anderen Filtern.
+
+Beide Oberflächen verwenden `FindingListService` und `FindingReadRepository`
+für dieselben lesenden Filter-, Count- und Pagingregeln. Wörtliche Textsuche
+berücksichtigt Domain, Titel und vollständige URL. Aktiver Bestand und Archiv
+behalten ihre bestehenden fachlichen Regeln. Die responsive Zeilenliste zeigt
+bei halber Breite kompakte Karten mit getrennten Zustandsdimensionen.
+
+[Festlegung und Umsetzung](studio-bestand-routen.md),
+[Nachweise und Grenzen](abnahme-studio-bestand.md).
+
+Review benötigt weiterhin Antworten zu Sichtungsgründen, Erledigen,
 Zurückstellen und Vergleichsreferenzen. Bildvergleich, Mailvorbereitung und
-Meldungsgruppen gehören nicht in den gelieferten Falldetailabschnitt.
+Meldungsgruppen sind damit noch nicht umgesetzt. Einstellungen und Export haben
+vorerst die klassische Gestaltung; ihre Funktionen bleiben erreichbar.
 
 ## Szenarien für die jeweiligen Funktionspakete
 

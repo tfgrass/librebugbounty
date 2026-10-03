@@ -29,8 +29,9 @@ Studio-Eingang für halbbreite Fenster ist umgesetzt. Anschließend benennt der
 Nutzer die noch klassischen Einzelseiten und beauftragt den vorgeschlagenen
 Studio-Falldetailabschnitt: große Belegfläche, kompakter Inspector und parallele
 klassische Detailseite. Dieser zweite Abschnitt übernimmt die vorhandene
-Fallbearbeitung. Ein vollständiger Studio-Bestand, Review und Meldungen bleiben
-eigene spätere Vorhaben.
+Fallbearbeitung. Anschließend hat der Nutzer auch Studio-Bestand, Suche und die
+Routenverlegung bestätigt; dieser Abschnitt ist umgesetzt. Review und Meldungen
+bleiben eigene spätere Vorhaben.
 
 ## Bestätigte Anforderungen
 
@@ -85,8 +86,8 @@ Der schnelle Einzeleingang daraus wurde am 2026-10-03 ausdrücklich beauftragt u
 umgesetzt. Studio-Ingest v1 wurde danach als erster paralleler Arbeitsbereich
 umgesetzt. Studio-Falldetail v1 ist als Folgeabschnitt implementiert und anhand
 der HTTP-/Gesamtsuite sowie eines isolierten Browserlaufs abgenommen.
-Vollständiger Studio-Bestand, Review und Meldungen bleiben getrennte spätere
-Vorhaben.
+Studio-Bestand mit Suche und kanonischen Routen ist anschließend ebenfalls
+umgesetzt; Review und Meldungen bleiben getrennte spätere Vorhaben.
 
 ## Beobachteter Aufbau
 
@@ -374,6 +375,27 @@ Formulare, Details und Bildlinks sind auch ohne JavaScript verwendbar.
 HTTP-/Gesamtsuiten- und isolierten Browsernachweise samt praktischen Grenzen fest.
 Es gibt keine neue Migration, Retest-Queue oder eigene Fachlogik der Studio-Seite.
 
+## Studio-Bestand und Verlegung der Oberflächen
+
+**Bestätigt und umgesetzt am 2026-10-03:** Der schnelle Eingang wird auf `/` zur
+Startseite. Studio-Liste und Falldetails liegen auf `/findings` beziehungsweise
+`/findings/{id}`; Classic bleibt unter `/legacy`. Historische Studio-GET-Links und
+alte Filterabfragen leiten intern mit ihren Queryparametern weiter. POST-, API-
+und Artefaktadressen sind unverändert.
+
+Der neue `FindingListService` teilt Filterinterpretation, Paging, globale Zähler
+und die skalare Listenprojektion zwischen beiden Oberflächen. `q` sucht nach
+wörtlichem Teilstring in Domain, Titel und vollständiger URL. Die Liste trennt
+weiterhin manuelle Bewertung, gespeicherte Beobachtung und Kontakt. In schmalen
+Fenstern werden Zeilen als Karten dargestellt. Ein validierter interner
+`return_to`-Listenpfad bewahrt Suchtext, Filter und Seite über Falldetail und
+Schreibaktionen. `FindingNavigation` begrenzt diesen Kontext auf `/findings`;
+Feedback wird mit dem bereits vorhandenen Querystring verbunden.
+
+[Festlegung und Datenfluss](studio-bestand-routen.md) und
+[Abnahme](abnahme-studio-bestand.md) ersetzen den früheren Vorschlagsstatus.
+Die vorstehenden Detailrouten sind der historische Stand ihres eigenen Abschnitts.
+
 ## Entscheidende offene Punkte
 
 Das angeforderte [Lastenheft](lastenheft.md) beschreibt den Zielzustand und die
@@ -386,8 +408,7 @@ Resolve-artige Pages für Erfassen, Sichten und Mailvorbereitung bleiben das
 spätere Ziel. Bestätigt ist der Vorrang funktionierender Abläufe in der aktuellen
 Ansicht; der schnelle Eingang ist der erste dafür umgesetzte Arbeitsbereich. Seine
 parallele Half-Screen-Studioansicht ist anschließend als begrenzter Abschnitt
-umgesetzt worden, gefolgt von Studio-Falldetail v1. Ein Studio-Bestand als nächster
-Ausbau bleibt Vorschlag. Weitergehende Seiten-, Navigations- und Modellvorschläge
+umgesetzt worden, gefolgt von Studio-Falldetail v1. Studio-Bestand und der Routenwechsel sind inzwischen umgesetzt. Weitergehende Seiten-, Navigations- und Modellvorschläge
 für Review und Meldungen bleiben ebenfalls Vorschläge.
 
 - **Geklärt:** Eine neue technische Beobachtung hebt eine manuelle Entscheidung

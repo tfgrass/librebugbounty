@@ -113,11 +113,11 @@ async function main() {
 
   try {
     assert.deepEqual(await counts(), { finding: 0, screenshot_job: 0, retest_run: 0, evidence: 0, queued: 0 });
-    const result = await page.goto(base + '/studio');
-    assert.equal(result.status(), 200, '/studio must exist');
+    const result = await page.goto(base + '/');
+    assert.equal(result.status(), 200, 'The canonical intake must exist at /');
     await url.waitFor();
     await page.waitForFunction(() => document.activeElement === document.querySelector('#intake-form [name="url"]'));
-    mark('/studio exists and URL has initial keyboard focus');
+    mark('The canonical intake exists at / and URL has initial keyboard focus');
 
     const urls = Array.from({ length: 5 }, (_, index) => `http://127.0.0.1/studio-local-${index + 1}${index === 4 ? '/' + 'a'.repeat(700) : ''}`);
     for (const value of urls) {
@@ -252,15 +252,15 @@ async function main() {
     mark('Reload retains the full draft and tab-local history');
 
     const fresh = await context.newPage();
-    await fresh.goto(base + '/studio');
+    await fresh.goto(base + '/');
     assert.equal(await fresh.locator('[data-intake-entry]').count(), 0);
     assert.equal(await fresh.locator('#intake-form [name="url"]').inputValue(), '');
     await fresh.close();
     await page.bringToFront();
     mark('A new independent tab starts with empty history and URL');
 
-    await page.locator('a[href="/"]').first().click();
-    await page.waitForURL(base + '/');
+    await page.locator('a[href="/legacy"]').first().click();
+    await page.waitForURL(base + '/legacy');
     await url.waitFor();
     assert.deepEqual(await draftValues(), studioDraft);
     assert.equal(await rows.count(), historyCount);
@@ -273,8 +273,8 @@ async function main() {
     await payload.fill('LOCAL-CLASSIC');
     await notes.fill('Classic draft\nnot yet submitted');
     const classicDraft = await draftValues();
-    await page.locator('a[href="/studio"]').first().click();
-    await page.waitForURL(base + '/studio');
+    await page.locator('a[href="/"]').first().click();
+    await page.waitForURL(base + '/');
     await url.waitFor();
     assert.deepEqual(await draftValues(), classicDraft);
     assert.equal(await rows.count(), sharedHistoryCount);

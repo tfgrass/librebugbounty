@@ -46,7 +46,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
 
-        foreach ([$this->studioPath($finding), '/findings/'.$finding->getId()] as $path) {
+        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
             $response = $this->request($path);
             self::assertSame(200, $response->getStatusCode());
             self::assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
@@ -58,7 +58,7 @@ final class StudioFindingTest extends DatabaseTestCase
         }
         $studio = $this->request($this->studioPath($finding));
         self::assertStringContainsString('no-store', (string) $studio->headers->get('Cache-Control'));
-        self::assertGreaterThanOrEqual(1, $this->xpath($studio->getContent())->query('//a[@href="/findings/'.$finding->getId().'"]')->length);
+        self::assertGreaterThanOrEqual(1, $this->xpath($studio->getContent())->query('//a[@href="/legacy/findings/'.$finding->getId().'"]')->length);
         self::assertSame($before, $this->snapshot());
         self::assertSame($paths, $storage->listPaths());
     }
@@ -68,7 +68,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $this->finding('not-found');
         $before = $this->snapshot();
         foreach (['00000000-0000-4000-8000-000000000000', 'not-an-id', 'broken%3Cmarkup%3E'] as $id) {
-            self::assertSame(404, $this->request('/studio/findings/'.$id)->getStatusCode());
+            self::assertSame(404, $this->request('/findings/'.$id)->getStatusCode());
         }
         self::assertSame($before, $this->snapshot());
     }
@@ -155,7 +155,7 @@ final class StudioFindingTest extends DatabaseTestCase
             [$confirmed, ['fixed', 'discarded']],
             [$duplicate, ['confirmed', 'fixed']],
         ] as [$finding, $expected]) {
-            $classic = $this->request('/findings/'.$finding->getId())->getContent();
+            $classic = $this->request('/legacy/findings/'.$finding->getId())->getContent();
             $studio = $this->request($this->studioPath($finding))->getContent();
             self::assertSame($expected, $this->assessmentActions($classic));
             self::assertSame($this->assessmentActions($classic), $this->assessmentActions($studio));
@@ -182,7 +182,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $later->setStartedAt($laterAt)->setFinishedAt($laterAt);
         $this->entityManager->flush();
         $before = $this->snapshot();
-        foreach ([$this->studioPath($finding), '/findings/'.$finding->getId()] as $path) {
+        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
             $html = $this->request($path)->getContent();
             self::assertContains('confirmed', $this->assessmentActions($html));
             $xpath = $this->xpath($html);
@@ -229,7 +229,7 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertSame($notes, $finding->getPrivateNotes());
         self::assertSame('confirmed', $finding->getManualAssessment());
         self::assertCount(1, $this->entityManager->getRepository(FindingAssessment::class)->findBy(['finding' => $finding]));
-        $classic = $this->request('/findings/'.$finding->getId());
+        $classic = $this->request('/legacy/findings/'.$finding->getId());
         self::assertSame(200, $classic->getStatusCode());
         $classicText = $this->xpath($classic->getContent())->evaluate('string(//body)');
         self::assertStringContainsString('Befund bestätigt', $classicText);
@@ -284,14 +284,14 @@ final class StudioFindingTest extends DatabaseTestCase
             }
             $response = $this->request('/findings/'.$finding->getId().'/notes', 'POST', $parameters);
             self::assertSame(302, $response->getStatusCode());
-            self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+            self::assertSame('/legacy/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
             self::assertContains(parse_url($response->headers->get('Location'), PHP_URL_HOST), [null, 'localhost']);
         }
         $response = $this->request('/findings/'.$finding->getId().'/assessment', 'POST', [
             '_token' => $this->token($html, 'assessment'), 'assessment' => 'fixed',
         ]);
         self::assertSame(302, $response->getStatusCode());
-        self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        self::assertSame('/legacy/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
     }
 
     public function testDiscardingAsDuplicateRetainsArtifactsNotesAndExplicitDecisionHistory(): void
@@ -310,7 +310,7 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertCount(1, $this->entityManager->getRepository(FindingAssessment::class)->findBy(['finding' => $finding]));
         self::assertCount(1, $this->entityManager->getRepository(Evidence::class)->findBy(['finding' => $finding]));
         self::assertCount(1, $this->entityManager->getRepository(RetestRun::class)->findBy(['finding' => $finding]));
-        foreach ([$this->studioPath($finding), '/findings/'.$finding->getId()] as $path) {
+        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
             $html = $this->request($path)->getContent();
             self::assertStringContainsString('Verworfen · Duplikat', $this->xpath($html)->evaluate('string(//body)'));
             self::assertSame(0, $this->xpath($html)->query('//form[@action="/findings/'.$finding->getId().'/retest" or @action="/findings/'.$finding->getId().'/screenshots"]')->length);
@@ -366,7 +366,7 @@ final class StudioFindingTest extends DatabaseTestCase
 
     private function studioPath(Finding $finding): string
     {
-        return '/studio/findings/'.$finding->getId();
+        return '/findings/'.$finding->getId();
     }
 
     private function request(string $path, string $method = 'GET', array $parameters = []): Response

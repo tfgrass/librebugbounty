@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
-#[Route(path: '/operator-priority')]
+#[Route(path: '/legacy/operator-priority')]
 final class PriorityExportController
 {
     public function __construct(
@@ -162,7 +162,7 @@ final class PriorityExportController
                     .($report !== null ? ' · <a href="'.self::e($report).'" target="_blank" rel="noreferrer">externer Report</a>' : '')
                     .'<form method="post" action="/findings/'.rawurlencode($finding->getId()).'/mark-contacted" class="contact-form">'
                     .'<input type="hidden" name="_token" value="'.self::e($this->csrf->getToken('finding_mark_contacted_'.$finding->getId())->getValue()).'">'
-                    .'<input type="hidden" name="return_to" value="/operator-priority?days='.self::e((string) $days).'">'
+                    .'<input type="hidden" name="return_to" value="/legacy/operator-priority?days='.self::e((string) $days).'">'
                     .'<button type="submit">Kontaktiert – ausblenden</button></form>'
                     .'</li>';
             }
@@ -181,9 +181,9 @@ final class PriorityExportController
 
         return '<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             .'<title>'.self::e($title).'</title><style>'.$this->css().'</style></head><body><main>'
-            .'<header><div><p class="eyebrow">LibreBugBounty · dynamischer HTML-Export</p><h1>'.self::e($title).'</h1><p class="intro">Die Auswahl zeigt Fälle ohne Kontaktzeitpunkt und mit Altstatus ungleich fixed. Verworfene Fälle sind ausgeblendet. Beim Neuladen werden Datenbankänderungen übernommen.</p></div><nav><a href="/">Dashboard</a><button type="button" onclick="location.reload()">Neu laden</button></nav></header>'
+            .'<header><div><p class="eyebrow">LibreBugBounty · dynamischer HTML-Export</p><h1>'.self::e($title).'</h1><p class="intro">Die Auswahl zeigt Fälle ohne Kontaktzeitpunkt und mit Altstatus ungleich fixed. Verworfene Fälle sind ausgeblendet. Beim Neuladen werden Datenbankänderungen übernommen.</p></div><nav><a href="/legacy">Dashboard</a><a href="/findings">Studio-Bestand</a><button type="button" onclick="location.reload()">Neu laden</button></nav></header>'
             .'<section class="stats"><div><strong>'.self::e((string) $findingCount).'</strong><span>Fälle in der Auswahl</span></div><div><strong>'.self::e((string) count($groups)).'</strong><span>Domains in der Auswahl</span></div><div><strong>'.self::e((string) $deCount).'</strong><span>Deutschland</span></div><div><strong>'.self::e((string) (count($groups) - $deCount)).'</strong><span>EU / sonstige</span></div></section>'
-            .'<section class="meta"><span>Zeitraum: '.self::e($from->format('Y-m-d')).' bis '.self::e($until->modify('-1 day')->format('Y-m-d')).' ('.$days.' Tage)</span><span>Stand: '.self::e($generated).'</span><a href="/operator-priority?days=14">14 Tage</a><a href="/operator-priority?days=30">30 Tage</a></section>'
+            .'<section class="meta"><span>Zeitraum: '.self::e($from->format('Y-m-d')).' bis '.self::e($until->modify('-1 day')->format('Y-m-d')).' ('.$days.' Tage)</span><span>Stand: '.self::e($generated).'</span><a href="/legacy/operator-priority?days=14">14 Tage</a><a href="/legacy/operator-priority?days=30">30 Tage</a></section>'
             .'<section class="filters"><label>Suche <input id="search" type="search" placeholder="Domain oder Betreiber"></label><label>Gebiet <select id="country"><option value="">alle</option><option>Deutschland</option><option>EU / sonstige</option></select></label><label>Größe <select id="size"><option value="">alle</option><option value="large">large</option><option value="medium">medium</option><option value="small">small</option><option value="micro">micro</option><option value="unknown">unknown</option></select></label><label class="check"><input id="unknown" type="checkbox"> unknown ausblenden</label></section>'
             .'<div class="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>Betreiber</th><th>Größe / Evidenz</th><th>Findings und Aktionen</th></tr></thead><tbody id="rows">'.$rows.$noRows.'</tbody></table></div>'
             .'<p class="footnote">Sortierung: large → medium → small → micro → unknown, danach Finding-Anzahl. Umsatz-/Gewinn-/Mitarbeiterangaben stammen aus dem Research-Ledger; unklare Werte bleiben als solche gekennzeichnet.</p>'

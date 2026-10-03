@@ -65,7 +65,7 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         foreach ($runs as $index => $run) {
             self::assertSame($states[$index]['expected'], self::getContainer()->get(ScreenshotStatusService::class)->forRun($run)->state);
         }
-        $request = Request::create('/findings/'.$finding->getId());
+        $request = Request::create('/legacy/findings/'.$finding->getId());
         $response = self::$kernel->handle($request);
         self::$kernel->terminate($request, $response);
         self::assertSame(200, $response->getStatusCode());
@@ -149,7 +149,7 @@ final class ScreenshotStatusAcceptanceTest extends DatabaseTestCase
         $this->entityManager->persist($unresolved);
         $this->entityManager->flush();
 
-        $html = $this->request('/findings/'.$finding->getId())->getContent();
+        $html = $this->request('/legacy/findings/'.$finding->getId())->getContent();
 
         self::assertStringContainsString('Browser protection detected', $html);
         self::assertStringContainsString('cleared after 4.2 seconds', $html);

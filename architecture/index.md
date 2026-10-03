@@ -200,12 +200,22 @@ Classic-/Studio-Zustand. Nachweise und Grenzen dokumentiert
 [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md). Eine Studio-Bestandsliste,
 ein Review-Arbeitsvorrat und Bildvergleich sind nicht Teil dieses Abschnitts.
 
-**Nächster diskutierter Ausbau:** Der Nutzer möchte Liste und Suche in Studio
-übernehmen und die Studio-Oberfläche später unter `/` zur normalen Ansicht
-machen; die bisherige Gestaltung soll unter `/legacy` erreichbar bleiben.
-„Fall öffnen“ im bisherigen Eingang und Bestand führt bereits nach Studio.
-[Ausgangslage, Routenvorschlag und offene Startseitenwahl](studio-bestand-routen.md)
-sind als Vorschlag dokumentiert, noch nicht als umgesetzte Migration.
+**Studio-Bestand und Routenwechsel umgesetzt:** Der Nutzer hat den Vorschlag
+mit „genau bau das so“ bestätigt. Der schnelle Eingang liegt jetzt auf `/`, der
+Studio-Bestand mit Domain-/Titel-/URL-Suche, kombinierten Filtern, Archiv, Paging
+und globalen Kennzahlen auf `/findings`, das Falldetail auf `/findings/{id}`.
+Classic bleibt unter `/legacy`, mit Details, Einstellungen und Prioritätsexport
+unter diesem Präfix. Alte Studio-/Filter-/Settings-/Export-GET-Links leiten mit
+erhaltenen Parametern weiter. POST-, API- und Artefaktwege bleiben stabil.
+
+`FindingListService` teilt die Leseregeln beider Ansichten. Der geprüfte interne
+Listenpfad erhält Such-/Filter-/Seitennummern beim Öffnen und bei Bewertung,
+Kontakt oder Notiz. Ohne Kontext führt der Rücklink zum Bestand. Auch klassische
+Listenlinks öffnen Studio und übernehmen die entsprechende Listenauswahl.
+[Festlegung und Datenfluss](studio-bestand-routen.md),
+[Abnahme Studio-Bestand und Routen](abnahme-studio-bestand.md).
+Die älteren `/studio`-Adressen in vorstehenden Abschnittsprotokollen beschreiben
+jeweils den damaligen Abnahmestand.
 
 Weitere bekannte Grenzen:
 
@@ -250,9 +260,8 @@ Das [UI-Arbeitsmodell](ui-workflow.md) hält die bestätigte Richtung fest:
 - Bestand mit Dashboard, Suche und verständlichen Statistiken.
 
 Studio-Eingang und Studio-Falldetail übernehmen bereits nutzbare Anwendungsfälle.
-Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Ein
-Studio-Bestand als nächster Ausbau bleibt Vorschlag; Review benötigt zuerst seine
-noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
+Weitere Funktionen und Arbeitsbereiche werden eigenständig zugeschnitten. Studio-Bestand, Suche und Routenwechsel sind inzwischen umgesetzt. Review benötigt
+zuerst seine noch offenen Fachregeln. Navigation und Anordnung verwenden die erprobten
 Anwendungsfälle und Daten weiter.
 
 ## Dokumente
@@ -267,7 +276,9 @@ Anwendungsfälle und Daten weiter.
 - [Umsetzungsplan Studio-Ingest v1 / Half-Screen](plan-studio-ingest.md)
 - [Abnahme Studio-Ingest v1](abnahme-studio-ingest.md)
 - [Abnahme Studio-Falldetail v1](abnahme-studio-falldetail.md)
-- [Diskussionsstand Studio-Bestand und Routen](studio-bestand-routen.md)
+- [Festlegung Studio-Bestand und Routen](studio-bestand-routen.md)
+- [Abnahme Studio-Bestand und Routen](abnahme-studio-bestand.md)
+- [Vorgeschlagenes Arbeitspaket Studio-Statistiken](studio-statistiken.md)
 - [Backup und Wiederherstellung](backup.md)
 - [Arbeitsbereiche und UI](ui-workflow.md)
 

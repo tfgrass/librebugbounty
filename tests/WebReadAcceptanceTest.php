@@ -36,14 +36,14 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         $before = $this->snapshot();
         $paths = $storage->listPaths();
         for ($i = 0; $i < 2; $i++) {
-            $response = $this->get('/findings/'.$finding->getId());
+            $response = $this->get('/legacy/findings/'.$finding->getId());
             self::assertSame(200, $response->getStatusCode());
             self::assertStringContainsString('Screenshot file is missing or unavailable', $response->getContent());
             self::assertStringContainsString('record has been retained', $response->getContent());
             self::assertStringContainsString('fixture note', $response->getContent());
             self::assertStringContainsString('2026-01-02', $response->getContent());
             self::assertStringContainsString('<img ', $response->getContent());
-            self::assertStringContainsString('No screenshots yet.', $this->get('/findings/'.$empty->getId())->getContent());
+            self::assertStringContainsString('No screenshots yet.', $this->get('/legacy/findings/'.$empty->getId())->getContent());
             $url = '/artifacts/'.substr($evidence->getFilePath(), strlen('storage/artifacts/'));
             $image = $this->get($url);
             self::assertSame(200, $image->getStatusCode());
@@ -85,17 +85,17 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         }
         $this->entityManager->flush();
         $this->entityManager->clear();
-        $response = $this->get('/?pageSize=10&page=1&status=new&domain=localhost');
+        $response = $this->get('/legacy?pageSize=10&page=1&status=new&domain=localhost');
         self::assertSame(200, $response->getStatusCode());
-        preg_match_all('#href="/studio/findings/([a-f0-9-]+)"#', $response->getContent(), $links);
+        preg_match_all('#href="/findings/([a-f0-9-]+)(?:\?[^"]*)?"#', $response->getContent(), $links);
         self::assertCount(10, array_unique($links[1]));
         self::assertStringContainsString('data-total-filtered="5500"', $response->getContent());
-        $next = $this->get('/?pageSize=10&page=2&status=new&domain=localhost');
-        preg_match_all('#href="/studio/findings/([a-f0-9-]+)"#', $next->getContent(), $nextLinks);
+        $next = $this->get('/legacy?pageSize=10&page=2&status=new&domain=localhost');
+        preg_match_all('#href="/findings/([a-f0-9-]+)(?:\?[^"]*)?"#', $next->getContent(), $nextLinks);
         self::assertCount(10, array_unique($nextLinks[1]));
         self::assertSame([], array_intersect($links[1], $nextLinks[1]));
         self::assertStringNotContainsString('<img ', $response->getContent());
-        $filtered = $this->get('/?status=fixed&domain=localhost');
+        $filtered = $this->get('/legacy?status=fixed&domain=localhost');
         self::assertSame(200, $filtered->getStatusCode());
         self::assertSame(0, preg_match_all('/class="row-link"/', $filtered->getContent()));
     }
