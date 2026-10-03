@@ -99,9 +99,9 @@ Post-Migrationsbackup erstellt und restore-validiert.
 
 Arbeitsabschnitt 2 ist funktional umgesetzt. Stop/Start nach dem zuletzt ergänzten
 Warten auf das Queue-Schema war erfolgreich; Worker, Sidecar, echte Bilder,
-Serialität und Dateipersistenz wurden danach erneut geprüft. Als strengerer
-Betriebsnachweis bleibt N01 aus einer vollständig frischen isolierten
-DDEV-Projektkopie offen.
+Serialität und Dateipersistenz wurden danach erneut geprüft. Der zusätzliche
+N01-Nachweis aus einer vollständig frischen isolierten DDEV-Projektkopie ist
+am 2026-10-03 erbracht: [Betriebsabschluss](abnahme-betriebsabschluss.md).
 
 **Arbeitsabschnitt 3a wurde ausdrücklich beauftragt und umgesetzt:** getrennte
 manuelle Bewertung bei `inconclusive`, Verwerfen mit Duplikatgrund, unabhängiger
@@ -314,7 +314,7 @@ manuellen Nachholen der Bilder die inzwischen umgesetzte
 [Review-Ansicht](studio-review.md) beauftragt:
 Screenshot und gespeicherte PoC-Angaben zusammen, schnelles Bewerten und Weitergehen.
 Die frühere Empfehlung „N01 vor Review“ ist dadurch als Priorisierung überholt;
-N01 bleibt als separater offener Betriebsnachweis bestehen. Die getrennten
+N01 wurde als separater Betriebsnachweis weitergeführt und inzwischen abgeschlossen. Die getrennten
 Aktionen Vulnerable, Not vulnerable, neutrales Überspringen und bewusstes Verwerfen vermeiden,
 dass eine unzureichende Aufnahme allein den Fall archiviert. Neue Bilder aus dem
 Backfill ermöglichen nun auch die Sichtung technisch uneindeutiger Fälle.
@@ -333,11 +333,20 @@ und Fehler sollen erneut im Review erscheinen. [Befunde und Zuschnitt](ui-workfl
 
 **Korrektur während der Umsetzung:** Der Nutzer hat die zusätzliche
 CSRF-Absicherung der vier älteren Aktionen ausdrücklich zurückgestellt; die
-Ergänzung wurde wieder entfernt. Hinweis-Review und N01 bleiben beauftragt.
+Ergänzung wurde wieder entfernt.
+
+**Abschluss der verbleibenden Grundlagen:** Hinweis-Review ist umgesetzt und
+live migriert, mit 220 erfolgreichen Tests / 3.205 Assertions sowie 37 isolierten
+Review-Browserprüfungen. Der frische N01-Aufbau aus `5f28d2e` besteht mit
+73 Harnessprüfungen und 9 realen Bildanzeigeprüfungen; vier lokale Aufnahmen und
+Persistenz nach Neustart sind nachgewiesen. Prä- und Post-Migrationsbackups sind
+restore-validiert. [Review-Abnahme](studio-review.md#neue-hinweise-nach-einem-urteil),
+[N01-Abnahme](abnahme-betriebsabschluss.md), [Sicherung](backup.md).
 
 ## Dokumente
 
 - [Lastenheft und Arbeitsabschnitte](lastenheft.md)
+- [Frischer DDEV-Aufbau und Neustart (N01)](abnahme-betriebsabschluss.md)
 - [Arbeitsmodell und Bestandsanalyse](design.md)
 - [Abnahme Arbeitsabschnitt 1](abnahme-abschnitt-1.md)
 - [Abnahme Arbeitsabschnitt 2](abnahme-abschnitt-2.md)

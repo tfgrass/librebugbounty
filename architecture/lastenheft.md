@@ -7,8 +7,9 @@ umgesetzt. [Abnahme Abschnitt 1](abnahme-abschnitt-1.md),
 [Abnahme Abschnitt 2](abnahme-abschnitt-2.md), [Backup-Nachweis](backup.md).
 Abschnitt 2 besitzt jetzt eine persistente, seriell verarbeitete Screenshot-Queue
 mit echten Aufnahmen mit und ohne Dialog. Seine Funktionsabnahmen sind erfolgt;
-Stop/Start nach dem jüngsten Startup-Schutz ist nachgewiesen. Nur der strenge
-N01-Nachweis aus einer vollständig frischen Projektkopie bleibt offen. Weitere
+Stop/Start nach dem jüngsten Startup-Schutz ist nachgewiesen. Auch der strenge
+[N01-Nachweis aus einer vollständig frischen Projektkopie](abnahme-betriebsabschluss.md)
+ist jetzt erbracht. Weitere
 Abschnitte sind nicht automatisch beauftragt oder abgenommen.
 
 Anschließend wurde der geklärte Teilabschnitt 3a ausdrücklich beauftragt und
@@ -302,7 +303,13 @@ installieren Abhängigkeiten und führen Datenbankmigrationen aus.
 versioniert bereit und startet den Queue-Worker über Supervisor. Playwright-Image,
 Node-Manifest und Lockfile verwenden `1.61.1`. Betrieb und ein Neustart der
 verwendeten Installation einschließlich des jüngsten Schema-Wartepfads sind
-belegt; die frische isolierte Projektkopie bleibt offen.
+belegt. Der frische isolierte Aufbau aus Commit `5f28d2e` besteht mit 73
+Harnessprüfungen und 9 realen Bildanzeigeprüfungen. Vier echte lokale Aufnahmen
+mit und ohne Dialog entstehen vor beziehungsweise nach Neustart; gespeicherte
+Daten und Bilddateien bleiben dabei unverändert erhalten. Keine Laufzeitdateien
+oder Nutzdaten wurden übernommen und keine Containerreparaturen benötigt.
+Der bekannte Synchronitätsdiff in drei älteren Tabellen bleibt als Diagnose
+dokumentiert. [N01-Abnahme und Grenzen](abnahme-betriebsabschluss.md).
 
 ### N02 – Tests unabhängig von Nutzdaten
 
@@ -385,7 +392,8 @@ Vorhaben beauftragt.
 2. **Belege zuverlässig verwalten:** Persistente serielle Screenshot-Aufträge,
    Bildablage und Anzeige mit lokalen Fixtures, nachvollziehbare Aufnahmefehler
    und Erhalt früherer Belege. F03, F04, F07, N01. Funktional umgesetzt; der
-   vollständige N01-Frischaufbau bleibt als Betriebsnachweis offen.
+   vollständige N01-Frischaufbau ist inzwischen ebenfalls
+   [nachgewiesen](abnahme-betriebsabschluss.md).
 3. **Bewertung und Darstellung ordnen:** Die bestätigte Regel aus F06 umsetzen;
    gemeinsame Begriffe/Filter und Controller-/Template-Trennung. Mehrdeutige
    Altdaten separat kennzeichnen, statt historische Entscheidungen zu erfinden.

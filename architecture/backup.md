@@ -31,6 +31,30 @@ Sie enthält 5.715 Findings, 5.051 Domains, 8.685 Evidence-Zeilen, 8.897 RetestR
 673 Artefaktdateien und weiterhin 382 historische Fehlverweise sind gesichert.
 Alle vom Werkzeug pausierten Container wurden wieder freigegeben.
 
+Die Migration wurde anschließend in einer kurzen SQLite-Schreibtransaktion auf
+der tatsächlich verwendeten Datenbank angewendet. Der innerhalb derselben
+Transaktion erfasste Vergleich bewahrt alle ursprünglichen Spalten und Inhalte:
+5.733 Findings, 5.069 Domains, 8.703 Evidence-Zeilen, 8.897 RetestRuns,
+75 Bewertungen, 690 Screenshot-Aufträge und 4 Settings. Während der Umsetzung
+weiter hinzugekommene Daten gehören dadurch ebenfalls zum Erhaltungsnachweis.
+Die neue Sichtungstabelle ist leer, alle alten Zustandssnapshots sind `NULL`.
+9 Migrationen und SQLite-Integrität `ok`; alle 673 Dateien aus der aktuellen
+Sicherung sind unverändert vorhanden. Review, neuer Hinweisfilter, Bestand und
+Statistik lieferten anschließend lesend HTTP 200. Die aggregierten
+Migrationsberichte liegen unter `/tmp/librebugbounty-review-migration-proof-final/`;
+die temporäre Datenwiederherstellung wurde danach entfernt.
+
+Auch der migrierte Zustand wurde mit dem gleichen Werkzeug gesichert und separat
+wiederhergestellt:
+
+`/home/tomka/.local/share/librebugbounty/backups/20261003T202943Z-578a30ca`
+
+Der geprüfte Rückkehrpunkt enthält 9 Migrationen, 5.735 Findings, 5.071 Domains,
+8.705 Evidence-Zeilen, 8.897 RetestRuns, 75 Bewertungen, 692 Screenshot-Aufträge,
+0 Sichtungen und 4 Settings. 693 Artefaktdateien sind gesichert; die 382
+historischen Fehlverweise bleiben ausgewiesen. Die Anwendung wurde nach der
+kurzen Sicherungspause wieder freigegeben.
+
 ## Bestehender Nachweis und Verfahren
 
 Stand: 2026-10-02. Umsetzung des zusätzlich beauftragten Sicherungsschritts und

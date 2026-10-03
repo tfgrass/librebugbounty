@@ -208,6 +208,34 @@ Reset technischer Belege erhalten; Falllöschung entfernt auch dessen Sichtungen
 Detailhinweis und Review nutzen dieselbe Regel. Native Formulare funktionieren
 ohne JavaScript. Die Sichtung startet keine Aufnahme oder technische Prüfung.
 
-**Abnahme in Arbeit:** Isolierte Policy-, HTTP-, Konflikt-, Rollback- und
-Browserprüfungen sowie Migration auf einer wiederhergestellten Kopie. Die
-abschließenden Ergebnisse werden nach den tatsächlichen Läufen ergänzt.
+**Abnahme des Hinweis-Ausbaus:**
+
+- Die Gesamtsuite besteht mit **220 Tests und 3.205 Assertions**. Darin prüfen
+  **10 neue Backendtests mit 178 Assertions** die komplette Ergebnis-/Urteilmatrix,
+  kumulative Hinweise, neue IDs und geänderte vorhandene Läufe, alte Grenzen,
+  unmigrierte Lese- und Bewertungswege sowie Reset/Löschen ohne FK-Erzwingung.
+  Tatsächliche SQL-Fehler beim Sichtungsinsert und beim Schreiben des
+  Bewertungsstands rollen sämtliche Änderungen zurück.
+- **14 neue Notice-Browserprüfungen** und **23 bisherige Review-Browserprüfungen**
+  bestehen. Die festen Aktionen passen bei 375, 640, 960 und 1440 CSS-Pixeln;
+  Beibehalten und beide Urteile funktionieren ohne JavaScript. Fremde Grundlagen
+  und neue Eingänge nach Anzeige bleiben ohne Schreibwirkung. Sichtung erhält
+  die gesamte Finding-Zeile, Bewertungshistorie, technische Daten und Dateien.
+  Keine externen Requests oder JavaScript-/Ressourcenfehler. Berichte/Bilder:
+  `/tmp/librebugbounty-studio-review-notices-browser-final/` und
+  `/tmp/librebugbounty-review-foundations-baseline-final/`.
+- Die additive Migration erhielt auf der wiederhergestellten Kopie alle
+  bisherigen Spalten und Inhalte sowie 661 Artefaktdateien. Anschließend wurde
+  sie unter einem kurzen SQLite-Schreiblock auf der Anwendung ausgeführt:
+  **5.733 Findings, 5.069 Domains, 8.703 Evidence-Zeilen, 8.897 RetestRuns,
+  75 Bewertungen, 690 Screenshot-Aufträge und 4 Settings** blieben vollständig
+  erhalten. Die neue Sichtungstabelle blieb leer, alte Zustandsgrenzen `NULL`.
+  Alle 673 Dateien der aktuellen Sicherung blieben bytegleich. 9 Migrationen,
+  SQLite-Integrität `ok`; Details und Sicherungsstände in [Backup](backup.md).
+- Lesende Live-Abrufe von Review einschließlich `kind=changed`, Bestand und
+  Statistik lieferten nach Migration **HTTP 200**. Es wurden keine echten Fälle
+  durch die Abnahme bewertet, keine Zielbesuche gestartet. Container-Lint,
+  PHP-/JavaScript-Syntax und `git diff --check` erfolgreich.
+
+Der frische N01-Aufbau ist als eigener
+[Betriebsnachweis](abnahme-betriebsabschluss.md) abgeschlossen.

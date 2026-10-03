@@ -683,7 +683,7 @@ technisch nicht eindeutig bestätigt werden konnten. Screenshot und PoC sollen
 nebeneinander eine manuelle Verifikation ermöglichen. Die Fälle sollen sich
 schnell wie ein Kartenstapel mit Links/Rechts-Aktion bestätigen oder „rejecten“
 lassen. Der Nutzer zieht damit Review gegenüber der früher empfohlenen
-N01-zuerst-Reihenfolge vor. N01 bleibt ein eigener offener Betriebsnachweis; die
+N01-zuerst-Reihenfolge vor. N01 blieb damals ein eigener offener Betriebsnachweis; die
 Sicherungs- und Übernahmeprüfung vor schreibenden Änderungen gilt weiter.
 
 **Beobachteter Stand:** Das Studio-Falldetail zeigt gespeicherte Screenshots,
@@ -802,11 +802,14 @@ sind bereits implementiert und nachgewiesen; sie müssen nicht neu gebaut werden
    vorerst entfallen. Die vier neuen Formularprüfungen wurden zurückgenommen;
    dieser Teil von N04 bleibt ausdrücklich zurückgestellt.
 2. **Betriebsabschluss N01:** Versionierte Konfiguration und Neustart der
-   bestehenden Installation sind belegt. Der Aufbau aus einer vollständig
-   frischen isolierten Kopie ist weiter offen. Ergebnis wäre ein dokumentierter
+   bestehenden Installation waren belegt. Der Aufbau aus einer vollständig
+   frischen isolierten Kopie war beim Sparring offen. Beauftragt wurde ein dokumentierter
    Start aus Projektkonfiguration, funktionierender lokaler Belegablage und
    erneuter Funktion nach Neustart. Die vorhandene Installation und ihre
-   Nutzerdaten bleiben außerhalb dieses Nachweises.
+   Nutzerdaten bleiben außerhalb dieses Nachweises. **Jetzt bestanden:**
+   Aufbau aus `5f28d2e` mit 73 Harnessprüfungen und 9 realen Bildanzeigeprüfungen,
+   vier lokalen Queue-Aufnahmen und vollständigem Datenerhalt nach Neustart.
+   [Abnahme und Grenzen](abnahme-betriebsabschluss.md).
 3. **Review für neue gespeicherte Hinweise:** Die frühere Detailprojektion erkannte
    Beobachtungen nach einer manuellen Bewertung und zeigte einen Hinweis.
    Der erste `/review`-Vorrat verlangte dagegen `manual_assessment IS NULL` und
@@ -829,8 +832,16 @@ Urteil sind implementiert. 14 isolierte Notice-Browserprüfungen und alle
 23 bisherigen Review-Browserprüfungen bestanden, einschließlich nativer
 Formulare ohne JavaScript und vier Fensterbreiten. Die additive Migration auf
 einer restore-validierten Datenkopie erhielt alle bisherigen Spalten und
-Tabelleninhalte; alle 661 Belegdateien blieben bytegleich. Gesamtsuite,
-abschließende Backend-Regressionsprüfungen und N01 werden separat abgeschlossen.
+Tabelleninhalte; alle 661 Belegdateien blieben bytegleich.
+
+**Hinweis-Ausbau abgeschlossen:** Die vollständige Suite besteht mit 220 Tests
+und 3.205 Assertions; darin 10 neue Backendprüfungen mit 178 Assertions zu Policy,
+Rollback, Konflikten, Altbestand und Migration. Die live angewendete Migration
+bewahrte sämtliche vorhandenen Inhalte unter einem kurzen Schreiblock; die
+lesenden Live-Abrufe lieferten HTTP 200. [Vollständige Review-Abnahme](studio-review.md#neue-hinweise-nach-einem-urteil).
+Auch N01 ist mit dem frischen isolierten Lauf abgeschlossen; seine
+Schema-Diagnose und die tatsächlichen Bildzustände sind im eigenen Bericht
+festgehalten. Die zusätzliche CSRF-Ergänzung bleibt auf Nutzerwunsch zurückgestellt.
 
 **Bedingtes Folgepaket Belegpflege:** Fehlende Dateien und fehlgeschlagene Aufträge
 sind sichtbar, und der lesende Artefakt-Audit existiert. Nach dem manuellen
