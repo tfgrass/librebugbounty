@@ -38,6 +38,14 @@
 .studio-settings-actions a { color: #b2c8e7; font-size: 12px; }
 .studio-settings-actions a:hover { color: var(--studio-blue); }
 
+.studio-settings-docs { margin-top: 28px; padding-top: 22px; border-top: 1px solid #30363e; }
+.studio-settings-docs h3 { margin: 0 0 7px; color: #e0e6ed; font-size: 15px; font-weight: 600; }
+.studio-settings-docs > p { margin: 0 0 15px; color: var(--studio-muted); font-size: 12px; line-height: 1.6; }
+.studio-settings-docs nav { display: grid; gap: 6px; }
+.studio-settings-docs a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 11px; border: 1px solid #3c4858; border-radius: 5px; color: #bfd8fa; font-size: 12px; }
+.studio-settings-docs a:hover { background: #253143; border-color: #607ca1; }
+.studio-settings-docs a span { color: var(--studio-muted); }
+
 .studio-about-panel { scroll-margin-top: 18px; }
 .studio-about-hero { display: grid; justify-items: center; gap: 12px; padding: 4px 0 20px; border-bottom: 1px solid #30363e; text-align: center; }
 .studio-about-logo { color: var(--studio-blue); }

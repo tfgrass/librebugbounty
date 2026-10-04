@@ -76,8 +76,12 @@ final class StudioSettingsTest extends DatabaseTestCase
         foreach ($xpath->query('//*[@data-release-notes]//li') as $highlight) {
             self::assertNotSame('', trim($highlight->textContent));
         }
-        foreach ([AppInfo::HOMEPAGE, AppInfo::OPENBUGBOUNTY_URL, AppInfo::REPOSITORY] as $href) {
+        foreach ([AppInfo::HOMEPAGE, AppInfo::FLICKR_URL, AppInfo::OPENBUGBOUNTY_URL, AppInfo::REPOSITORY] as $href) {
             self::assertSame(1, $xpath->query('//*[@id="about"]//a[@href="'.$href.'" and @target="_blank" and contains(@rel,"noopener")]')->length);
+        }
+        self::assertSame(1, $xpath->query('//*[@id="about"]//a[@href="/docs/changelog" and not(@target)]')->length);
+        foreach (['usage', 'readme', 'backup', 'changelog', 'roadmap'] as $page) {
+            self::assertSame(1, $xpath->query('//*[@data-documentation-links]//a[@href="/docs/'.$page.'"]')->length);
         }
         self::assertStringContainsString(AppInfo::LICENSE, $xpath->evaluate('string(//*[@id="about"])'));
         self::assertStringContainsString('Proudly vibe-coded.', $xpath->evaluate('string(//*[@id="about"])'));

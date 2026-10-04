@@ -91,8 +91,8 @@ Successful response fields include:
 ```
 
 `captureMethod` is `desktop-dialog` when the image contains a still-open dialog
-and `desktop-page` otherwise. Invalid input returns HTTP 400; capture errors return
-HTTP 500 with `errorMessage`.
+and `desktop-page` otherwise. A missing URL returns HTTP 400; processing and
+capture errors return HTTP 500 with `errorMessage`.
 
 ## Technical recheck endpoint
 

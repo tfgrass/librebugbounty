@@ -31,7 +31,7 @@
           <div>
             <p class="studio-eyebrow"><?= $escape($t('Arbeitsumgebung')) ?></p>
             <h1><?= $escape($t('Einstellungen & Info')) ?></h1>
-            <p><?= $escape($t('Wenige globale Vorgaben für Erfassung und Screenshot-Aufnahmen.')) ?></p>
+            <p><?= $escape($t('Vorgaben, Dokumentation und Informationen zur Anwendung.')) ?></p>
           </div>
         </header>
 
@@ -73,6 +73,17 @@
                 <a href="/"><?= $escape($t('Zum Eingang')) ?></a>
               </div>
             </form>
+            <section class="studio-settings-docs" aria-labelledby="settings-docs-title" data-documentation-links>
+              <h3 id="settings-docs-title"><?= $escape($t('Dokumentation')) ?></h3>
+              <p><?= $escape($t('Direkt hier lesen, auch ohne Internet. Die Dokumentation ist auf Englisch.')) ?></p>
+              <nav aria-label="<?= $escape($t('Dokumentation')) ?>">
+                <a href="/docs/usage"><?= $escape($t('Benutzerhandbuch')) ?> <span aria-hidden="true">→</span></a>
+                <a href="/docs/readme"><?= $escape($t('Installation & Upgrade')) ?> <span aria-hidden="true">→</span></a>
+                <a href="/docs/backup"><?= $escape($t('Sicherung & Wiederherstellung')) ?> <span aria-hidden="true">→</span></a>
+                <a href="/docs/changelog">Changelog <span aria-hidden="true">→</span></a>
+                <a href="/docs/roadmap">Roadmap <span aria-hidden="true">→</span></a>
+              </nav>
+            </section>
           </section>
 
           <section class="studio-settings-panel studio-about-panel" id="about" aria-labelledby="about-title">
@@ -96,22 +107,23 @@
               <summary><?= $escape($t('Versionsgeschichte')) ?></summary>
               <div class="studio-about-history-entries">
                 <article data-release-entry>
-                  <h3>v1.0.0 <span aria-hidden="true">·</span> Scriptor</h3>
-                  <p><?= $escape($t('Die Idee eines lokalen OpenBugBounty-Workflows wurde zum ersten nutzbaren Prototyp: URL-Erfassung, Browserprüfung und Bildbelege als Grundlage für die manuelle Sichtung.')) ?></p>
+                  <h3>v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></h3>
+                  <p><?= $escape($t('Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.')) ?></p>
                 </article>
                 <article data-release-entry>
                   <h3>v1.1.0 <span aria-hidden="true">·</span> Scriptor Quo</h3>
                   <p><?= $escape($t('Aus der täglichen Nutzung entstanden bessere Prüf- und Screenshot-Abläufe, Kontaktmarkierungen und Domain-Exporte. Schrittweise Verfeinerungen des bestehenden Workflows.')) ?></p>
                 </article>
                 <article data-release-entry>
-                  <h3>v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></h3>
-                  <p><?= $escape($t('Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.')) ?></p>
+                  <h3>v1.0.0 <span aria-hidden="true">·</span> Scriptor</h3>
+                  <p><?= $escape($t('Die Idee eines lokalen OpenBugBounty-Workflows wurde zum ersten nutzbaren Prototyp: URL-Erfassung, Browserprüfung und Bildbelege als Grundlage für die manuelle Sichtung.')) ?></p>
                 </article>
               </div>
             </details>
-            <p class="studio-about-changelog"><a href="<?= $escape($app['changelogUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Vollständigen Changelog lesen')) ?> <span aria-hidden="true">↗</span></a></p>
+            <p class="studio-about-changelog"><a href="/docs/changelog"><?= $escape($t('Vollständigen Changelog lesen')) ?> <span aria-hidden="true">→</span></a></p>
             <dl class="studio-about-facts">
               <div><dt><?= $escape($t('Autor')) ?></dt><dd><a href="<?= $escape($app['homepage']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['author']) ?> <span aria-hidden="true">↗</span></a></dd></div>
+              <div><dt>Flickr</dt><dd><a href="<?= $escape($app['flickrUrl']) ?>" target="_blank" rel="noopener noreferrer">tkoschka <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt>OpenBugBounty</dt><dd><a href="<?= $escape($app['profileUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['profile']) ?> <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt><?= $escape($t('Quellcode')) ?></dt><dd><a href="<?= $escape($app['repository']) ?>" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt><?= $escape($t('Lizenz')) ?></dt><dd><code><?= $escape($app['license']) ?></code></dd></div>

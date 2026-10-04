@@ -40,7 +40,8 @@ explore the project history in About:
   contradictions, inconclusive results, and errors
 - Searchable case inventory, case notes, evidence, rechecks, and screenshot
   actions
-- Daily, weekly, monthly, yearly, and all-time activity statistics
+- Weekly, monthly, yearly, all-time, and custom activity statistics, grouped by
+  day, week, or month
 - Configurable JSON exports and self-contained ZIP report packages with selected
   evidence
 - Local backups that keep the database and artifact tree together
@@ -67,6 +68,27 @@ the SQLite schema, and starts the supervised screenshot worker. Repeated starts
 preserve existing data. The database and evidence live below `storage/`, which
 is ignored by Git.
 
+## Upgrade an existing workspace
+
+1. Create and verify a [complete backup](BACKUP.md) before upgrading. Keep the
+   database and artifact tree from the same snapshot together.
+2. Run `ddev stop` to stop the application and its background workers.
+3. Update the checkout to the published release you want to use, preserving
+   any local configuration changes. Release versions are listed in the
+   [changelog](CHANGELOG.md).
+4. Remove the generated `playwright-worker/node_modules/` directory, if present,
+   while DDEV is stopped. The next start recreates it from the committed lockfile
+   so the worker dependencies match the release's browser image.
+5. Run `ddev start`. Startup installs the locked Composer and worker
+   dependencies, applies pending database migrations, and starts the workers.
+6. Check that your existing cases, notes, assessments, and images are available.
+
+An upgrade preserves the stored workspace; it does not require a database
+reset. If you need to return to the earlier application version, use the
+matching pre-upgrade database and artifact snapshot in a separate recovery
+directory. Follow [the recovery instructions](BACKUP.md#restore-into-a-new-directory)
+instead of pointing older application code at an upgraded database.
+
 ## First use
 
 1. Add a candidate URL on **Intake**. Its screenshot is queued in the background.
@@ -86,6 +108,11 @@ languages; your browser remembers the choice across pages and visits.
 Read the [user guide](USAGE.md) for review controls, export choices, settings,
 and troubleshooting. The [changelog](CHANGELOG.md) covers the first Scriptor
 prototype, the Scriptor Quo refinements, and the new Moneta workspace.
+These English documents are also available inside the application under
+**Settings & info → Documentation**, including when you are offline.
+
+The [roadmap](ROADMAP.md) outlines future directions for database portability,
+email workflows, and optional AI assistance.
 
 ## Backup
 

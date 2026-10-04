@@ -24,14 +24,17 @@ branch.
 - Retained screenshot and observation history, searchable case inventory,
   private notes, and explicit recheck, screenshot, archive, and deletion actions.
 - Activity statistics for reported intake, contacted cases, and manually fixed
-  cases on one shared chart, with daily to all-time views, a yearly activity
-  calendar, and domain-suffix breakdowns.
+  cases on one shared chart, with weekly, monthly, yearly, all-time, and custom
+  periods, day/week/month grouping, a yearly activity calendar, and domain-suffix
+  breakdowns.
 - Configurable exports: compact URL lists, current case-state JSON, and ZIP
   report packages with selected image evidence. Private notes are included only
   when explicitly selected.
 - Settings for the intake marker and browser time limit, plus version,
   release history, author, and license information in About.
 - English UI by default with a persistent German/English switcher in the header.
+- English documentation available inside the application, including offline
+  access to the user guide, installation, backup, changelog, and roadmap.
 - First-use guidance for an empty database, an archived inventory, and filters
   without results.
 - Local backup and restoration tools, current English user documentation, and

@@ -88,10 +88,10 @@ final class SettingsController
             'releaseName' => AppInfo::RELEASE_NAME,
             'author' => AppInfo::AUTHOR,
             'homepage' => AppInfo::HOMEPAGE,
+            'flickrUrl' => AppInfo::FLICKR_URL,
             'profile' => AppInfo::OPENBUGBOUNTY_PROFILE,
             'profileUrl' => AppInfo::OPENBUGBOUNTY_URL,
             'repository' => AppInfo::REPOSITORY,
-            'changelogUrl' => AppInfo::CHANGELOG_URL,
             'license' => AppInfo::LICENSE,
         ];
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');

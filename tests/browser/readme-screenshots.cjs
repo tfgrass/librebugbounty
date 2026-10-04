@@ -234,8 +234,8 @@ async function main() {
     }
     const changelog = about.locator('.studio-about-changelog a');
     assert.equal(await changelog.count(), 1);
-    assert.match(await changelog.getAttribute('href'), /^https:\/\/github\.com\/tfgrass\/librebugbounty\/blob\/[^/]+\/CHANGELOG\.md$/);
-    assert.equal(await changelog.getAttribute('target'), '_blank');
+    assert.equal(await changelog.getAttribute('href'), '/docs/changelog');
+    assert.equal(await changelog.getAttribute('target'), null);
     assert.ok((await changelog.getAttribute('rel')).includes('noopener'));
     assert.equal(await about.locator('a[href="https://grassmann-it.de/"]').count(), 1);
     assert.equal(await about.locator('a[href="https://www.openbugbounty.org/researchers/grassmann-it/"]').count(), 1);

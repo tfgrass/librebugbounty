@@ -774,4 +774,12 @@ return [
     'Aus der täglichen Nutzung entstanden bessere Prüf- und Screenshot-Abläufe, Kontaktmarkierungen und Domain-Exporte. Schrittweise Verfeinerungen des bestehenden Workflows.' => 'Everyday use brought better verification and screenshot workflows, contact markers, and domain exports. Step-by-step refinements of the existing workflow.',
     'Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.' => 'The prototype becomes a complete local workspace: fast intake, image-first review, activity statistics, and configurable exports.',
     'Vollständigen Changelog lesen' => 'Read the full changelog',
+    'Vorgaben, Dokumentation und Informationen zur Anwendung.' => 'Preferences, documentation, and application information.',
+    'Dokumentation' => 'Documentation',
+    'Direkt hier lesen, auch ohne Internet. Die Dokumentation ist auf Englisch.' => 'Read here, even offline. Documentation is in English.',
+    'Benutzerhandbuch' => 'User guide',
+    'Installation & Upgrade' => 'Installation & upgrade',
+    'Sicherung & Wiederherstellung' => 'Backup & recovery',
+    'Zurück zu Einstellungen' => 'Back to settings',
+    'Englische Dokumentation' => 'English documentation',
 ];

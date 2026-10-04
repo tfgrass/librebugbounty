@@ -163,9 +163,21 @@ Open the gear icon for **Settings & info**:
   time and keeps the worker occupied longer.
 
 The About section shows the version and release name, release highlights,
-credits, project links, and license. Expand **Release history** for the story
-from Scriptor through Scriptor Quo to Moneta. The
+credits, project links, and license. Expand **Release history** to browse
+Moneta, Scriptor Quo, and Scriptor, with the newest release first. The
 [changelog](CHANGELOG.md) lists the changes in each release.
+
+### Local documentation
+
+The **Documentation** links in Settings & info open this guide, installation and
+upgrade instructions, backup and recovery guidance, the changelog, and the
+roadmap inside the application. These documents and their screenshots are
+available without an internet connection. Links to external websites still
+require internet access.
+
+Documentation stays in English when you switch the interface to German.
+Use the document navigation to move between guides, or **Back to settings** to
+return to your preferences.
 
 ### Language
 

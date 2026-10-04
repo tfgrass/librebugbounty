@@ -100,6 +100,27 @@ application, launch workers, or apply migrations. Using a restored copy as an
 installation requires an explicit configuration change to `DATABASE_URL` and
 `EVIDENCE_STORAGE_DIR`; keep both pointed at the same restored snapshot.
 
+### Use the restored copy with DDEV
+
+Run `ddev stop` before switching storage. In `.ddev/config.yaml`, update the two
+existing entries under `web_environment` to point at the restored working copy.
+For the `storage/recovery-check` example above, use these container paths:
+
+```yaml
+web_environment:
+  - DATABASE_URL=sqlite:////var/www/html/storage/recovery-check/database.sqlite
+  - EVIDENCE_STORAGE_DIR=/var/www/html/storage/recovery-check/artifacts
+```
+
+Keep the other `web_environment` entries in place. DDEV explicitly supplies
+these variables, so changing `.env` alone does not switch this installation.
+
+Use the application version that matches the snapshot when rehearsing a
+rollback, then run `ddev start`. Normal startup applies pending migrations and
+starts background workers. Check your cases and images before continuing work.
+The restored directory is now a working copy and may change; keep the original
+verified snapshot as your recovery source.
+
 ## Interrupted backups
 
 An ordinary error, Ctrl+C, or SIGTERM runs the container-resume cleanup. If Docker

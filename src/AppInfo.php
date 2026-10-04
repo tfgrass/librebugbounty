@@ -9,6 +9,7 @@ final class AppInfo
     public const RELEASE_NAME = 'Moneta';
     public const AUTHOR = 'Tom Graßmann IT+Media';
     public const HOMEPAGE = 'https://grassmann-it.de/';
+    public const FLICKR_URL = 'https://flickr.com/photos/tkoschka/';
     public const OPENBUGBOUNTY_PROFILE = 'grassmann-it';
     public const OPENBUGBOUNTY_URL = 'https://www.openbugbounty.org/researchers/grassmann-it/';
     public const REPOSITORY = 'https://github.com/tfgrass/librebugbounty';
