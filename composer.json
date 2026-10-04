@@ -1,21 +1,38 @@
 {
   "name": "librebugbounty/librebugbounty",
   "description": "LibreBugBounty is a local OpenBugBounty-style alternative for reflected XSS intake, browser verification, and screenshots.",
+  "homepage": "https://github.com/tfgrass/librebugbounty",
   "type": "project",
-  "license": "proprietary",
+  "license": "GPL-3.0-or-later",
+  "authors": [
+    {
+      "name": "Tom Graßmann IT+Media",
+      "homepage": "https://grassmann-it.de/",
+      "role": "Developer"
+    }
+  ],
+  "support": {
+    "issues": "https://github.com/tfgrass/librebugbounty/issues",
+    "source": "https://github.com/tfgrass/librebugbounty"
+  },
   "require": {
     "php": "^8.3",
+    "ext-pdo_sqlite": "*",
+    "ext-zip": "*",
     "doctrine/doctrine-bundle": "^2.13",
     "doctrine/doctrine-migrations-bundle": "^3.4",
     "doctrine/orm": "^3.3",
-    "symfony/console": "^7.2",
+    "league/commonmark": "^2.7",
     "symfony/cache": "^7.2",
+    "symfony/console": "^7.2",
     "symfony/dependency-injection": "^7.2",
     "symfony/doctrine-bridge": "^7.2",
     "symfony/dotenv": "^7.2",
-    "symfony/framework-bundle": "^7.2",
     "symfony/filesystem": "^7.2",
+    "symfony/framework-bundle": "^7.2",
+    "symfony/html-sanitizer": "^7.2",
     "symfony/http-client": "^7.2",
+    "symfony/security-csrf": "^7.2",
     "symfony/string": "^7.2",
     "symfony/uid": "^7.2",
     "symfony/validator": "^7.2",

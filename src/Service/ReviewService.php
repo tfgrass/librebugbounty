@@ -56,6 +56,10 @@ final class ReviewService
 
     private function shouldReview(Finding $finding): bool
     {
+        if ($finding->isDiscarded()) {
+            return false;
+        }
+
         if (\in_array($finding->getReviewState(), [ReviewState::MANUAL_CHECKING, ReviewState::CONFIRMED_FIXED], true)) {
             return false;
         }
@@ -81,8 +85,15 @@ final class ReviewService
         bool $headless = true,
     ): void
     {
+        if ($this->entityManager->contains($finding)) {
+            $this->entityManager->refresh($finding);
+        }
+        if ($finding->isDiscarded()) {
+            return;
+        }
+
         $wasManualCheck = $finding->getReviewState() === ReviewState::MANUAL_CHECKING;
-        $noStatusUpdate = $wasManualCheck;
+        $preserveAssessment = $wasManualCheck || $finding->hasProtectedAssessment();
 
         $chromiumRequest = new \App\Dto\BrowserRetestRequest(
             url: $finding->getUrl(),
@@ -107,10 +118,7 @@ final class ReviewService
         $this->retestService->recordBrowserResult($finding, $chromium, $captureScreenshots, true);
         $this->retestService->recordBrowserResult($finding, $firefox, $captureScreenshots, true);
 
-        if ($wasManualCheck) {
-            $finding->setReviewState(ReviewState::MANUAL_CHECKING);
-            $this->entityManager->flush();
-
+        if ($preserveAssessment || $finding->hasProtectedAssessment() || $finding->isDiscarded()) {
             return;
         }
 

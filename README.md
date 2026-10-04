@@ -1,103 +1,186 @@
-# LibreBugBounty
+# LibreBugBounty 2.0.0 “Moneta”
 
-LibreBugBounty is a local, open-source OpenBugBounty alternative for reflected XSS triage.
-It focuses on URL intake, automated browser verification, screenshot evidence, and a compact review workflow.
-Later CRM features such as notification emails and a public interface can be added on top of this base.
+**A local-first OpenBugBounty alternative for reflected XSS research.**
 
-## Screenshots
+LibreBugBounty turns a stream of candidate URLs into a reviewable local case
+file. It stores intake durably, captures browser evidence in the background,
+keeps technical observations separate from your manual decision, and exports
+the result when you are ready to report it.
 
-<a href="docs/screenshots/overview-redacted.png">
-  <img src="docs/screenshots/overview-redacted.png" alt="LibreBugBounty overview screenshot" width="49%" />
-</a>
-<a href="docs/screenshots/detail-redacted.png">
-  <img src="docs/screenshots/detail-redacted.png" alt="LibreBugBounty detail screenshot" width="49%" />
-</a>
+The application runs on your own machine and is designed for a focused,
+single-user workflow. LibreBugBounty is independent of and not affiliated with
+OpenBugBounty.
 
-## Setup
+LibreBugBounty currently concentrates on reflected XSS triage. It does not send
+disclosure emails or submit reports for you.
+
+## Quick start
+
+You need [Docker](https://docs.docker.com/engine/install/),
+[DDEV](https://ddev.readthedocs.io/en/stable/users/install/ddev-installation/),
+and Git.
 
 ```bash
+git clone https://github.com/tfgrass/librebugbounty.git
+cd librebugbounty
 ddev start
-ddev composer install
-```
-
-The app stores its SQLite database and screenshots under `storage/` on the host machine.
-That directory is intentionally ignored by Git.
-
-If you start from a fresh or imported database, apply migrations once:
-
-```bash
-ddev exec php bin/console app:db:init
-```
-
-Open the UI:
-
-```bash
 ddev launch
 ```
 
-## Intake
+`ddev start` installs the locked Composer dependencies, initializes or migrates
+the SQLite schema, and starts the supervised screenshot worker. Repeated starts
+preserve existing data. The database and evidence live below `storage/`, which
+is ignored by Git.
 
-Create a finding by submitting a URL in the web UI.
-The app derives the domain automatically, runs browser verification, and stores screenshot evidence when available.
+## First use
 
-## Review Workflow
+Follow the workflow below. Each screenshot opens at full size.
 
-Run the screenshot-first review flow manually or from cron:
+### Capture URLs
+
+**Intake** saves candidate URLs to SQLite, detects duplicates, and queues
+Chromium screenshots in the background. Cases are stored before browser work
+begins, and earlier evidence stays available.
+
+<p>
+  <a href="docs/screenshots/intake.png"><img src="docs/screenshots/intake.png" alt="Intake saves candidate URLs and queues their screenshots" width="680"></a>
+</p>
+
+### Review screenshots
+
+**Review** puts the evidence first: the image fits the window, details scroll
+separately, and the arrow-key controls stay visible. Choose **Vulnerable** or
+**Not vulnerable**, skip, open the stored PoC URL, or go back and reset a decision.
+An optional decision pause helps prevent accidental classifications.
+
+<p>
+  <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="Review shows the stored screenshot beside details and keyboard actions" width="680"></a>
+</p>
+
+### Manage cases
+
+**Inventory** searches domains, titles, and URLs. Filter cases, record private
+notes and completed contacts, and request rechecks or new screenshots.
+Opening a case never starts browser work.
+
+<p>
+  <a href="docs/screenshots/inventory.png"><img src="docs/screenshots/inventory.png" alt="Inventory lists cases with search, filters, and their current state" width="680"></a>
+</p>
+
+Case details keep your manual assessment separate from technical observations,
+including later contradictions, inconclusive results, and errors. Earlier
+images and judgments remain in the history.
+[View the case-detail screenshot](docs/screenshots/finding-detail.png).
+
+### Follow activity
+
+**Statistics** opens with the **last three months**, through today. Follow
+**Reported**, **Contacted**, and **Fixed**, or choose a week, month, year, all-time,
+or custom period. Group activity by day, week, or month, then open the matching
+cases from the chart or calendar.
+
+<p>
+  <a href="docs/screenshots/statistics.png"><img src="docs/screenshots/statistics.png" alt="Statistics compares reported, contacted, and fixed cases over time" width="680"></a>
+</p>
+
+### Prepare reports
+
+**Export** creates a compact URL list, current case-state JSON, or a
+self-contained ZIP report. The default is **Report with evidence**: a readable
+report, structured domains and cases, and the latest stored screenshot per
+case. Choose the contents and image selection before downloading; private
+notes are included only when explicitly selected.
+
+<p>
+  <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="Export previews a ZIP report with selected case data and screenshots" width="680"></a>
+</p>
+
+### Choose defaults and find help
+
+**Settings & info** saves your preferred inventory page size, export profile,
+and report screenshot selection, alongside the intake marker, browser timeout,
+and review pause. Explicit choices on the workspace pages take precedence.
+[View the Settings & info screenshot](docs/screenshots/about.png).
+
+The interface starts in English. Choose **DE** or **EN** in the header; your
+browser remembers the language across pages and visits. The [user guide](USAGE.md)
+covers controls, settings, and troubleshooting. The guide, installation,
+backup instructions, [changelog](CHANGELOG.md), and [roadmap](ROADMAP.md) are
+also available offline under **Settings & info → Documentation**.
+
+## Upgrade an existing workspace
+
+1. Create and verify a [complete backup](BACKUP.md) before upgrading. Keep the
+   database and artifact tree from the same snapshot together.
+2. Run `ddev stop` to stop the application and its background workers.
+3. Update the checkout to the published release you want to use, preserving
+   any local configuration changes. Release versions are listed in the
+   [changelog](CHANGELOG.md).
+4. If your existing installation uses custom database or artifact paths, carry
+   both into `DATABASE_URL` and `EVIDENCE_STORAGE_DIR` under `web_environment` in
+   `.ddev/config.yaml`, using paths inside the container. Moneta explicitly sets
+   these variables there, so previous `.env` values alone no longer select your
+   storage. Keep the database and artifact tree from the same workspace together.
+   The backup tool needs their corresponding host paths; see
+   [custom installation paths](BACKUP.md#custom-installation-paths).
+5. Remove the generated `playwright-worker/node_modules/` directory, if present,
+   while DDEV is stopped. The next start recreates it from the committed lockfile
+   so the worker dependencies match the release's browser image.
+6. Run `ddev start`. Startup installs the locked Composer and worker
+   dependencies, applies pending database migrations, and starts the workers.
+7. Check that your existing cases, notes, assessments, and images are available.
+
+An upgrade preserves the stored workspace; it does not require a database
+reset. If you need to return to the earlier application version, use the
+matching pre-upgrade database and artifact snapshot in a separate recovery
+directory. Follow [the recovery instructions](BACKUP.md#restore-into-a-new-directory)
+instead of pointing older application code at an upgraded database.
+
+## Backup
+
+Create and validate a private local snapshot with Python 3.11 or newer:
 
 ```bash
-ddev exec php bin/console app:review:scan
+python3 bin/backup-local.py create
 ```
 
-Run the full serial maintenance pass, which first reviews pending findings and then fills in missing screenshots:
+The command briefly pauses this project's DDEV containers, copies SQLite and
+the artifact tree consistently, resumes the project, and verifies a separate
+restoration. It never overwrites the live database. By default snapshots are
+written to `~/.local/share/librebugbounty/backups/`.
 
-```bash
-ddev exec php bin/console app:review:refresh
-```
+See [backup and recovery](BACKUP.md) for verification, custom storage paths, and
+restoring into a new directory without replacing existing data. A JSON or ZIP
+export is a reporting format; use a backup to preserve the complete case history.
 
-Generate screenshots only for findings that are still missing them:
+## Operating boundary
 
-```bash
-ddev exec php bin/console app:screenshot:missing
-```
+LibreBugBounty has no login or multi-user permission model. Keep it on a trusted
+local machine and do not publish its web or Playwright services to the internet.
+Only test systems for which you have authorization.
 
-Preview which findings would be processed:
-
-```bash
-ddev exec php bin/console app:review:scan --dry-run
-```
-
-The command processes findings that still need attention, runs Chromium and Firefox checks, and does so serially.
-
-The overview is searchable by domain and status, and paginates after 50 findings per page.
-
-## Reset
-
-Reset only verification state while keeping the findings themselves:
-
-```bash
-ddev exec php bin/console app:reset:verification --force
-```
-
-For a full local MVP wipe:
-
-```bash
-ddev exec php bin/console app:reset:all --force
-```
-
-The verification reset clears screenshots, evidence records, retest runs, and review state, then returns findings to `new`.
-The full reset does the same and is the more destructive maintenance command for a completely clean slate.
-
-## What You Get
-
-- URL-only intake
-- automatic domain derivation
-- browser verification with screenshot capture
-- manual review states for `manual_checking` and `confirmed_fixed`
-- a compact overview table with `ID`, `Domain`, `Status`, `Submitted`, and `Last Recheck`
-- host-local SQLite and artifacts under `storage/`
-
-## Tests
+## Development checks
 
 ```bash
 ddev exec vendor/bin/phpunit
+npm --prefix playwright-worker ci --no-audit --no-fund
+npm --prefix playwright-worker test
+python3 -B -m unittest discover -s tests -p 'backup_local_test.py' -v
 ```
+
+The README screenshots are generated from a disposable synthetic database and
+artifact directory. The command never reads the normal `storage/` tree:
+
+```bash
+ddev readme-screenshots
+```
+
+## Credits and license
+
+Created by [Tom Graßmann IT+Media](https://grassmann-it.de/). OpenBugBounty:
+[grassmann-it](https://www.openbugbounty.org/researchers/grassmann-it/).
+Proudly vibe-coded.
+
+LibreBugBounty is free software licensed under the
+[GNU General Public License v3.0 or later](LICENSE). Copyright © 2026 Tom
+Graßmann IT+Media.

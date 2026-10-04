@@ -5,9 +5,6 @@ namespace App\Command;
 use App\Entity\Finding;
 use App\Repository\DomainRepository;
 use App\Repository\FindingRepository;
-use App\Repository\RetestRunRepository;
-use App\Service\EvidenceService;
-use App\Service\FindingService;
 use App\Service\RetestService;
 use App\Service\ValidationService;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -17,15 +14,12 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:evidence:refresh', description: 'Clear evidence, reset findings, and rerun browser verification across selected browsers.')]
+#[AsCommand(name: 'app:evidence:refresh', description: 'Refresh browser records while preserving existing evidence, notes, and contact history.')]
 final class EvidenceRefreshCommand extends Command
 {
     public function __construct(
         private readonly DomainRepository $domains,
         private readonly FindingRepository $findings,
-        private readonly RetestRunRepository $retestRuns,
-        private readonly EvidenceService $evidenceService,
-        private readonly FindingService $findingService,
         private readonly RetestService $retestService,
         private readonly ValidationService $validation,
     ) {
@@ -67,7 +61,7 @@ final class EvidenceRefreshCommand extends Command
                 }
             }
 
-            $this->refreshFinding($finding, $browsers, $timeout, $io, true);
+            $this->refreshFinding($finding, $browsers, $timeout, $io);
             return Command::SUCCESS;
         }
 
@@ -115,10 +109,7 @@ final class EvidenceRefreshCommand extends Command
             $jobs,
         ));
 
-        $io->writeln('Clearing existing evidence, screenshots, retest runs, and reset state before rerunning...');
-        foreach ($candidates as $finding) {
-            $this->clearExistingVerificationData($finding);
-        }
+        $io->writeln('Keeping existing evidence, notes, and contact history.');
 
         $this->refreshInParallel($candidates, $browsers, $timeout, $jobs, $io);
 
@@ -250,17 +241,13 @@ final class EvidenceRefreshCommand extends Command
     /**
      * @param list<string> $browsers
      */
-    private function refreshFinding(Finding $finding, array $browsers, int $timeout, SymfonyStyle $io, bool $clearFirst = false): void
+    private function refreshFinding(Finding $finding, array $browsers, int $timeout, SymfonyStyle $io): void
     {
         $io->writeln(sprintf(
             '[worker] %s %s',
             substr($finding->getId(), 0, 8),
             $finding->getDomain()->getHostname(),
         ));
-
-        if ($clearFirst) {
-            $this->clearExistingVerificationData($finding);
-        }
 
         foreach ($browsers as $browser) {
             $run = $this->retestService->retest(
@@ -275,12 +262,5 @@ final class EvidenceRefreshCommand extends Command
 
             $io->writeln(sprintf('  -> %s (%s)', $run->getResult(), $browser));
         }
-    }
-
-    private function clearExistingVerificationData(Finding $finding): void
-    {
-        $this->evidenceService->clearEvidence($finding);
-        $this->retestRuns->deleteByFinding($finding);
-        $this->findingService->resetFreshStartState($finding);
     }
 }

@@ -17,8 +17,11 @@ final class SettingsServiceTest extends TestCase
         $service = new SettingsService($this->createEntityManager($store, $repo));
 
         self::assertSame('OPENBUGBOUNTY', $service->getDefaultPayload());
-        self::assertSame('submit', $service->getAutoVerifyMode());
         self::assertSame(45000, $service->getReviewScanTimeoutMs());
+        self::assertSame(0, $service->getReviewDecisionDelaySeconds());
+        self::assertSame('10', $service->getInventoryPageSize());
+        self::assertSame('report', $service->getExportProfile());
+        self::assertSame('latest', $service->getExportScreenshotMode());
     }
 
     public function testSettingsCanBeSavedAndReloaded(): void
@@ -28,13 +31,73 @@ final class SettingsServiceTest extends TestCase
         $service = new SettingsService($this->createEntityManager($store, $repo));
         $service->save([
             'intake.default_payload' => 'PAYLOAD123',
-            'intake.auto_verify_mode' => 'cron_only',
             'review.scan_timeout_ms' => '30000',
+            'review.decision_delay_seconds' => '3',
+            'inventory.page_size' => '25',
+            'export.default_profile' => 'state',
+            'export.screenshot_mode' => 'none',
         ]);
 
         self::assertSame('PAYLOAD123', $service->getDefaultPayload());
-        self::assertSame('cron_only', $service->getAutoVerifyMode());
         self::assertSame(30000, $service->getReviewScanTimeoutMs());
+        self::assertSame(3, $service->getReviewDecisionDelaySeconds());
+        self::assertSame('25', $service->getInventoryPageSize());
+        self::assertSame('state', $service->getExportProfile());
+        self::assertSame('none', $service->getExportScreenshotMode());
+    }
+
+    public function testScreenshotTimeoutIsAlwaysClampedToTheWorkerLimits(): void
+    {
+        $store = [];
+        $repo = null;
+        $service = new SettingsService($this->createEntityManager($store, $repo));
+
+        $service->save(['review.scan_timeout_ms' => '999']);
+        self::assertSame(1000, $service->getReviewScanTimeoutMs());
+        $service->save(['review.scan_timeout_ms' => '120001']);
+        self::assertSame(120000, $service->getReviewScanTimeoutMs());
+    }
+
+    public function testDecisionPauseOnlyUsesSupportedDurations(): void
+    {
+        $store = [];
+        $repo = null;
+        $service = new SettingsService($this->createEntityManager($store, $repo));
+
+        foreach (['0', '3', '5'] as $value) {
+            $service->save(['review.decision_delay_seconds' => $value]);
+            self::assertSame((int) $value, $service->getReviewDecisionDelaySeconds());
+        }
+        foreach ([null, '', '2', '-1', '3.5', '3e0', '03', 'invalid'] as $value) {
+            $service->save(['review.decision_delay_seconds' => $value]);
+            self::assertSame(0, $service->getReviewDecisionDelaySeconds());
+        }
+    }
+
+    public function testInvalidStoredPreferencesFallBackWithoutRepairingTheDatabase(): void
+    {
+        $store = [];
+        $repo = null;
+        $service = new SettingsService($this->createEntityManager($store, $repo));
+        foreach ([
+            [null, null, null],
+            ['', '', ''],
+            ['all', 'zip', 'assessment'],
+            ['025', 'REPORT', 'LATEST'],
+            ['25.0', 'unknown', 'unknown'],
+        ] as [$pageSize, $profile, $screenshots]) {
+            $service->save([
+                'inventory.page_size' => $pageSize,
+                'export.default_profile' => $profile,
+                'export.screenshot_mode' => $screenshots,
+            ]);
+            self::assertSame('10', $service->getInventoryPageSize());
+            self::assertSame('report', $service->getExportProfile());
+            self::assertSame('latest', $service->getExportScreenshotMode());
+            self::assertSame($pageSize, $store['inventory.page_size']->getValue());
+            self::assertSame($profile, $store['export.default_profile']->getValue());
+            self::assertSame($screenshots, $store['export.screenshot_mode']->getValue());
+        }
     }
 
     /**

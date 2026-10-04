@@ -8,6 +8,7 @@ final class ResetResult
         public int $findingsReset = 0,
         public int $evidenceDeleted = 0,
         public int $retestRunsDeleted = 0,
+        public int $screenshotJobsDeleted = 0,
         public int $artifactDirectoriesRemoved = 0,
     ) {
     }

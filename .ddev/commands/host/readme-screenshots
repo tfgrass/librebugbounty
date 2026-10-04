@@ -1,99 +1,112 @@
 #!/bin/sh
+## Description: Capture README images from a disposable English demo database
+## Usage: readme-screenshots
+## Example: "ddev readme-screenshots"
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-PROJECT_NAME=$(awk '/^name:/ { print $2; exit }' "$ROOT_DIR/.ddev/config.yaml")
-BASE_URL="${BASE_URL:-https://${PROJECT_NAME}.ddev.site}"
-CONTAINER="ddev-${PROJECT_NAME}-playwright"
-OUTPUT_DIR="/var/www/html/docs/screenshots"
-DB_PATH="$ROOT_DIR/storage/database/app.sqlite"
+PROJECT_NAME=${DDEV_SITENAME:-$(awk '/^name:/ { print $2; exit }' "$ROOT_DIR/.ddev/config.yaml")}
+case "$PROJECT_NAME" in
+  ''|*[!a-zA-Z0-9_-]*)
+    echo "Could not determine a safe DDEV project name." >&2
+    exit 1
+    ;;
+esac
 
-DETAIL_FINDING_ID=$(sqlite3 -noheader "$DB_PATH" "SELECT f.id
-FROM finding f
-JOIN retest_run r ON r.finding_id = f.id AND r.screenshot_path IS NOT NULL
-WHERE f.status IN ('new', 'verified', 'reported')
-  AND f.review_state IS NULL
-ORDER BY CASE f.status WHEN 'verified' THEN 0 WHEN 'new' THEN 1 WHEN 'reported' THEN 2 ELSE 3 END, r.started_at DESC
-LIMIT 1;")
-
-if [ -z "$DETAIL_FINDING_ID" ]; then
-  echo "No vulnerable finding with a retest screenshot found."
+WEB_CONTAINER="ddev-${PROJECT_NAME}-web"
+PLAYWRIGHT_CONTAINER="ddev-${PROJECT_NAME}-playwright"
+if ! docker inspect "$WEB_CONTAINER" "$PLAYWRIGHT_CONTAINER" >/dev/null 2>&1; then
+  echo "The DDEV web and Playwright containers must be running. Run: ddev start" >&2
   exit 1
 fi
 
-docker exec -i -w /var/www/html/playwright-worker "$CONTAINER" env \
-  BASE_URL="$BASE_URL" \
-  OUTPUT_DIR="$OUTPUT_DIR" \
-  DETAIL_FINDING_ID="$DETAIL_FINDING_ID" \
-  node - <<'NODE'
-const fs = require('fs');
-const path = require('path');
-const { chromium } = require('playwright');
+DEMO_ID="$(date +%s)-$$"
+DEMO_ROOT="/tmp/librebugbounty-readme-demo-${DEMO_ID}"
+PORT=${README_DEMO_PORT:-$((18000 + ($$ % 10000)))}
+case "$PORT" in
+  ''|*[!0-9]*)
+    echo "README_DEMO_PORT must be a numeric container port." >&2
+    exit 1
+    ;;
+esac
+if [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+  echo "README_DEMO_PORT must be between 1024 and 65535." >&2
+  exit 1
+fi
 
-const baseUrl = process.env.BASE_URL || 'https://librebugbounty.ddev.site';
-const outputDir = process.env.OUTPUT_DIR || '/var/www/html/docs/screenshots';
-const detailFindingId = process.env.DETAIL_FINDING_ID || '';
-const overviewPath = path.join(outputDir, 'overview-redacted.png');
-const detailPath = path.join(outputDir, 'detail-redacted.png');
+BASE_URL="http://web:${PORT}"
+TEMP_OUTPUT="/var/www/html/var/readme-screenshots-${DEMO_ID}"
+FINAL_OUTPUT="/var/www/html/docs/screenshots"
+HOST_UID=$(id -u)
+HOST_GID=$(id -g)
+ABOUT_PREVIEW_OUTPUT=${README_ABOUT_PREVIEW_OUTPUT:-/tmp/librebugbounty-moneta-about.png}
 
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
+cleanup() {
+  docker exec "$WEB_CONTAINER" sh -c '
+    test -f "$1/server.pid" || exit 0
+    server_pid=$(cat "$1/server.pid")
+    case "$server_pid" in ""|*[!0-9]*) exit 0 ;; esac
+    test -r "/proc/$server_pid/cmdline" || exit 0
+    command_line=$(tr "\000" " " <"/proc/$server_pid/cmdline")
+    case "$command_line" in
+      *"0.0.0.0:$2"*"tests/Support/readme_demo_router.php"*) kill "$server_pid" || true ;;
+    esac
+  ' sh "$DEMO_ROOT" "$PORT" >/dev/null 2>&1 || true
+  docker exec -u root "$WEB_CONTAINER" rm -rf "$DEMO_ROOT" "$TEMP_OUTPUT" >/dev/null 2>&1 || true
 }
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
 
-async function redact(page) {
-  await page.addStyleTag({
-    content: `
-      html, body { background: #f8f4ec !important; }
-      .row-link code,
-      .detail-list dd,
-      .shot-card img,
-      .shot-card figcaption code,
-      table tbody td code {
-        filter: blur(8px) !important;
-        color: transparent !important;
-        text-shadow: 0 0 12px rgba(31, 26, 22, 0.7) !important;
-        user-select: none !important;
-      }
-      .shot-card {
-        position: relative !important;
-        overflow: hidden !important;
-      }
-      .shot-card img {
-        -webkit-mask-image: linear-gradient(to bottom, transparent 0%, transparent 10%, black 10%, black 100%) !important;
-        mask-image: linear-gradient(to bottom, transparent 0%, transparent 10%, black 10%, black 100%) !important;
-      }
-      .panel { box-shadow: none !important; }
-    `,
-  });
-}
+printf 'Creating a disposable English demo database ...\n'
+docker exec -w /var/www/html -e README_DEMO_ROOT="$DEMO_ROOT" "$WEB_CONTAINER" \
+  php tests/Support/readme_demo_router.php init
 
-(async () => {
-  ensureDir(outputDir);
+docker exec -d -w /var/www/html "$WEB_CONTAINER" sh -c \
+  'echo $$ > "$1/server.pid"; exec env README_DEMO_ROOT="$1" php -S "0.0.0.0:$2" -t public tests/Support/readme_demo_router.php >"$1/server.log" 2>&1' \
+  sh "$DEMO_ROOT" "$PORT"
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    ignoreHTTPSErrors: true,
-    viewport: { width: 1440, height: 900 },
-  });
-  const page = await context.newPage();
+ready=0
+attempt=0
+while [ "$attempt" -lt 50 ]; do
+  if docker exec "$PLAYWRIGHT_CONTAINER" node -e \
+    'fetch(process.argv[1]).then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))' \
+    "$BASE_URL/__readme_demo_fixture" >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 0.2
+done
+if [ "$ready" -ne 1 ]; then
+  echo "The disposable README demo server did not become ready." >&2
+  docker exec "$WEB_CONTAINER" cat "$DEMO_ROOT/server.log" >&2 || true
+  exit 1
+fi
 
-  await page.goto(baseUrl, { waitUntil: 'networkidle' });
-  await redact(page);
-  await page.screenshot({ path: overviewPath, fullPage: true });
+printf 'Capturing product views from isolated fixtures ...\n'
+docker exec -w /var/www/html \
+  -e README_DEMO_BASE="$BASE_URL" \
+  -e README_SCREENSHOT_OUTPUT="$TEMP_OUTPUT" \
+  "$PLAYWRIGHT_CONTAINER" node tests/browser/readme-screenshots.cjs
 
-  if (!detailFindingId) {
-    throw new Error('No screenshot-bearing finding id available.');
-  }
+docker exec -u root "$WEB_CONTAINER" sh -c '
+  set -eu
+  source_dir=$1
+  target_dir=$2
+  mkdir -p "$target_dir"
+  for image in intake.png review.png inventory.png finding-detail.png statistics.png export.png about.png; do
+    test -s "$source_dir/$image"
+  done
+  rm -f \
+    "$target_dir/overview-redacted.png" \
+    "$target_dir/detail-redacted.png"
+  for image in intake.png review.png inventory.png finding-detail.png statistics.png export.png about.png; do
+    cp "$source_dir/$image" "$target_dir/$image"
+    chown "$3:$4" "$target_dir/$image"
+  done
+  chown "$3:$4" "$target_dir"
+' sh "$TEMP_OUTPUT" "$FINAL_OUTPUT" "$HOST_UID" "$HOST_GID"
 
-  await page.goto(new URL(`/findings/${detailFindingId}`, baseUrl).toString(), { waitUntil: 'networkidle' });
-  await redact(page);
-  await page.screenshot({ path: detailPath, fullPage: true });
-
-  await browser.close();
-  console.log(`Wrote ${overviewPath}`);
-  console.log(`Wrote ${detailPath}`);
-})().catch((error) => {
-  console.error(error.stack || error.message || String(error));
-  process.exit(1);
-});
-NODE
+docker cp "$WEB_CONTAINER:$TEMP_OUTPUT/about.png" "$ABOUT_PREVIEW_OUTPUT"
+echo "Wrote docs/screenshots/{intake,review,inventory,finding-detail,statistics,export,about}.png"
+printf 'Wrote About preview to %s\n' "$ABOUT_PREVIEW_OUTPUT"

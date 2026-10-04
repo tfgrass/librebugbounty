@@ -1,0 +1,61 @@
+.studio-doc-main { min-width: 0; min-height: 0; overflow-y: auto; scroll-behavior: smooth; }
+.studio-doc-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 38px; width: min(100%, 1180px); margin: 0 auto; padding: 34px 32px 64px; align-items: start; }
+.studio-doc-sidebar { position: sticky; top: 28px; min-width: 0; }
+.studio-doc-back { display: inline-block; margin-bottom: 22px; color: var(--studio-muted) !important; font-size: 12px; }
+.studio-doc-back:hover { color: var(--studio-blue) !important; }
+.studio-doc-sidebar h1 { margin: 0; font-size: 19px; font-weight: 600; }
+.studio-doc-language { margin: 5px 0 20px; color: var(--studio-muted); font-size: 12px; }
+.studio-doc-sidebar nav { display: grid; gap: 5px; }
+.studio-doc-sidebar nav a { padding: 10px 12px; border: 1px solid transparent; border-radius: 5px; color: #c2ccd8; font-size: 13px; }
+.studio-doc-sidebar nav a:hover { background: #20262e; color: var(--studio-text); }
+.studio-doc-sidebar nav a[aria-current="page"] { border-color: #3e526d; background: #213047; color: #c9dfff; }
+
+.studio-doc-prose { min-width: 0; padding: 30px 34px 36px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-panel); color: #cbd4df; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; }
+.studio-doc-prose > :first-child { margin-top: 0; }
+.studio-doc-prose > :last-child { margin-bottom: 0; }
+.studio-doc-prose h1,
+.studio-doc-prose h2,
+.studio-doc-prose h3,
+.studio-doc-prose h4 { color: var(--studio-text); line-height: 1.3; scroll-margin-top: 24px; }
+.studio-doc-prose h1 { margin: 0 0 22px; font-size: clamp(25px, 4vw, 33px); font-weight: 600; letter-spacing: -.6px; }
+.studio-doc-prose h2 { margin: 34px 0 14px; padding-top: 22px; border-top: 1px solid var(--studio-line); font-size: 21px; font-weight: 580; }
+.studio-doc-prose h3 { margin: 26px 0 12px; font-size: 17px; font-weight: 600; }
+.studio-doc-prose p { margin: 14px 0; }
+.studio-doc-prose a { color: #a9ceff; text-decoration: underline; text-decoration-color: #647e9f; text-underline-offset: 3px; }
+.studio-doc-prose a:hover { color: #d4e7ff; }
+.studio-doc-prose .heading-permalink { padding-right: 7px; color: var(--studio-muted); text-decoration: none; font-size: .7em; }
+.studio-doc-prose strong { color: #e5ecf5; font-weight: 600; }
+.studio-doc-prose ul,
+.studio-doc-prose ol { padding-left: 24px; }
+.studio-doc-prose li { margin: 7px 0; }
+.studio-doc-prose li::marker { color: var(--studio-blue); }
+.studio-doc-prose code { padding: 2px 5px; border-radius: 3px; background: #10151b; color: #c0daff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+.studio-doc-prose pre { max-width: 100%; overflow-x: auto; padding: 16px; border: 1px solid #364150; border-radius: 5px; background: #10151b; line-height: 1.6; }
+.studio-doc-prose pre code { padding: 0; background: transparent; overflow-wrap: normal; }
+.studio-doc-prose table { display: block; max-width: 100%; margin: 20px 0; overflow-x: auto; border-collapse: collapse; font-size: 12px; line-height: 1.6; }
+.studio-doc-prose th,
+.studio-doc-prose td { min-width: 120px; padding: 11px 13px; border: 1px solid #394351; text-align: left; vertical-align: top; }
+.studio-doc-prose th { background: #252d38; color: var(--studio-text); font-weight: 600; }
+.studio-doc-prose img { max-width: 100%; height: auto; border: 1px solid var(--studio-line); border-radius: 5px; }
+.studio-doc-prose img.studio-doc-image-thumbnail { width: 32%; }
+.studio-doc-prose blockquote { margin: 20px 0; padding: 1px 18px; border-left: 3px solid var(--studio-blue); background: #212a36; }
+.studio-doc-prose hr { margin: 28px 0; border: 0; border-top: 1px solid var(--studio-line); }
+
+@media (max-width: 850px) {
+  .studio-doc-layout { grid-template-columns: 1fr; gap: 22px; padding: 26px 20px 44px; }
+  .studio-doc-sidebar { position: static; }
+  .studio-doc-back { margin-bottom: 14px; }
+  .studio-doc-language { margin-bottom: 12px; }
+  .studio-doc-sidebar nav { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+  .studio-doc-sidebar nav a { border-color: var(--studio-line); }
+}
+
+@media (max-width: 479px) {
+  .studio-doc-layout { padding: 22px 14px 34px; }
+  .studio-doc-prose { padding: 23px 18px 26px; font-size: 13px; }
+  .studio-doc-prose h2 { font-size: 19px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-doc-main { scroll-behavior: auto; }
+}

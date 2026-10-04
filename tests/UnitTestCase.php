@@ -17,6 +17,23 @@ abstract class UnitTestCase extends TestCase
 {
     protected const DEFAULT_FINDING_TYPE = 'reflected_xss';
 
+    protected string $artifactRoot;
+    protected \App\Service\LocalEvidenceStorage $storage;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->artifactRoot = APP_TEST_ROOT.'/unit-'.bin2hex(random_bytes(8));
+        $this->storage = new \App\Service\LocalEvidenceStorage($this->artifactRoot);
+    }
+
+    protected function tearDown(): void
+    {
+        (new \Symfony\Component\Filesystem\Filesystem())->remove($this->artifactRoot);
+        parent::tearDown();
+    }
+
+
     protected function createEntityManagerMock(array &$persisted = []): EntityManagerInterface
     {
         $entityManager = $this->createMock(EntityManagerInterface::class);

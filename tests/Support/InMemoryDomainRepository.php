@@ -26,7 +26,18 @@ final class InMemoryDomainRepository extends DomainRepository
 
     public function findAllOrdered(bool $authorizedOnly = false): array
     {
-        $domains = array_values($this->domains);
+        $domains = array_values(array_filter($this->domains, static function (Domain $domain): bool {
+            if ($domain->getFindings()->isEmpty()) {
+                return true;
+            }
+            foreach ($domain->getFindings() as $finding) {
+                if (!$finding->isDiscarded()) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
         usort($domains, static fn (Domain $a, Domain $b) => $a->getHostname() <=> $b->getHostname());
 
         if ($authorizedOnly) {
@@ -39,17 +50,18 @@ final class InMemoryDomainRepository extends DomainRepository
     public function findAllWithoutContactedOrFixedFindings(bool $authorizedOnly = false): array
     {
         $domains = array_values(array_filter($this->domains, static function (Domain $domain): bool {
-            if ($domain->getFindings()->count() === 0) {
-                return false;
-            }
-
+            $hasActiveFinding = false;
             foreach ($domain->getFindings() as $finding) {
+                if ($finding->isDiscarded()) {
+                    continue;
+                }
+                $hasActiveFinding = true;
                 if ($finding->getContactedAt() !== null || $finding->getStatus() === 'fixed') {
                     return false;
                 }
             }
 
-            return true;
+            return $hasActiveFinding;
         }));
 
         usort($domains, static fn (Domain $a, Domain $b) => $a->getHostname() <=> $b->getHostname());
@@ -65,7 +77,7 @@ final class InMemoryDomainRepository extends DomainRepository
     {
         $domains = array_values(array_filter($this->domains, static function (Domain $domain): bool {
             foreach ($domain->getFindings() as $finding) {
-                if ($finding->getContactedAt() !== null) {
+                if (!$finding->isDiscarded() && $finding->getContactedAt() !== null) {
                     return true;
                 }
             }

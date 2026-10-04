@@ -35,10 +35,7 @@ class FindingRepository extends ServiceEntityRepository
 
     public function countAllFindings(): int
     {
-        return (int) $this->createQueryBuilder('f')
-            ->select('COUNT(f.id)')
-            ->getQuery()
-            ->getSingleScalarResult();
+        return $this->countByCriteria(null, null, null);
     }
 
     /**
@@ -50,12 +47,26 @@ class FindingRepository extends ServiceEntityRepository
             return 0;
         }
 
-        return (int) $this->createQueryBuilder('f')
-            ->select('COUNT(f.id)')
-            ->andWhere('f.status IN (:statuses)')
-            ->setParameter('statuses', $statuses)
-            ->getQuery()
-            ->getSingleScalarResult();
+        $qb = $this->createQueryBuilder('f')->select('COUNT(f.id)');
+        $conditions = [];
+        $normalStatuses = array_values(array_diff($statuses, [FindingStatus::DUPLICATE, FindingStatus::DISCARDED]));
+        if ($normalStatuses !== []) {
+            $conditions[] = '(f.status IN (:statuses) AND '.self::nonDiscardedCondition('f').')';
+            $qb->setParameter('statuses', $normalStatuses);
+            $this->setDiscardedParameters($qb);
+        }
+        if (in_array(FindingStatus::DUPLICATE, $statuses, true)) {
+            $conditions[] = '(f.status = :duplicateStatus OR (f.manualAssessment = :discardedAssessment AND f.discardReason = :duplicateStatus))';
+            $qb->setParameter('duplicateStatus', FindingStatus::DUPLICATE)
+                ->setParameter('discardedAssessment', 'discarded');
+        }
+        if (in_array(FindingStatus::DISCARDED, $statuses, true)) {
+            $conditions[] = self::discardedCondition('f');
+            $this->setDiscardedParameters($qb);
+        }
+        $qb->andWhere(implode(' OR ', $conditions));
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
     }
 
     public function countByBucket(string $bucket): int
@@ -78,9 +89,7 @@ class FindingRepository extends ServiceEntityRepository
             $qb->andWhere('f.domain = :domain')->setParameter('domain', $domain);
         }
 
-        if ($status) {
-            $qb->andWhere('f.status = :status')->setParameter('status', $status);
-        }
+        $this->applyReadableStatus($qb, $status);
 
         if ($type) {
             $qb->andWhere('f.type = :type')->setParameter('type', $type);
@@ -145,9 +154,7 @@ class FindingRepository extends ServiceEntityRepository
                 ->setParameter('domainQuery', '%'.strtolower($domainQuery).'%');
         }
 
-        if ($status !== null && $status !== '') {
-            $qb->andWhere('f.status = :status')->setParameter('status', $status);
-        }
+        $this->applyReadableStatus($qb, $status);
 
         if ($bucket === null || $bucket === '') {
             return;
@@ -173,7 +180,7 @@ class FindingRepository extends ServiceEntityRepository
      */
     public function findOpenFindingsWithoutEvidence(int $limit = 20): array
     {
-        return $this->createQueryBuilder('f')
+        $qb = $this->createQueryBuilder('f')
             ->select('DISTINCT f')
             ->addSelect('d')
             ->innerJoin('f.domain', 'd')
@@ -183,23 +190,25 @@ class FindingRepository extends ServiceEntityRepository
             ->setParameter('statuses', FindingStatus::openValues())
             ->setMaxResults($limit)
             ->orderBy('f.submittedAt', 'ASC')
-            ->addOrderBy('f.createdAt', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('f.createdAt', 'ASC');
+        $this->excludeDiscarded($qb);
+
+        return $qb->getQuery()->getResult();
     }
 
     public function countOpenFindingsForDomain(Domain $domain): int
     {
-        return (int) $this->createQueryBuilder('f')
+        $qb = $this->createQueryBuilder('f')
             ->select('COUNT(f.id)')
             ->andWhere('f.domain = :domain')
             ->andWhere('f.status IN (:statuses)')
             ->andWhere('(f.reviewState IS NULL OR f.reviewState = :manuallyCheckedReviewState)')
             ->setParameter('domain', $domain)
             ->setParameter('statuses', FindingStatus::openValues())
-            ->setParameter('manuallyCheckedReviewState', \App\Value\ReviewState::MANUALLY_CHECKED)
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('manuallyCheckedReviewState', \App\Value\ReviewState::MANUALLY_CHECKED);
+        $this->excludeDiscarded($qb);
+
+        return (int) $qb->getQuery()->getSingleScalarResult();
     }
 
     /**
@@ -229,6 +238,8 @@ class FindingRepository extends ServiceEntityRepository
             $qb->andWhere('f.status = :status')->setParameter('status', $status);
         }
 
+        $this->excludeDiscarded($qb);
+
         return $qb->getQuery()->getResult();
     }
 
@@ -251,6 +262,8 @@ class FindingRepository extends ServiceEntityRepository
         if ($status) {
             $qb->andWhere('f.status = :status')->setParameter('status', $status);
         }
+
+        $this->excludeDiscarded($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -289,6 +302,8 @@ class FindingRepository extends ServiceEntityRepository
             $qb->andWhere('f.status IN (:statuses)')->setParameter('statuses', $statuses);
         }
 
+        $this->excludeDiscarded($qb);
+
         return $qb->getQuery()->getResult();
     }
 
@@ -297,13 +312,58 @@ class FindingRepository extends ServiceEntityRepository
      */
     public function findAllOrdered(int $limit = 1000): array
     {
-        return $this->createQueryBuilder('f')
+        $qb = $this->createQueryBuilder('f')
             ->addSelect('d')
             ->innerJoin('f.domain', 'd')
             ->orderBy('f.submittedAt', 'ASC')
             ->addOrderBy('f.createdAt', 'ASC')
-            ->setMaxResults($limit)
-            ->getQuery()
-            ->getResult();
+            ->setMaxResults($limit);
+        $this->excludeDiscarded($qb);
+
+        return $qb->getQuery()->getResult();
+    }
+
+    private function applyReadableStatus(QueryBuilder $qb, ?string $status): void
+    {
+        if ($status === FindingStatus::DISCARDED) {
+            $qb->andWhere(self::discardedCondition('f'));
+            $this->setDiscardedParameters($qb);
+
+            return;
+        }
+        if ($status === FindingStatus::DUPLICATE) {
+            $qb->andWhere('f.status = :status OR (f.manualAssessment = :discardedAssessment AND f.discardReason = :status)')
+                ->setParameter('status', $status)
+                ->setParameter('discardedAssessment', 'discarded');
+
+            return;
+        }
+
+        $this->excludeDiscarded($qb);
+        if ($status !== null && $status !== '') {
+            $qb->andWhere('f.status = :status')->setParameter('status', $status);
+        }
+    }
+
+    private function excludeDiscarded(QueryBuilder $qb): void
+    {
+        $qb->andWhere(self::nonDiscardedCondition('f'));
+        $this->setDiscardedParameters($qb);
+    }
+
+    private function setDiscardedParameters(QueryBuilder $qb): void
+    {
+        $qb->setParameter('discardedAssessment', 'discarded')
+            ->setParameter('discardedStatuses', [FindingStatus::DUPLICATE, FindingStatus::DISCARDED]);
+    }
+
+    private static function nonDiscardedCondition(string $alias): string
+    {
+        return sprintf('(%1$s.manualAssessment IS NULL OR %1$s.manualAssessment <> :discardedAssessment) AND %1$s.status NOT IN (:discardedStatuses)', $alias);
+    }
+
+    private static function discardedCondition(string $alias): string
+    {
+        return sprintf('%1$s.manualAssessment = :discardedAssessment OR %1$s.status IN (:discardedStatuses)', $alias);
     }
 }

@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\FindingRepository;
+use App\Value\FindingStatus;
+use App\Value\ManualAssessment;
 use App\Value\ReviewState;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
@@ -11,6 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: FindingRepository::class)]
 #[ORM\Table(name: 'finding')]
 #[ORM\UniqueConstraint(name: 'uniq_finding_domain_url', columns: ['domain_id', 'url'])]
+#[ORM\Index(name: 'idx_finding_list_order', columns: ['submitted_at', 'created_at'])]
 #[ORM\HasLifecycleCallbacks]
 class Finding extends AbstractTimestampedEntity
 {
@@ -72,6 +75,15 @@ class Finding extends AbstractTimestampedEntity
 
     #[ORM\Column(type: 'string', length: 32, nullable: true)]
     private ?string $reviewState = null;
+
+    #[ORM\Column(type: 'string', length: 20, nullable: true)]
+    private ?string $manualAssessment = null;
+
+    #[ORM\Column(type: 'string', length: 20, nullable: true)]
+    private ?string $discardReason = null;
+
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $assessedAt = null;
 
     /** @var Collection<int, Evidence> */
     #[ORM\OneToMany(mappedBy: 'finding', targetEntity: Evidence::class)]
@@ -307,6 +319,45 @@ class Finding extends AbstractTimestampedEntity
         $this->reviewState = $reviewState;
 
         return $this;
+    }
+
+    public function getManualAssessment(): ?string
+    {
+        return $this->manualAssessment;
+    }
+
+    public function getDiscardReason(): ?string
+    {
+        return $this->discardReason;
+    }
+
+    public function getAssessedAt(): ?\DateTimeImmutable
+    {
+        return $this->assessedAt;
+    }
+
+    public function setManualAssessment(string $assessment, ?string $discardReason, \DateTimeImmutable $assessedAt): self
+    {
+        ManualAssessment::validate($assessment, $discardReason);
+        $this->manualAssessment = $assessment;
+        $this->discardReason = $discardReason;
+        $this->assessedAt = $assessedAt;
+
+        return $this;
+    }
+
+    public function hasProtectedAssessment(): bool
+    {
+        // Legacy markers protect an existing decision without inventing its
+        // historical source, date or reference observation.
+        return $this->manualAssessment !== null
+            || in_array($this->reviewState, [ReviewState::MANUALLY_CHECKED, ReviewState::CONFIRMED_FIXED], true);
+    }
+
+    public function isDiscarded(): bool
+    {
+        return $this->manualAssessment === ManualAssessment::DISCARDED
+            || in_array($this->status, [FindingStatus::DUPLICATE, 'discarded'], true);
     }
 
     /** @return Collection<int, Evidence> */

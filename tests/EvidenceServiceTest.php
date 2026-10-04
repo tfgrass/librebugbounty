@@ -6,11 +6,9 @@ use App\Entity\Domain;
 use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Service\EvidenceService;
-use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
 use App\Service\ValidationService;
 use App\Value\EvidenceKind;
-use Symfony\Component\Filesystem\Filesystem;
 
 final class EvidenceServiceTest extends UnitTestCase
 {
@@ -43,7 +41,7 @@ final class EvidenceServiceTest extends UnitTestCase
         $finding->getEvidence()->add($evidence);
         $entityManager->persist($evidence);
 
-        $artifactDir = dirname(__DIR__, 1).'/storage/artifacts/'.$finding->getId();
+        $artifactDir = $this->artifactRoot.'/'.$finding->getId();
         if (!is_dir($artifactDir)) {
             mkdir($artifactDir, 0775, true);
         }
@@ -53,12 +51,7 @@ final class EvidenceServiceTest extends UnitTestCase
             $repos['evidence'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new class implements EvidenceStorageInterface {
-                public function storeFile(\App\Entity\Finding $finding, string $sourcePath, ?string $targetFilename = null): \App\Dto\StoredEvidenceResult
-                {
-                    return new \App\Dto\StoredEvidenceResult('storage/artifacts/mock', 'deadbeef');
-                }
-            },
+            $this->storage,
         );
 
         $service->clearEvidence($finding);
@@ -90,7 +83,7 @@ final class EvidenceServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(

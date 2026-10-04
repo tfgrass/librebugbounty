@@ -9,8 +9,11 @@ final class SettingsService
 {
     public const DEFAULTS = [
         'intake.default_payload' => 'OPENBUGBOUNTY',
-        'intake.auto_verify_mode' => 'submit',
         'review.scan_timeout_ms' => '45000',
+        'review.decision_delay_seconds' => '0',
+        'inventory.page_size' => '10',
+        'export.default_profile' => 'report',
+        'export.screenshot_mode' => 'latest',
     ];
 
     public function __construct(
@@ -83,16 +86,39 @@ final class SettingsService
         return $this->getString('intake.default_payload', self::DEFAULTS['intake.default_payload']);
     }
 
-    public function getAutoVerifyMode(): string
-    {
-        $mode = $this->getString('intake.auto_verify_mode', self::DEFAULTS['intake.auto_verify_mode']);
-
-        return in_array($mode, ['submit', 'cron_only'], true) ? $mode : self::DEFAULTS['intake.auto_verify_mode'];
-    }
-
     public function getReviewScanTimeoutMs(): int
     {
-        return max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms']));
+        return min(120000, max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms'])));
+    }
+
+    public function getReviewDecisionDelaySeconds(): int
+    {
+        $value = trim($this->getString('review.decision_delay_seconds', self::DEFAULTS['review.decision_delay_seconds']));
+
+        return in_array($value, ['0', '3', '5'], true) ? (int) $value : 0;
+    }
+
+    public function getInventoryPageSize(): string
+    {
+        return $this->getChoice('inventory.page_size', ['10', '25', '50', '100']);
+    }
+
+    public function getExportProfile(): string
+    {
+        return $this->getChoice('export.default_profile', ['urls', 'state', 'report']);
+    }
+
+    public function getExportScreenshotMode(): string
+    {
+        return $this->getChoice('export.screenshot_mode', ['basis', 'latest', 'all', 'none']);
+    }
+
+    /** @param list<string> $choices */
+    private function getChoice(string $key, array $choices): string
+    {
+        $value = trim($this->getString($key));
+
+        return in_array($value, $choices, true) ? $value : self::DEFAULTS[$key];
     }
 
     private function getRaw(string $key): ?string

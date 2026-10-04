@@ -6,13 +6,12 @@ use App\Service\DomainService;
 use App\Service\FindingService;
 use App\Service\ImportService;
 use App\Service\ValidationService;
-use Symfony\Component\Filesystem\Filesystem;
 
 final class ImportServiceTest extends UnitTestCase
 {
     public function testImportTxtCreatesDomainsAndFindings(): void
     {
-        $tmp = tempnam(sys_get_temp_dir(), 'import-');
+        $tmp = tempnam(APP_TEST_ROOT, 'import-');
         file_put_contents($tmp, <<<TXT
 # comment
 example.com | reflected_xss | medium | https://example.com/search?q=token | token | token
@@ -37,7 +36,7 @@ TXT);
                 $repos['findings'],
                 $entityManager,
                 new ValidationService($this->createValidator()),
-                new Filesystem(),
+                $this->storage,
             ),
         );
 

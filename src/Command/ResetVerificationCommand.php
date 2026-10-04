@@ -33,6 +33,13 @@ final class ResetVerificationCommand extends Command
         $force = (bool) $input->getOption('force');
         $dryRun = (bool) $input->getOption('dry-run');
 
+        $io->table(['Effect', 'Count'], array_map(
+            static fn (string $effect, int $count): array => [$effect, $count],
+            array_keys($scope = $this->resetService->preview()),
+            array_values($scope),
+        ));
+        $io->note('Notes and contact history are preserved.');
+
         if ($dryRun) {
             $io->note('Dry-run selected. Use --force to actually reset verification state.');
             return Command::SUCCESS;
@@ -46,10 +53,11 @@ final class ResetVerificationCommand extends Command
         $result = $this->resetService->resetVerificationState();
 
         $io->success(sprintf(
-            'Verification reset complete. Findings reset: %d, evidence deleted: %d, retest runs deleted: %d, artifact roots cleared: %d',
+            'Verification reset complete. Findings reset: %d, evidence deleted: %d, retest runs deleted: %d, screenshot jobs deleted: %d, artifact roots cleared: %d',
             $result->findingsReset,
             $result->evidenceDeleted,
             $result->retestRunsDeleted,
+            $result->screenshotJobsDeleted,
             $result->artifactDirectoriesRemoved,
         ));
 

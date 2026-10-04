@@ -35,7 +35,7 @@ final class ResetServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $findingService->createFinding(
@@ -60,7 +60,7 @@ final class ResetServiceTest extends UnitTestCase
         $run->setFinishedAt(new \DateTimeImmutable('-1 hour'));
         $entityManager->persist($run);
 
-        $artifactDir = dirname(__DIR__, 1).'/storage/artifacts/'.$finding->getId();
+        $artifactDir = $this->artifactRoot.'/'.$finding->getId();
         $testFilesystem = new Filesystem();
         if (is_dir($artifactDir)) {
             $testFilesystem->remove($artifactDir);
@@ -78,7 +78,7 @@ final class ResetServiceTest extends UnitTestCase
             $repos['retestRuns'],
             $findingService,
             $entityManager,
-            new Filesystem(),
+            $this->storage,
         );
 
         $result = $service->resetAll();
@@ -91,12 +91,12 @@ final class ResetServiceTest extends UnitTestCase
         self::assertNull($finding->getPrivateNotes());
         self::assertNull($finding->getReviewState());
         self::assertFileDoesNotExist($artifactDir.'/shot.png');
-        self::assertDirectoryExists(dirname(__DIR__, 1).'/storage/artifacts');
+        self::assertDirectoryExists($this->artifactRoot);
         self::assertCount(0, $repos['evidence']->findAll());
         self::assertCount(0, $repos['retestRuns']->findAll());
     }
 
-    public function testVerificationResetKeepsFindingMetadataButClearsVerificationState(): void
+    public function testVerificationResetKeepsMetadataAndProtectedDecisionWhileClearingTechnicalData(): void
     {
         $repos = $this->createRepositories();
         $entityManager = $this->createEntityManagerMock();
@@ -117,7 +117,7 @@ final class ResetServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $submittedAt = new \DateTimeImmutable('-2 days');
@@ -153,14 +153,16 @@ final class ResetServiceTest extends UnitTestCase
             $repos['retestRuns'],
             $findingService,
             $entityManager,
-            new Filesystem(),
+            $this->storage,
         );
 
         $result = $service->resetVerificationState();
 
         self::assertSame(1, $result->findingsReset);
-        self::assertSame('new', $finding->getStatus());
-        self::assertNull($finding->getReviewState());
+        self::assertSame('fixed', $finding->getStatus());
+        self::assertSame('confirmed_fixed', $finding->getReviewState());
+        self::assertNull($finding->getManualAssessment());
+        self::assertNull($finding->getAssessedAt());
         self::assertNull($finding->getLastRetestedAt());
         self::assertSame('keep this', $finding->getPrivateNotes());
         self::assertSame('https://report.example.com/abc', $finding->getReportUrl());

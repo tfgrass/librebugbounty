@@ -1,0 +1,178 @@
+<?php
+
+namespace App\Service;
+
+use App\Dto\FindingAssessmentState;
+use App\Dto\FindingDetailView;
+use App\Dto\ReviewNoticeView;
+use App\Entity\Evidence;
+use App\Entity\Finding;
+use App\Entity\FindingAssessment;
+use App\Entity\FindingReviewAcknowledgement;
+use App\Entity\FindingAssessmentReset;
+use App\Entity\RetestRun;
+use App\Entity\ScreenshotJob;
+use App\Repository\EvidenceRepository;
+use App\Repository\FindingAssessmentRepository;
+use App\Repository\RetestRunRepository;
+use App\Repository\ScreenshotJobRepository;
+use App\Value\EvidenceKind;
+use App\Value\FindingStatus;
+use App\Value\ReviewState;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Query;
+
+/** Read-only projection for the Studio case detail and review workflows. */
+final class FindingDetailService
+{
+    public function __construct(
+        private readonly FindingService $findingService,
+        private readonly EvidenceRepository $evidenceRepository,
+        private readonly RetestRunRepository $retestRunRepository,
+        private readonly ScreenshotJobRepository $screenshotJobRepository,
+        private readonly FindingAssessmentRepository $assessmentRepository,
+        private readonly EvidenceStorageInterface $storage,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly ReviewNoticeService $reviewNotices,
+    ) {
+    }
+
+    public function get(string $id, bool $refresh = false): FindingDetailView
+    {
+        $finding = $this->findingService->getFindingOrFail($id);
+        if ($refresh) {
+            $this->entityManager->refresh($finding);
+        }
+        $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC']);
+        $runs = $this->retestRunRepository->findRecentByFinding($finding, 20);
+        $screenshotJobs = $this->screenshotJobRepository->findRecentByFinding($finding, null);
+        $assessments = $this->assessmentRepository->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']);
+        $noticesAvailable = $this->reviewNotices->available();
+        $acknowledgements = $noticesAvailable ? $this->entityManager->getRepository(FindingReviewAcknowledgement::class)->findBy(['finding' => $finding], ['reviewedAt' => 'DESC', 'id' => 'DESC']) : [];
+        $connection = $this->entityManager->getConnection();
+        $resetsAvailable = AssessmentHistoryProjection::available($connection);
+        $resets = $resetsAvailable ? $this->entityManager->getRepository(FindingAssessmentReset::class)->findBy(['finding' => $finding], ['resetAt' => 'DESC', 'id' => 'DESC']) : [];
+        $cancelled = $resetsAvailable ? $connection->fetchAllKeyValue('SELECT c.assessment_id, c.reset_id FROM finding_assessment_cancellation c INNER JOIN finding_assessment_reset r ON r.id = c.reset_id WHERE r.finding_id = ?', [$id]) : [];
+        $effectiveAssessments = array_values(array_filter($assessments, static fn (FindingAssessment $entry): bool => !isset($cancelled[$entry->getId()])));
+        if ($refresh) {
+            // A rejected concurrent POST may already have these records in the
+            // identity map. Refresh the current case in batches before deriving
+            // image availability and the next form's visible decision state.
+            foreach ([Evidence::class => $evidence, RetestRun::class => $runs, ScreenshotJob::class => $screenshotJobs, FindingAssessment::class => $assessments] as $entityClass => $records) {
+                if ($records === []) {
+                    continue;
+                }
+                if ($entityClass === FindingAssessment::class && !$noticesAvailable) { continue; }
+                $this->entityManager->createQuery('SELECT record FROM '.$entityClass.' record WHERE record.id IN (:ids)')
+                    ->setParameter('ids', array_map(static fn ($record): string => $record->getId(), $records))
+                    ->setHint(Query::HINT_REFRESH, true)
+                    ->getResult();
+            }
+        }
+
+        $notice = $this->reviewNotices->get($id);
+        return new FindingDetailView(
+            finding: $finding,
+            evidence: $evidence,
+            runs: $runs,
+            screenshotJobs: $screenshotJobs,
+            assessments: $assessments,
+            screenshots: $this->screenshots($evidence, $screenshotJobs),
+            assessmentState: $this->assessmentState($finding, $runs, $effectiveAssessments[0] ?? null, $notice),
+            notice: $notice,
+            reviewAcknowledgements: $acknowledgements,
+            reviewResets: $resets,
+            cancelledAssessmentIds: $cancelled,
+        );
+    }
+
+    /** @param list<RetestRun> $runs */
+    public function assessmentState(Finding $finding, array $runs, ?FindingAssessment $newest, ?ReviewNoticeView $notice = null): FindingAssessmentState
+    {
+        $assessment = $finding->getManualAssessment();
+        $latestRun = $runs[0] ?? null;
+        $latestAt = $latestRun?->getFinishedAt() ?? $latestRun?->getStartedAt();
+        $newerObservation = $assessment !== null && $latestAt !== null
+            && $finding->getAssessedAt() !== null && $latestAt > $finding->getAssessedAt();
+        if ($assessment !== null && $newest !== null) {
+            // Record existence at the decision boundary, without implying that
+            // the user reviewed a run. This also handles same-second SQLite rows.
+            $newerObservation = $this->retestRunRepository->hasObservationAfterAssessment(
+                $finding,
+                $newest->getKnownObservationIds(),
+            );
+        }
+        if ($this->reviewNotices->available()) {
+            $notice ??= $this->reviewNotices->get($finding->getId());
+            $newerObservation = ($notice?->observations ?? []) !== [];
+        }
+        $needsConfirmation = ($assessment === null || $newerObservation)
+            && ($latestRun?->getResult() === 'inconclusive'
+                || ($assessment === null && $finding->getReviewState() === ReviewState::MANUAL_CHECKING));
+        if ($assessment !== null && $this->reviewNotices->available()) { $needsConfirmation = $newerObservation; }
+        // Preserve explicit corrections and legacy fixed cases while keeping
+        // technical activity separate from a stored manual decision.
+        $canConfirm = $needsConfirmation || $assessment === 'fixed' || $finding->isDiscarded()
+            || ($assessment === null && $finding->getStatus() === FindingStatus::FIXED);
+
+        return new FindingAssessmentState(
+            latestRun: $latestRun,
+            latestAt: $latestAt,
+            newerObservation: $newerObservation,
+            needsConfirmation: $needsConfirmation,
+            canConfirm: $canConfirm,
+            canMarkFixed: $assessment !== 'fixed',
+            canDiscard: $assessment !== 'discarded' || $finding->getDiscardReason() !== 'duplicate',
+        );
+    }
+
+    /**
+     * @param list<Evidence> $evidence
+     * @param list<ScreenshotJob> $jobs
+     * @return list<array{evidence: Evidence, available: bool, url: ?string, capturedAt: ?\DateTimeImmutable, job: ?ScreenshotJob}>
+     */
+    private function screenshots(array $evidence, array $jobs): array
+    {
+        $jobsByPath = [];
+        foreach ($jobs as $job) {
+            $path = $job->getScreenshotPath();
+            if ($path !== null && $path !== '') {
+                // The jobs arrive newest first; retain that capture metadata if
+                // historical records happen to reference the same file.
+                $jobsByPath[$this->relativePath($path)] ??= $job;
+            }
+        }
+
+        $screenshots = [];
+        foreach ($evidence as $item) {
+            if ($item->getKind() !== EvidenceKind::SCREENSHOT) {
+                continue;
+            }
+
+            $path = $item->getFilePath();
+            $available = $path !== null && $path !== '' && $this->storage->exists($path);
+            $relativePath = $path !== null && $path !== '' ? $this->relativePath($path) : null;
+            $job = $relativePath !== null ? ($jobsByPath[$relativePath] ?? null) : null;
+            $screenshots[] = [
+                'evidence' => $item,
+                'available' => $available,
+                'url' => $available && $relativePath !== null
+                    ? '/artifacts/'.implode('/', array_map('rawurlencode', explode('/', $relativePath)))
+                    : null,
+                'capturedAt' => $job?->getCapturedAt(),
+                'job' => $job,
+            ];
+        }
+
+        return $screenshots;
+    }
+
+    private function relativePath(string $path): string
+    {
+        $normalized = ltrim(str_replace('\\', '/', $path), '/');
+
+        return str_starts_with($normalized, 'storage/artifacts/')
+            ? substr($normalized, strlen('storage/artifacts/'))
+            : $normalized;
+    }
+}

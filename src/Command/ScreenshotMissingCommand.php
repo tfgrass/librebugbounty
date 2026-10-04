@@ -4,7 +4,7 @@ namespace App\Command;
 
 use App\Repository\DomainRepository;
 use App\Repository\FindingRepository;
-use App\Service\RetestService;
+use App\Service\ScreenshotQueueService;
 use App\Service\ValidationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -13,13 +13,13 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
-#[AsCommand(name: 'app:screenshot:missing', description: 'Generate browser screenshots for findings that do not have one yet.')]
+#[AsCommand(name: 'app:screenshot:missing', description: 'Queue screenshots for findings that do not have one yet.')]
 final class ScreenshotMissingCommand extends Command
 {
     public function __construct(
         private readonly DomainRepository $domains,
         private readonly FindingRepository $findings,
-        private readonly RetestService $retestService,
+        private readonly ScreenshotQueueService $screenshotQueue,
         private readonly ValidationService $validation,
     ) {
         parent::__construct();
@@ -31,8 +31,6 @@ final class ScreenshotMissingCommand extends Command
             ->addOption('domain', null, InputOption::VALUE_REQUIRED, 'Restrict to a hostname.')
             ->addOption('status', null, InputOption::VALUE_REQUIRED, 'Restrict to a status.')
             ->addOption('limit', null, InputOption::VALUE_REQUIRED, 'Maximum number of findings.', 1000)
-            ->addOption('timeout', null, InputOption::VALUE_REQUIRED, 'Timeout in milliseconds.', 120000)
-            ->addOption('browser', null, InputOption::VALUE_REQUIRED, 'Browser engine to use (chromium or firefox).', 'chromium')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be executed without persisting.')
         ;
     }
@@ -53,8 +51,6 @@ final class ScreenshotMissingCommand extends Command
             ? (string) $input->getOption('status')
             : null;
         $limit = max(1, (int) $input->getOption('limit'));
-        $timeout = (int) $input->getOption('timeout');
-        $browser = (string) $input->getOption('browser');
         $dryRun = (bool) $input->getOption('dry-run');
 
         $findings = $this->findings->findAllWithoutScreenshotEvidence($domain, $status, $limit);
@@ -75,7 +71,9 @@ final class ScreenshotMissingCommand extends Command
             return Command::SUCCESS;
         }
 
-        $io->writeln(sprintf('Generating screenshots for %d finding(s)...', count($findings)));
+        $io->writeln(sprintf('Queueing screenshots for %d finding(s)...', count($findings)));
+        $queued = 0;
+        $alreadyActive = 0;
         foreach ($findings as $index => $finding) {
             $io->writeln(sprintf(
                 '[%d/%d] %s %s',
@@ -85,15 +83,12 @@ final class ScreenshotMissingCommand extends Command
                 $finding->getDomain()->getHostname(),
             ));
 
-            $run = $this->retestService->retest($finding, true, $timeout, false, false, false, $browser);
-            $io->writeln(sprintf(
-                '  -> %s%s (%s)',
-                $run->getResult(),
-                $run->getScreenshotPath() ? ' screenshot saved' : '',
-                $browser,
-            ));
+            $result = $this->screenshotQueue->enqueue($finding);
+            $result->created ? $queued++ : $alreadyActive++;
+            $io->writeln('  -> '.$result->job->getStatus());
         }
 
+        $io->success(sprintf('Queued %d screenshot(s); %d finding(s) already had an active job.', $queued, $alreadyActive));
         return Command::SUCCESS;
     }
 }

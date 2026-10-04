@@ -23,9 +23,9 @@ final class DomainExportCommand extends Command
     protected function configure(): void
     {
         $this
-            ->addOption('all', null, InputOption::VALUE_NONE, 'Export all domains in the database.')
+            ->addOption('all', null, InputOption::VALUE_NONE, 'Export domains in the normal view; discarded-only domains are excluded.')
             ->addOption('contacted-only', null, InputOption::VALUE_NONE, 'Only export domains that have at least one contacted finding.')
-            ->addOption('overview', null, InputOption::VALUE_NONE, 'Show grouped domains for fixed, contacted, and uncontacted findings.')
+            ->addOption('overview', null, InputOption::VALUE_NONE, 'Group domains by raw legacy status fixed, contact timestamp, or neither; fixed does not prove a manual assessment.')
             ->addOption('authorized-only', null, InputOption::VALUE_NONE, 'Only include verified domains.')
             ->addOption('format', null, InputOption::VALUE_REQUIRED, 'Output format: plain or json.', 'plain')
         ;
@@ -66,7 +66,7 @@ final class DomainExportCommand extends Command
                 'hostname' => $domain->getHostname(),
                 'scheme' => $domain->getScheme(),
                 'authorized' => $domain->isAuthorized(),
-                'findings' => $domain->getFindings()->count(),
+                'findings' => $domain->getFindings()->filter(static fn ($finding): bool => !$finding->isDiscarded())->count(),
             ], $domains);
 
             $output->writeln(json_encode($rows, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
@@ -86,7 +86,7 @@ final class DomainExportCommand extends Command
 
         if ($domains === []) {
             $io->success(
-                $exportAll ? 'No domains found.' : ($contactedOnly ? 'No contacted domains found.' : 'No non-contacted or fixed domains found.')
+                $exportAll ? 'No domains found.' : ($contactedOnly ? 'No contacted domains found.' : 'No domains without a contact timestamp or raw status fixed found.')
             );
         }
 
@@ -99,14 +99,18 @@ final class DomainExportCommand extends Command
     private function renderOverview(OutputInterface $output, array $domains): void
     {
         $groups = [
-            'marked fixed' => [],
+            'Altstatus fixed' => [],
             'marked contacted' => [],
             'uncontacted' => [],
         ];
 
         foreach ($domains as $domain) {
+            if ($domain->getFindings()->filter(static fn ($finding): bool => !$finding->isDiscarded())->isEmpty()) {
+                continue;
+            }
+
             if ($this->hasFixedFinding($domain)) {
-                $groups['marked fixed'][] = $domain;
+                $groups['Altstatus fixed'][] = $domain;
 
                 continue;
             }
@@ -140,7 +144,7 @@ final class DomainExportCommand extends Command
     private function hasFixedFinding(Domain $domain): bool
     {
         foreach ($domain->getFindings() as $finding) {
-            if ($finding->getStatus() === 'fixed') {
+            if (!$finding->isDiscarded() && $finding->getStatus() === 'fixed') {
                 return true;
             }
         }
@@ -151,7 +155,7 @@ final class DomainExportCommand extends Command
     private function hasContactedFinding(Domain $domain): bool
     {
         foreach ($domain->getFindings() as $finding) {
-            if ($finding->getContactedAt() !== null) {
+            if (!$finding->isDiscarded() && $finding->getContactedAt() !== null) {
                 return true;
             }
         }

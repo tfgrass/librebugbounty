@@ -33,6 +33,13 @@ final class ResetMvpCommand extends Command
         $force = (bool) $input->getOption('force');
         $dryRun = (bool) $input->getOption('dry-run');
 
+        $io->table(['Effect', 'Count'], array_map(
+            static fn (string $effect, int $count): array => [$effect, $count],
+            array_keys($scope = $this->resetService->preview()),
+            array_values($scope),
+        ));
+        $io->note('This reset also clears notes, contact history, and review state.');
+
         if ($dryRun) {
             $io->note('Dry-run selected. Use --force to actually reset the MVP artifacts.');
             return Command::SUCCESS;
@@ -46,10 +53,11 @@ final class ResetMvpCommand extends Command
         $result = $this->resetService->resetAll();
 
         $io->success(sprintf(
-            'MVP reset complete. Findings reset: %d, evidence deleted: %d, retest runs deleted: %d, artifact roots cleared: %d',
+            'MVP reset complete. Findings reset: %d, evidence deleted: %d, retest runs deleted: %d, screenshot jobs deleted: %d, artifact roots cleared: %d',
             $result->findingsReset,
             $result->evidenceDeleted,
             $result->retestRunsDeleted,
+            $result->screenshotJobsDeleted,
             $result->artifactDirectoriesRemoved,
         ));
 

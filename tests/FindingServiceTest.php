@@ -3,9 +3,11 @@
 namespace App\Tests;
 
 use App\Service\DomainService;
+use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
 use App\Service\ValidationService;
-use Symfony\Component\Filesystem\Filesystem;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityRepository;
 
 final class FindingServiceTest extends UnitTestCase
 {
@@ -24,7 +26,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(
@@ -56,7 +58,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(
@@ -90,7 +92,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $first = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -115,7 +117,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: ' https://example.com/search?q=test');
@@ -138,12 +140,12 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
 
-        $artifactDir = dirname(__DIR__, 1).'/storage/artifacts/'.$finding->getId();
+        $artifactDir = $this->artifactRoot.'/'.$finding->getId();
         if (!is_dir($artifactDir)) {
             mkdir($artifactDir, 0775, true);
         }
@@ -156,6 +158,36 @@ final class FindingServiceTest extends UnitTestCase
         self::assertCount(0, $repos['findings']->findByDomainAndStatus());
         self::assertFileDoesNotExist($artifactDir.'/preview.png');
         self::assertDirectoryDoesNotExist($artifactDir);
+    }
+
+    public function testFailedFindingDeletionFlushDoesNotDeleteStoredArtifacts(): void
+    {
+        $repos = $this->createRepositories();
+        $finding = new \App\Entity\Finding();
+        $relatedRepository = $this->createMock(EntityRepository::class);
+        $relatedRepository->method('findBy')->willReturn([]);
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->method('getRepository')->willReturn($relatedRepository);
+        $entityManager->expects(self::once())->method('remove')->with($finding);
+        $entityManager->expects(self::once())->method('flush')->willThrowException(new \RuntimeException('Synthetic flush failure.'));
+        $storage = $this->createMock(EvidenceStorageInterface::class);
+        $storage->expects(self::never())->method('deleteForFinding');
+        $service = new FindingService(
+            new DomainService(
+                $repos['domains'],
+                $entityManager,
+                new ValidationService($this->createValidator()),
+            ),
+            $repos['findings'],
+            $entityManager,
+            new ValidationService($this->createValidator()),
+            $storage,
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Synthetic flush failure.');
+
+        $service->deleteFinding($finding);
     }
 
     public function testFindingCanBeMarkedOpenAgain(): void
@@ -173,7 +205,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -199,7 +231,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -228,7 +260,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -254,7 +286,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test');
@@ -280,7 +312,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/contact?q=test');
@@ -305,7 +337,7 @@ final class FindingServiceTest extends UnitTestCase
             $repos['findings'],
             $entityManager,
             new ValidationService($this->createValidator()),
-            new Filesystem(),
+            $this->storage,
         );
 
         $finding = $service->createFinding(url: 'https://example.com/search?q=test', privateNotes: 'old note');

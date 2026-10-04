@@ -1,0 +1,33 @@
+<?php
+
+namespace App\Dto;
+
+final readonly class ReviewQueueView
+{
+    /**
+     * @param array{all: int, inconclusive: int, error: int, unchecked: int, changed: int, ready: int, missing: int} $counts Global candidate counts, before filters/cursor.
+     * @param list<array<string, mixed>> $triggeringObservations Unresolved stored runs including their review reason.
+     */
+    public function __construct(
+        public ?FindingDetailView $detail,
+        public string $kind,
+        public string $images,
+        public array $counts,
+        public int $total,
+        public int $remaining,
+        public string $nextPath,
+        public string $restartPath,
+        public string $currentPath,
+        public ?string $after,
+        public bool $eligible = true,
+        public ?string $lastReviewedId = null,
+        public string $stateFingerprint = '',
+        public ?string $selectedEvidenceId = null,
+        public bool $notice = false,
+        public array $triggeringObservations = [],
+        public ?\DateTimeImmutable $lastAcknowledgedAt = null,
+        public bool $baselineKnown = true,
+        public bool $noticesAvailable = false,
+    ) {
+    }
+}

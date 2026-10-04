@@ -2,7 +2,6 @@
 /var/
 /storage/
 /playwright-worker/node_modules/
-/playwright-worker/package-lock.json
 /.phpunit.result.cache
 /.phpunit.cache/
 /.idea/
@@ -10,6 +9,9 @@
 /.vscode/
 /.env
 /.env.test
+
+# Personal architecture and design notes stay local.
+/architecture/
 
 # DDEV generated files, keep the project config itself in git.
 /.ddev/.dbimageBuild/
