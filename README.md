@@ -11,7 +11,7 @@ The application runs on your own machine and is designed for a focused,
 single-user workflow. LibreBugBounty is independent of and not affiliated with
 OpenBugBounty.
 
-## Studio
+## Your local workspace
 
 <p align="center">
   <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="LibreBugBounty manual screenshot review" width="100%"></a>
@@ -40,20 +40,6 @@ OpenBugBounty.
 LibreBugBounty currently concentrates on reflected XSS triage. It does not send
 disclosure emails or submit reports for you.
 
-## Workflow
-
-1. Paste a candidate URL into the intake page at `/`.
-2. The case and its screenshot job are committed before the request succeeds.
-3. Review unresolved cases at `/review` and mark them **Vulnerable** or
-   **Not vulnerable**.
-4. Use `/findings` and the case detail to inspect history, add notes, enqueue a
-   fresh screenshot, or run an explicit technical recheck.
-5. Track progress at `/statistics` and prepare data or evidence packages at
-   `/export`.
-
-Opening a case never starts browser work. Screenshots and rechecks only run when
-they were queued or explicitly requested.
-
 ## Quick start
 
 You need [Docker](https://docs.docker.com/engine/install/),
@@ -72,39 +58,24 @@ the SQLite schema, and starts the supervised screenshot worker. Repeated starts
 preserve existing data. The database and evidence live below `storage/`, which
 is ignored by Git.
 
-Useful checks:
+## First use
 
-```bash
-ddev describe
-ddev exec supervisorctl status webextradaemons:screenshot-queue
-ddev exec curl -fsS http://playwright:3000/health
-ddev exec php bin/console app:artifacts:audit
-```
+1. Add a candidate URL on **Intake**. Its screenshot is queued in the background.
+2. Open **Review** to inspect the evidence and choose **Vulnerable** or
+   **Not vulnerable**.
+3. Use **Inventory** to find cases, record notes and completed contacts, and
+   inspect their history.
+4. Follow **Reported**, **Contacted**, and **Fixed** together in **Statistics**.
+5. Choose a URL list, case-state JSON, or a report package on **Export**.
 
-Queue screenshots without changing manual or technical assessments:
+Opening a case never starts browser work. A screenshot is evidence; your manual
+assessment and a saved technical observation remain separate.
 
-```bash
-ddev exec php bin/console app:screenshot:missing --dry-run
-ddev exec php bin/console app:screenshot:missing --limit=1000
-```
+The interface defaults to German. To use English, set `APP_LOCALE=en` in a local
+DDEV configuration as described in the [user guide](USAGE.md#language).
 
-## Language
-
-German is the default and fallback. Set `APP_LOCALE=en` for English. With DDEV,
-put the setting in a local override and restart the project:
-
-```yaml
-# .ddev/config.local.yaml
-web_environment:
-  - APP_LOCALE=en
-```
-
-```bash
-ddev restart
-```
-
-Use `APP_LOCALE=de` to select German explicitly. Stored case data is never
-translated or rewritten when the interface language changes.
+Read the [user guide](USAGE.md) for review controls, export choices, settings,
+and troubleshooting.
 
 ## Backup
 
@@ -118,6 +89,10 @@ The command briefly pauses this project's DDEV containers, copies SQLite and
 the artifact tree consistently, resumes the project, and verifies a separate
 restoration. It never overwrites the live database. By default snapshots are
 written to `~/.local/share/librebugbounty/backups/`.
+
+See [backup and recovery](BACKUP.md) for verification, custom storage paths, and
+restoring into a new directory without replacing existing data. A JSON or ZIP
+export is a reporting format; use a backup to preserve the complete case history.
 
 ## Operating boundary
 

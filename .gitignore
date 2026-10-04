@@ -10,6 +10,9 @@
 /.env
 /.env.test
 
+# Personal architecture and design notes stay local.
+/architecture/
+
 # DDEV generated files, keep the project config itself in git.
 /.ddev/.dbimageBuild/
 /.ddev/.webimageBuild/

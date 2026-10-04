@@ -94,29 +94,18 @@ Successful response fields include:
 and `desktop-page` otherwise. Invalid input returns HTTP 400; capture errors return
 HTTP 500 with `errorMessage`.
 
-## Retest endpoint
+## Technical recheck endpoint
 
 `POST /retest` is the technical verification endpoint. It supports headless
 Chromium or Firefox and an optional direct screenshot response for explicit
 retest commands.
 
-Example request:
-
-```json
-{
-  "url": "https://example.com/search?q=%3Csvg%20onload=alert(1)%3E",
-  "expectedEvidence": "OPENBUGBOUNTY",
-  "timeoutMs": 10000,
-  "browser": "chromium",
-  "headless": true,
-  "screenshot": false
-}
-```
-
 Application intake does not call this route. Technical checks run only through
 an explicit recheck command or UI action. Persistent evidence capture remains a
-separate operation through `/screenshot`; Symfony `app:retest:* --screenshot`
-commands can request a direct capture when that is deliberately needed.
+separate operation through `/screenshot`. The normal detail-page recheck does
+not capture an image, and the saved observation never replaces a manual
+assessment. The service is an internal component, not an API that needs to be
+called directly for normal use; see the [user guide](../USAGE.md).
 
 ## Shared-display serialization
 
@@ -137,11 +126,10 @@ npm --prefix playwright-worker ci --no-audit --no-fund
 npm --prefix playwright-worker test
 ```
 
-The Node tests verify FIFO serialization, the default dialog window, an open
-dialog during capture, the page/dialog race, failed dialog capture, and the
-teardown boundary. Full capture acceptance uses controlled local pages through
-DDEV and is recorded in
-[`architecture/abnahme-abschnitt-2.md`](../architecture/abnahme-abschnitt-2.md).
+The Node tests use controlled mocks to verify FIFO serialization, the default
+dialog window, an open dialog during capture, the page/dialog race, failed
+dialog capture, and the teardown boundary. Browser fixtures used for acceptance
+checks live in the project's `tests/Support/` directory.
 
 Runtime checks from the web container:
 
