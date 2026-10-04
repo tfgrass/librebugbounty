@@ -6,7 +6,6 @@ use App\Dto\FindingListView;
 use App\Dto\FindingReadFilter;
 use App\Repository\FindingReadRepository;
 use App\Repository\ScreenshotJobRepository;
-use App\Value\ScreenshotJobStatus;
 
 /** Shared read-only list semantics for Studio and retained historical data. */
 final class FindingListService
@@ -44,11 +43,12 @@ final class FindingListService
             'discarded' => ['label' => 'Archiv: Verworfen', 'filter' => new FindingReadFilter(scope: 'discarded')],
             'duplicates' => ['label' => 'Archiv: Duplikate', 'filter' => new FindingReadFilter(scope: 'duplicates')],
         ];
+        $statCounts = $this->findings->globalCounts();
         $statViews = [];
         foreach ($stats as $name => $stat) {
             $statViews[$name] = [
                 'label' => $stat['label'],
-                'count' => $this->findings->count($stat['filter']),
+                'count' => $statCounts[$name],
                 'url' => $path.'?'.http_build_query($this->filterQuery($stat['filter'])),
             ];
         }
@@ -63,11 +63,7 @@ final class FindingListService
                 'totalPages' => $totalPages,
             ],
             stats: $statViews,
-            screenshotStats: [
-                'queued' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::QUEUED),
-                'running' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::RUNNING),
-                'failed' => $this->screenshotJobs->countByStatus(ScreenshotJobStatus::FAILED),
-            ],
+            screenshotStats: $this->screenshotJobs->inventoryCounts(),
             filterQuery: $this->filterQuery($filter),
             path: $path,
         );

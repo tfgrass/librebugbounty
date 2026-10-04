@@ -63,6 +63,31 @@ final class FindingReadRepository
         return (int) $this->connection->fetchOne('SELECT COUNT(*)'.$from.$where, $parameters);
     }
 
+    /** @return array<string, int> Counts for the global inventory links, independent of the current filter. */
+    public function globalCounts(): array
+    {
+        // Read the inventory once for all counters, including the two counters
+        // sharing the same latest-observation projection. Keep the domain join:
+        // legacy orphan rows must remain excluded exactly as in count().
+        $conditions = [
+            'active' => self::ACTIVE,
+            'confirmed' => self::ACTIVE." AND f.manual_assessment = 'confirmed'",
+            'fixed' => self::ACTIVE." AND f.manual_assessment = 'fixed'",
+            'unknown' => self::ACTIVE.' AND f.manual_assessment IS NULL',
+            'inconclusive' => self::ACTIVE." AND r.result = 'inconclusive'",
+            'unobserved' => self::ACTIVE.' AND r.id IS NULL',
+            'contacted' => self::ACTIVE.' AND f.contacted_at IS NOT NULL',
+            'discarded' => self::DISCARDED,
+            'duplicates' => self::DUPLICATES,
+        ];
+        $columns = [];
+        foreach ($conditions as $name => $condition) {
+            $columns[] = 'COALESCE(SUM(CASE WHEN '.$condition.' THEN 1 ELSE 0 END), 0) AS '.$name;
+        }
+
+        return array_map('intval', $this->connection->fetchAssociative('SELECT '.implode(', ', $columns).self::FROM));
+    }
+
     /** @return array{string, array<string, string>} */
     private function where(FindingReadFilter $filter): array
     {

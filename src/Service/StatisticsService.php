@@ -34,15 +34,34 @@ final class StatisticsService
         $sourceZone = new \DateTimeZone(date_default_timezone_get());
         $displayZone = new \DateTimeZone('Europe/Berlin');
         $parse = static fn (?string $date): ?\DateTimeImmutable => $date === null ? null : (new \DateTimeImmutable($date, $sourceZone))->setTimezone($displayZone);
-        $first = $parse($this->statistics->firstActivityAt());
-        $historyFrom = $parse($this->statistics->firstAssessmentAt());
+        // Database timestamps use the runtime source zone. Keep the hot path
+        // scalar: only calendar presentation and aging need Berlin date objects.
+        $timestamp = static function (?string $date) use ($sourceZone): ?int {
+            if ($date === null) {
+                return null;
+            }
+            $value = strtotime($date);
+            return $value !== false ? $value : (new \DateTimeImmutable($date, $sourceZone))->getTimestamp();
+        };
+        $calendarDay = $sourceZone->getName() === $displayZone->getName()
+            ? static fn (int $at): string => date('Y-m-d', $at)
+            : static fn (int $at): string => (new \DateTimeImmutable('@'.$at))->setTimezone($displayZone)->format('Y-m-d');
+        $coverageDates = $this->statistics->coverageDates();
+        $first = $parse($coverageDates['activity']);
+        $historyFrom = $parse($coverageDates['assessment']);
         $period = StatisticsPeriod::fromQuery($query, $now ?? new \DateTimeImmutable(), $first);
         $comparison = $period->comparison();
+        $periodFrom = $period->from->getTimestamp();
+        $periodUntil = $period->until->getTimestamp();
+        $comparisonBounds = $comparison === null ? null : array_map(static fn (\DateTimeImmutable $date): int => $date->getTimestamp(), $comparison);
         [$series, $granularity, $bucketMonths] = $this->buckets($period, $filters['tld']);
         $calendarYear = (int) $period->anchor->format('Y');
         $calendarStart = $period->anchor->setDate($calendarYear, 1, 1);
+        $calendarEnd = $calendarStart->modify('+1 year');
+        $calendarFrom = $calendarStart->getTimestamp();
+        $calendarUntil = $calendarEnd->getTimestamp();
         $calendar = [];
-        for ($date = $calendarStart; $date < $calendarStart->modify('+1 year'); $date = $date->modify('+1 day')) {
+        for ($date = $calendarStart; $date < $calendarEnd; $date = $date->modify('+1 day')) {
             $key = $date->format('Y-m-d');
             $calendar[$key] = ['date' => $key] + array_fill_keys(array_keys(self::ACTIVITY_METRICS), 0) + [
                 'urls' => $this->eventUrls($key, $key, $filters['tld']),
@@ -67,15 +86,15 @@ final class StatisticsService
         foreach ($this->statistics->caseFacts() as $fact) {
             $hostname = strtolower(rtrim((string) $fact['hostname'], '.'));
             $tld = HostnameTld::key($hostname);
-            $options[$tld] = $this->tldLabel($tld);
+            $options[$tld] ??= $this->tldLabel($tld);
             if ($filters['tld'] !== '' && $filters['tld'] !== $tld) {
                 continue;
             }
             $events = [
-                'reported' => $parse($fact['reported_at']),
-                'contacted' => $parse($fact['contacted_at']),
-                'confirmed' => $parse($fact['confirmed_at']),
-                'fixed' => $parse($fact['fixed_at']),
+                'reported' => $timestamp($fact['reported_at']),
+                'contacted' => $timestamp($fact['contacted_at']),
+                'confirmed' => $timestamp($fact['confirmed_at']),
+                'fixed' => $timestamp($fact['fixed_at']),
             ];
             $totals['all']++;
             $totals[(bool) $fact['active'] ? 'active' : 'archived']++;
@@ -97,11 +116,13 @@ final class StatisticsService
                 if ($date === null) {
                     continue;
                 }
-                if ($this->within($date, $period->from, $period->until)) {
+                if ($date >= $periodFrom && $date < $periodUntil) {
                     $counts[$metric]++;
-                    $index = $this->bucketIndex($series, $date->getTimestamp());
-                    if ($index !== null && isset(self::ACTIVITY_METRICS[$metric])) {
-                        $series[$index][$metric]++;
+                    if (isset(self::ACTIVITY_METRICS[$metric])) {
+                        $index = $this->bucketIndex($series, $date);
+                        if ($index !== null) {
+                            $series[$index][$metric]++;
+                        }
                     }
                     if ($metric === 'reported') {
                         $hosts[$hostname] = true;
@@ -109,17 +130,17 @@ final class StatisticsService
                         $tldHosts[$tld][$hostname] = true;
                     }
                 }
-                $day = $date->format('Y-m-d');
-                if (isset($calendar[$day]) && isset(self::ACTIVITY_METRICS[$metric])) {
+                if (isset(self::ACTIVITY_METRICS[$metric]) && $date >= $calendarFrom && $date < $calendarUntil) {
+                    $day = $calendarDay($date);
                     $calendar[$day][$metric]++;
                 }
-                if ($comparison !== null && $this->within($date, $comparison[0], $comparison[1])) {
+                if ($comparisonBounds !== null && $date >= $comparisonBounds[0] && $date < $comparisonBounds[1]) {
                     $currentComparison[$metric]++;
                     if ($metric === 'reported') {
                         $comparisonHosts[$hostname] = true;
                     }
                 }
-                if ($comparison !== null && $this->within($date, $comparison[2], $comparison[3])) {
+                if ($comparisonBounds !== null && $date >= $comparisonBounds[2] && $date < $comparisonBounds[3]) {
                     $previousCounts[$metric]++;
                     if ($metric === 'reported') {
                         $previousHosts[$hostname] = true;
@@ -137,7 +158,8 @@ final class StatisticsService
             $snapshotCounts['contacted'] += $events['contacted'] !== null ? 1 : 0;
             if ($assessment === 'confirmed' && $events['contacted'] === null && $events['reported'] !== null) {
                 // Waiting age is the calendar age since Ingest, matching list links.
-                $age = (int) $events['reported']->setTime(0, 0)->diff($today)->format('%r%a');
+                $reportedDay = new \DateTimeImmutable($calendarDay($events['reported']), $displayZone);
+                $age = (int) $reportedDay->diff($today)->format('%r%a');
                 $agingCounts[$age <= 7 ? 'recent' : ($age <= 30 ? 'waiting' : 'old')]++;
             }
         }
@@ -168,7 +190,7 @@ final class StatisticsService
         ];
         $history = [
             'contactDatedCount' => $contactDatedCount,
-            'contactFrom' => $contactFrom?->format('Y-m-d'),
+            'contactFrom' => $contactFrom === null ? null : $calendarDay($contactFrom),
             'items' => [
                 ['key' => 'fixed_marker', 'label' => 'Als behoben markiert', 'count' => $legacyCounts['fixed_marker'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_review' => 'confirmed_fixed'], $filters['tld'])],
                 ['key' => 'checked_marker', 'label' => 'Als geprüft markiert', 'count' => $legacyCounts['checked_marker'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_review' => 'manually_checked'], $filters['tld'])],
@@ -231,11 +253,6 @@ final class StatisticsService
         }
 
         return $filters;
-    }
-
-    private function within(\DateTimeImmutable $date, \DateTimeImmutable $from, \DateTimeImmutable $until): bool
-    {
-        return $date >= $from && $date < $until;
     }
 
     private function kpi(string $label, int $count, ?int $comparisonCount, ?int $previousCount, ?string $url): array

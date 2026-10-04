@@ -125,6 +125,22 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
         );
     }
 
+    /** @return array{queued: int, running: int, failed: int} Read-only counters displayed in the inventory. */
+    public function inventoryCounts(): array
+    {
+        $counts = [ScreenshotJobStatus::QUEUED => 0, ScreenshotJobStatus::RUNNING => 0, ScreenshotJobStatus::FAILED => 0];
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'SELECT j.status, COUNT(j.id) AS total FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id'
+            .' WHERE j.status IN (:queued, :running, :failed) AND '.self::normalFindingSql().' GROUP BY j.status',
+            ['queued' => ScreenshotJobStatus::QUEUED, 'running' => ScreenshotJobStatus::RUNNING, 'failed' => ScreenshotJobStatus::FAILED] + self::normalFindingParameters(),
+        );
+        foreach ($rows as $row) {
+            $counts[$row['status']] = (int) $row['total'];
+        }
+
+        return $counts;
+    }
+
     private static function normalFindingSql(): string
     {
         return '(f.manual_assessment IS NULL OR f.manual_assessment <> :discarded) AND f.status NOT IN (:duplicate, :discarded)';

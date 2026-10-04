@@ -13,24 +13,25 @@ final class StatisticsRepository
     {
     }
 
-    public function firstActivityAt(): ?string
+    /** @return array{activity: ?string, assessment: ?string} */
+    public function coverageDates(): array
     {
-        $value = $this->connection->fetchOne(
-            'SELECT MIN(event_at) FROM ('
-            .'SELECT COALESCE(submitted_at, created_at) AS event_at FROM finding '
-            .'UNION ALL SELECT contacted_at FROM finding WHERE contacted_at IS NOT NULL '
-            .'UNION ALL SELECT a.assessed_at FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id WHERE a.assessment = \'fixed\''
-            .')',
+        // Each source is scanned once. Keep the stored timestamp strings intact:
+        // the service owns conversion from the storage zone to Berlin dates.
+        $row = $this->connection->fetchAssociative(
+            'SELECT f.reported_at, f.contacted_at, a.assessed_at, a.fixed_at FROM ('
+            .'SELECT MIN(COALESCE(submitted_at, created_at)) AS reported_at, MIN(contacted_at) AS contacted_at FROM finding'
+            .') f CROSS JOIN ('
+            .'SELECT MIN(a.assessed_at) AS assessed_at, MIN(CASE WHEN a.assessment = \'fixed\' THEN a.assessed_at END) AS fixed_at '
+            .'FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id'
+            .') a',
         );
+        $activity = array_filter([$row['reported_at'], $row['contacted_at'], $row['fixed_at']], is_string(...));
 
-        return is_string($value) ? $value : null;
-    }
-
-    public function firstAssessmentAt(): ?string
-    {
-        $value = $this->connection->fetchOne('SELECT MIN(a.assessed_at) FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id');
-
-        return is_string($value) ? $value : null;
+        return [
+            'activity' => $activity === [] ? null : min($activity),
+            'assessment' => is_string($row['assessed_at']) ? $row['assessed_at'] : null,
+        ];
     }
 
     /** @return iterable<array<string, mixed>> */

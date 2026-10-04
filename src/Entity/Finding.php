@@ -13,6 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: FindingRepository::class)]
 #[ORM\Table(name: 'finding')]
 #[ORM\UniqueConstraint(name: 'uniq_finding_domain_url', columns: ['domain_id', 'url'])]
+#[ORM\Index(name: 'idx_finding_list_order', columns: ['submitted_at', 'created_at'])]
 #[ORM\HasLifecycleCallbacks]
 class Finding extends AbstractTimestampedEntity
 {

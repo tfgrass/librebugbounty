@@ -39,6 +39,8 @@ branch.
 
 ### Changed
 
+- Faster SQLite inventory reads through combined counters and indexed ordering,
+  with fewer repeated reads and calculations for statistics and review notices.
 - DDEV startup installs locked dependencies, initializes or migrates the schema,
   and starts the supervised screenshot worker. Repeated starts preserve
   existing stored data.

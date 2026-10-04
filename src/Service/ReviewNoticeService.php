@@ -33,7 +33,10 @@ final class ReviewNoticeService
         $findingIds = array_column($findings, 'id');
         $placeholders = implode(',', array_fill(0, count($findingIds), '?'));
         $runsByFinding = [];
-        foreach ($this->connection->fetchAllAssociative('SELECT * FROM retest_run WHERE finding_id IN ('.$placeholders.') ORDER BY COALESCE(finished_at, started_at) DESC, rowid DESC', $findingIds) as $run) {
+        // Group the sort by the indexed finding_id so SQLite does not sort all
+        // large observation bodies together. Each finding keeps its existing
+        // newest-first time/rowid order and raw SELECT * fingerprint format.
+        foreach ($this->connection->fetchAllAssociative('SELECT * FROM retest_run WHERE finding_id IN ('.$placeholders.') ORDER BY finding_id, COALESCE(finished_at, started_at) DESC, rowid DESC', $findingIds) as $run) {
             $runsByFinding[$run['finding_id']][] = $run;
         }
         $acksByFinding = [];
@@ -53,7 +56,7 @@ final class ReviewNoticeService
                 $reason = $this->reason($finding['manual_assessment'], $run['result']);
                 if ($reason === null) { continue; }
                 if ($states !== null) {
-                    $unseen = ($states[$run['id']] ?? null) !== self::runFingerprint($run);
+                    $unseen = !isset($states[$run['id']]) || $states[$run['id']] !== self::runFingerprint($run);
                 } elseif ($knownIds !== null) {
                     // Old histories still have a reliable ID arrival boundary.
                     // Later edits can be recognized where a later timestamp was
