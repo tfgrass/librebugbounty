@@ -7,62 +7,118 @@
   if (!root) return;
 
   const form = root.querySelector('[data-review-form]');
+  const skipForm = root.querySelector('[data-review-skip-form]');
+  const backForm = root.querySelector('[data-review-back-form]');
   const fixed = root.querySelector('[data-review-fixed]');
   const confirm = root.querySelector('[data-review-confirm]');
   const keep = root.querySelector('[data-review-keep]');
   const skip = root.querySelector('[data-review-skip]');
+  const back = root.querySelector('[data-review-back]');
+  const poc = root.querySelector('[data-review-poc-open]');
   const submitStatus = root.querySelector('[data-review-submit-status]');
+  const focusCard = () => root.querySelector('[data-review-focus]')?.focus({ preventScroll: true });
   let submitting = false;
 
-  // Keep the real submitter enabled so its assessment name/value remains in the
-  // native POST. Preventing subsequent submits also works for requestSubmit().
-  if (form) {
-    form.addEventListener('submit', (event) => {
-      if (submitting) {
+  // A tab keeps its own trail across reloads without creating a navigation entry.
+  if (root.dataset.reviewTrail) {
+    const address = new URL(window.location.href);
+    if (!address.searchParams.has('trail')) {
+      address.searchParams.set('trail', root.dataset.reviewTrail);
+      window.history.replaceState(window.history.state, '', address);
+    }
+  }
+  const inspector = root.querySelector('[data-review-inspector]');
+  const narrow = window.matchMedia('(max-width: 760px)');
+  if (inspector) {
+    inspector.open = !narrow.matches;
+    narrow.addEventListener('change', () => { inspector.open = !narrow.matches; });
+  }
+
+  const delaySeconds = [3, 5].includes(Number(root.dataset.reviewDecisionDelay)) ? Number(root.dataset.reviewDecisionDelay) : 0;
+  const delayStatus = root.querySelector('[data-review-delay-status]');
+  const delayProgress = root.querySelector('[data-review-delay-progress]');
+  const judgments = Array.from(root.querySelectorAll('button[name="assessment"]:not([value="keep"])'));
+  const originalDisabled = new Map(judgments.map((button) => [button, button.disabled]));
+  let delayLocked = false;
+  let delayTimer = null;
+  let readinessGeneration = 0;
+  const setDelayLocked = (locked) => {
+    delayLocked = locked;
+    root.dataset.reviewDelayLocked = String(locked);
+    judgments.forEach((button) => { button.disabled = originalDisabled.get(button) || locked; });
+  };
+  const startDecisionDelay = () => {
+    const generation = ++readinessGeneration;
+    window.clearTimeout(delayTimer);
+    if (!delaySeconds || !form || !judgments.some((button) => !originalDisabled.get(button))) {
+      setDelayLocked(false);
+      return;
+    }
+    setDelayLocked(true);
+    if (delayStatus) delayStatus.textContent = t('Bild wird geladen …');
+    if (delayProgress) { delayProgress.hidden = true; delayProgress.value = 0; }
+    const ready = () => {
+      if (generation !== readinessGeneration) return;
+      const started = performance.now();
+      if (delayProgress) delayProgress.hidden = false;
+      const update = () => {
+        if (generation !== readinessGeneration) return;
+        const elapsed = performance.now() - started;
+        const remaining = Math.max(0, Math.ceil(delaySeconds - elapsed / 1000));
+        if (delayProgress) delayProgress.value = Math.min(1, elapsed / (delaySeconds * 1000));
+        if (remaining === 0) {
+          setDelayLocked(false);
+          if (delayStatus) delayStatus.textContent = t('Bewertung bereit.');
+          if (delayProgress) delayProgress.hidden = true;
+          return;
+        }
+        if (delayStatus) delayStatus.textContent = t('Bewertung in {seconds} s', { seconds: remaining });
+        delayTimer = window.setTimeout(update, 100);
+      };
+      update();
+    };
+    const image = root.querySelector('[data-review-shot]:not([hidden]) [data-review-image]');
+    if (!image || image.complete) ready();
+    else {
+      image.addEventListener('load', ready, { once: true });
+      image.addEventListener('error', ready, { once: true });
+    }
+  };
+
+  // Keep the submitter enabled: its name/value belongs in the native POST.
+  [form, skipForm, backForm].filter(Boolean).forEach((actionForm) => {
+    actionForm.addEventListener('submit', (event) => {
+      if (submitting || !event.submitter || event.submitter.disabled || (actionForm === form && event.submitter.value !== 'keep' && delayLocked)) {
         event.preventDefault();
         return;
       }
-      if (!event.submitter || event.submitter.disabled) {
-        event.preventDefault();
-        return;
-      }
-      // A discard choice belongs only to the explicitly selected discard action.
-      // Selecting "Duplikat" must not accidentally block a later confirmation.
-      if (['confirmed', 'fixed', 'keep'].includes(event.submitter.value)) {
+      if (actionForm === form && ['confirmed', 'fixed', 'keep'].includes(event.submitter.value)) {
         const reason = form.querySelector('[name="discard_reason"]');
         if (reason) reason.value = '';
       }
       submitting = true;
-      form.dataset.submitting = 'true';
       root.dataset.reviewSubmitting = 'true';
-      form.setAttribute('aria-busy', 'true');
-      fixed?.setAttribute('aria-disabled', 'true');
-      confirm?.setAttribute('aria-disabled', 'true');
-      keep?.setAttribute('aria-disabled', 'true');
-      skip?.setAttribute('aria-disabled', 'true');
-      if (submitStatus) submitStatus.textContent = event.submitter.value === 'keep'
-        ? t('Sichtung wird gespeichert …') : t('Bewertung wird gespeichert …');
+      actionForm.dataset.submitting = 'true';
+      actionForm.setAttribute('aria-busy', 'true');
+      [fixed, confirm, keep, skip, back].forEach((button) => button?.setAttribute('aria-disabled', 'true'));
+      if (submitStatus) submitStatus.textContent = actionForm === backForm ? t('Vorheriger Fall wird zurückgesetzt …')
+        : actionForm === skipForm ? t('Nächster Fall wird geöffnet …')
+          : event.submitter.value === 'keep' ? t('Sichtung wird gespeichert …') : t('Bewertung wird gespeichert …');
     });
-  }
-
-  root.addEventListener('click', (event) => {
-    if (!submitting) return;
-    const navigation = event.target instanceof Element && event.target.closest('a, button, summary');
-    if (navigation) event.preventDefault();
   });
-
-  window.addEventListener('pageshow', () => {
+  root.addEventListener('click', (event) => {
+    if (submitting && event.target instanceof Element && event.target.closest('a, button, summary')) event.preventDefault();
+  });
+  window.addEventListener('pageshow', (event) => {
     submitting = false;
     delete root.dataset.reviewSubmitting;
-    fixed?.removeAttribute('aria-disabled');
-    confirm?.removeAttribute('aria-disabled');
-    keep?.removeAttribute('aria-disabled');
-    skip?.removeAttribute('aria-disabled');
-    if (form) {
-      delete form.dataset.submitting;
-      form.removeAttribute('aria-busy');
-    }
+    [fixed, confirm, keep, skip, back].forEach((button) => button?.removeAttribute('aria-disabled'));
+    [form, skipForm, backForm].filter(Boolean).forEach((actionForm) => {
+      delete actionForm.dataset.submitting;
+      actionForm.removeAttribute('aria-busy');
+    });
     if (submitStatus) submitStatus.textContent = '';
+    if (event.persisted) startDecisionDelay();
   });
 
   const selectShot = (id, updateAddress = false) => {
@@ -74,14 +130,13 @@
       if (link.dataset.reviewShotLink === id) link.setAttribute('aria-current', 'true');
       else link.removeAttribute('aria-current');
     });
-    const displayedEvidence = root.querySelector('[data-review-displayed-evidence]');
-    if (displayedEvidence) displayedEvidence.value = id;
+    root.querySelectorAll('[data-review-displayed-evidence]').forEach((input) => { input.value = id; });
     if (updateAddress) {
       const url = new URL(window.location.href);
       url.searchParams.set('evidence', id);
       window.history.replaceState(window.history.state, '', url);
       const returnUrl = new URL('/review', window.location.origin);
-      ['kind', 'images', 'after', 'evidence'].forEach((name) => {
+      ['kind', 'images', 'after', 'evidence', 'trail', 'card'].forEach((name) => {
         if (url.searchParams.has(name)) returnUrl.searchParams.set(name, url.searchParams.get(name));
       });
       root.querySelectorAll('[data-review-return-link]').forEach((link) => {
@@ -90,6 +145,7 @@
         link.href = destination.href;
       });
     }
+    startDecisionDelay();
     // Selecting a displayed image deliberately leaves the assessment basis alone.
   };
   root.querySelectorAll('[data-review-shot-link]').forEach((link) => {
@@ -106,11 +162,12 @@
       const text = document.getElementById(button.dataset.reviewCopy);
       if (!text) return;
       button.hidden = false;
-      button.addEventListener('click', async () => {
+      button.addEventListener('click', async (event) => {
         if (submitting) return;
         try {
           await navigator.clipboard.writeText(text.textContent);
           if (copyStatus) copyStatus.textContent = t('URL kopiert.');
+          if (event.detail > 0 && !window.getSelection()?.toString()) focusCard();
         } catch {
           if (copyStatus) copyStatus.textContent = t('Markiere die URL und kopiere sie manuell.');
         }
@@ -120,30 +177,41 @@
 
   const hasSelection = () => Boolean(window.getSelection()?.toString());
   const interactive = (target) => target instanceof Element && Boolean(target.closest('a, button, input, textarea, select, summary, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'));
-  const confirmFinding = () => {
-    if (!submitting && form && confirm && !confirm.disabled) form.requestSubmit(confirm);
+  const submitAction = (actionForm, button) => {
+    if (!submitting && actionForm && button && !button.disabled && typeof actionForm.requestSubmit === 'function') actionForm.requestSubmit(button);
   };
-  const markNotVulnerable = () => {
-    if (!submitting && form && fixed && !fixed.disabled) form.requestSubmit(fixed);
-  };
-  if ((fixed || confirm) && typeof form?.requestSubmit === 'function') {
-    if (fixed && !fixed.disabled && confirm && !confirm.disabled) root.querySelector('[data-review-keyboard]')?.removeAttribute('hidden');
-    document.addEventListener('keydown', (event) => {
-      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.isComposing || submitting || interactive(event.target) || hasSelection()) return;
-      if (event.key === 'ArrowRight' && confirm && !confirm.disabled) {
-        event.preventDefault();
-        confirmFinding();
-      } else if (event.key === 'ArrowLeft' && fixed && !fixed.disabled) {
-        event.preventDefault();
-        markNotVulnerable();
-      }
+  const confirmFinding = () => submitAction(form, confirm);
+  const markNotVulnerable = () => submitAction(form, fixed);
+  root.querySelectorAll('[data-review-poc-open]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      // Mouse opening returns keyboard review focus; Tab/Enter retains native focus.
+      if (!submitting && event.detail > 0 && !hasSelection()) focusCard();
     });
-  }
+  });
+  document.addEventListener('keydown', (event) => {
+    // Native Enter still activates a focused action once. Holding it must not
+    // open more PoC tabs or submit successive actions after a navigation.
+    if (event.repeat && event.key === 'Enter' && event.target instanceof Element
+      && event.target.closest('[data-review-poc-open], [data-review-fixed], [data-review-confirm], [data-review-back], [data-review-skip], [data-review-keep], [data-review-form] button[type="submit"]')) {
+      event.preventDefault();
+      return;
+    }
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.isComposing || interactive(event.target) || hasSelection()) return;
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.repeat || submitting) return;
+    if (event.key === 'ArrowRight') confirmFinding();
+    else if (event.key === 'ArrowLeft') markNotVulnerable();
+    else if (event.key === 'ArrowDown') submitAction(backForm, back);
+    else if (event.key === 'Enter') submitAction(skipForm, skip);
+    else if (event.key === 'ArrowUp' && poc) poc.click();
+  });
+  startDecisionDelay();
 
   // Gestures live on a dedicated strip. The screenshot keeps normal zoom/link
   // behavior, and vertical page scrolling never counts as a decision.
   const gesture = root.querySelector('[data-review-gesture]');
-  if (gesture && fixed && !fixed.disabled && confirm && !confirm.disabled && typeof form?.requestSubmit === 'function' && 'PointerEvent' in window) {
+  if (gesture && fixed && !originalDisabled.get(fixed) && confirm && !originalDisabled.get(confirm) && typeof form?.requestSubmit === 'function' && 'PointerEvent' in window) {
     gesture.hidden = false;
     let active = null;
     const pointers = new Set();
@@ -171,7 +239,7 @@
         clearGesture();
         return;
       }
-      if (!event.isPrimary || event.button !== 0 || submitting || interactive(event.target) || hasSelection()) return;
+      if (!event.isPrimary || event.button !== 0 || submitting || delayLocked || interactive(event.target) || hasSelection()) return;
       active = { id: event.pointerId, x: event.clientX, y: event.clientY, started: performance.now(), cancelled: false };
       gesture.setPointerCapture?.(event.pointerId);
     });
@@ -192,7 +260,7 @@
       if (!active || active.id !== event.pointerId) return;
       const dx = event.clientX - active.x;
       const dy = event.clientY - active.y;
-      const qualifies = !active.cancelled && !submitting && !hasSelection() && performance.now() - active.started < 1600 && Math.abs(dx) >= 85 && Math.abs(dx) > Math.abs(dy) * 1.8;
+      const qualifies = !active.cancelled && !submitting && !delayLocked && !hasSelection() && performance.now() - active.started < 1600 && Math.abs(dx) >= 85 && Math.abs(dx) > Math.abs(dy) * 1.8;
       clearGesture();
       if (!qualifies) return;
       if (dx > 0) confirmFinding();

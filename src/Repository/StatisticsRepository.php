@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Service\AssessmentHistoryProjection;
+
 use Doctrine\DBAL\Connection;
 
 /** Scalar reads only: no entities, browser work, artifacts or writes. */
@@ -23,7 +25,7 @@ final class StatisticsRepository
             .'SELECT MIN(COALESCE(submitted_at, created_at)) AS reported_at, MIN(contacted_at) AS contacted_at FROM finding'
             .') f CROSS JOIN ('
             .'SELECT MIN(a.assessed_at) AS assessed_at, MIN(CASE WHEN a.assessment = \'fixed\' THEN a.assessed_at END) AS fixed_at '
-            .'FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id'
+            .'FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id WHERE '.AssessmentHistoryProjection::activeSql($this->connection)
             .') a',
         );
         $activity = array_filter([$row['reported_at'], $row['contacted_at'], $row['fixed_at']], is_string(...));
@@ -48,7 +50,7 @@ final class StatisticsRepository
             .'LEFT JOIN (SELECT finding_id, '
             .'MIN(CASE WHEN assessment = \'confirmed\' THEN assessed_at END) AS confirmed_at, '
             .'MIN(CASE WHEN assessment = \'fixed\' THEN assessed_at END) AS fixed_at '
-            .'FROM finding_assessment GROUP BY finding_id) a ON a.finding_id = f.id',
+            .'FROM finding_assessment a WHERE '.AssessmentHistoryProjection::activeSql($this->connection).' GROUP BY finding_id) a ON a.finding_id = f.id',
         );
     }
 }

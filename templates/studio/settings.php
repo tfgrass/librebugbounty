@@ -1,6 +1,7 @@
 <?php
 /** @var string $defaultPayload */
 /** @var string $reviewTimeout */
+/** @var string $reviewDecisionDelay */
 /** @var array<string, string> $errors */
 /** @var ?string $message */
 /** @var array<string, string> $app */
@@ -68,6 +69,14 @@
               <p class="studio-settings-field-hint" id="settings-review-timeout-hint"><?= $escape($t('Ein höherer Wert hilft langsamen Zielseiten, bindet die jeweilige Browserprüfung aber länger.')) ?></p>
               <?php if (isset($errors['review_timeout_ms'])): ?><p class="studio-settings-field-error" id="settings-review-timeout-error"><?= $escape($errors['review_timeout_ms']) ?></p><?php endif; ?>
 
+              <label for="settings-review-decision-delay"><?= $escape($t('Entscheidungspause im Review')) ?></label>
+              <select id="settings-review-decision-delay" name="review_decision_delay_seconds" aria-describedby="settings-review-decision-delay-hint<?= isset($errors['review_decision_delay_seconds']) ? ' settings-review-decision-delay-error' : '' ?>"<?= isset($errors['review_decision_delay_seconds']) ? ' aria-invalid="true"' : '' ?>>
+                <?php if (!in_array($reviewDecisionDelay, ['0', '3', '5'], true)): ?><option value="<?= $escape($reviewDecisionDelay) ?>" selected><?= $escape($t('Ungültige Auswahl')) ?></option><?php endif; ?>
+                <?php foreach (['0' => 'Aus', '3' => '3 Sekunden', '5' => '5 Sekunden'] as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $reviewDecisionDelay === (string) $value ? ' selected' : '' ?>><?= $escape($t($label)) ?></option><?php endforeach; ?>
+              </select>
+              <p class="studio-settings-field-hint" id="settings-review-decision-delay-hint"><?= $escape($t('Neue Fälle können erst nach Ablauf der Pause bewertet werden.')) ?></p>
+              <?php if (isset($errors['review_decision_delay_seconds'])): ?><p class="studio-settings-field-error" id="settings-review-decision-delay-error"><?= $escape($errors['review_decision_delay_seconds']) ?></p><?php endif; ?>
+
               <div class="studio-settings-actions">
                 <button type="submit"><?= $escape($t('Einstellungen speichern')) ?></button>
                 <a href="/"><?= $escape($t('Zum Eingang')) ?></a>
@@ -128,6 +137,11 @@
               <div><dt><?= $escape($t('Quellcode')) ?></dt><dd><a href="<?= $escape($app['repository']) ?>" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt><?= $escape($t('Lizenz')) ?></dt><dd><code><?= $escape($app['license']) ?></code></dd></div>
             </dl>
+            <section class="studio-about-support" id="support" aria-labelledby="support-title">
+              <h3 id="support-title"><?= $escape($t('LibreBugBounty unterstützen')) ?></h3>
+              <p><?= $escape($t('Wenn dir LibreBugBounty hilft, kannst du die Weiterentwicklung freiwillig unterstützen.')) ?></p>
+              <a href="<?= $escape($app['donationUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Über PayPal unterstützen')) ?> <span aria-hidden="true">↗</span></a>
+            </section>
             <p class="studio-about-vibe">Proudly vibe-coded.</p>
           </section>
         </div>

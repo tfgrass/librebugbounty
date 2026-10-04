@@ -557,7 +557,7 @@ final class StudioExportProfileService
         $rows = $this->connection->fetchAllAssociative(
             'SELECT f.id, f.manual_assessment, f.assessed_at, a.id AS decision_id, a.assessment AS decision_assessment, '
             .'a.assessed_at AS decision_at, a.evidence_id AS assessment_evidence_id FROM finding f '
-            .'LEFT JOIN finding_assessment a ON a.id = (SELECT latest.id FROM finding_assessment latest WHERE latest.finding_id = f.id '
+            .'LEFT JOIN finding_assessment a ON a.id = (SELECT latest.id FROM finding_assessment latest WHERE latest.finding_id = f.id AND '.AssessmentHistoryProjection::activeSql($this->connection, 'latest').' '
             .'ORDER BY latest.assessed_at DESC, latest.id DESC LIMIT 1) WHERE f.id IN (:ids)',
             ['ids' => $findingIds], ['ids' => ArrayParameterType::STRING],
         );

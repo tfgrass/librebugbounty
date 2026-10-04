@@ -26,7 +26,7 @@ final class ReviewNoticeService
         }
         $findings = $this->connection->fetchAllAssociative(
             'SELECT f.id, f.manual_assessment, f.assessed_at, a.id AS decision_id, a.assessment AS decision_assessment, a.assessed_at AS decision_at, a.known_observation_ids, a.known_observation_states '
-            .'FROM finding f LEFT JOIN finding_assessment a ON a.id = (SELECT latest.id FROM finding_assessment latest WHERE latest.finding_id = f.id ORDER BY latest.assessed_at DESC, latest.id DESC LIMIT 1) WHERE '.$where,
+            .'FROM finding f LEFT JOIN finding_assessment a ON a.id = (SELECT latest.id FROM finding_assessment latest WHERE latest.finding_id = f.id AND '.AssessmentHistoryProjection::activeSql($this->connection, 'latest').' ORDER BY latest.assessed_at DESC, latest.id DESC LIMIT 1) WHERE '.$where,
             $parameters,
         );
         if ($findings === []) { return []; }

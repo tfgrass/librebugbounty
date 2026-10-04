@@ -236,7 +236,7 @@ async function main() {
     assert.equal(await changelog.count(), 1);
     assert.equal(await changelog.getAttribute('href'), '/docs/changelog');
     assert.equal(await changelog.getAttribute('target'), null);
-    assert.ok((await changelog.getAttribute('rel')).includes('noopener'));
+    assert.equal(await changelog.getAttribute('rel'), null, 'Internal documentation uses ordinary same-tab navigation');
     assert.equal(await about.locator('a[href="https://grassmann-it.de/"]').count(), 1);
     assert.equal(await about.locator('a[href="https://www.openbugbounty.org/researchers/grassmann-it/"]').count(), 1);
     assert.equal(await about.locator('a[href="https://github.com/tfgrass/librebugbounty"]').count(), 1);

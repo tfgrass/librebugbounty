@@ -7,6 +7,8 @@ use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
 use App\Entity\FindingReviewAcknowledgement;
+use App\Entity\FindingAssessmentReset;
+use App\Entity\FindingAssessmentCancellation;
 use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
 use App\Repository\FindingRepository;
@@ -224,6 +226,14 @@ final class FindingService
             // explicitly so deleting a finding cannot create new orphans.
             $relatedClasses = [FindingAssessment::class, ScreenshotJob::class, Evidence::class, RetestRun::class];
             if ($this->reviewNotices?->available()) { array_unshift($relatedClasses, FindingReviewAcknowledgement::class); }
+            if (AssessmentHistoryProjection::available($this->entityManager->getConnection())) {
+                foreach ($this->entityManager->getRepository(FindingAssessmentReset::class)->findBy(['finding' => $finding]) as $reset) {
+                    foreach ($this->entityManager->getRepository(FindingAssessmentCancellation::class)->findBy(['reset' => $reset]) as $cancellation) {
+                        $this->entityManager->remove($cancellation);
+                    }
+                    $this->entityManager->remove($reset);
+                }
+            }
             foreach ($relatedClasses as $entityClass) {
                 foreach ($this->entityManager->getRepository($entityClass)->findBy(['finding' => $finding]) as $related) {
                     $this->entityManager->remove($related);

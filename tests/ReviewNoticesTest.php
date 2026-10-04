@@ -341,7 +341,7 @@ final class ReviewNoticesTest extends DatabaseTestCase
     {
         $document = new \DOMDocument(); @$document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
         $fields = [];
-        foreach ((new \DOMXPath($document))->query('//form[starts-with(@action,"/review/")]//input[@type="hidden"]') as $input) { $fields[$input->getAttribute('name')] = $input->getAttribute('value'); }
+        foreach ((new \DOMXPath($document))->query('//form[@id="review-assessment-form"]//input[@type="hidden"]') as $input) { $fields[$input->getAttribute('name')] = $input->getAttribute('value'); }
         self::assertNotEmpty($fields['context_token'] ?? null); return $fields;
     }
 

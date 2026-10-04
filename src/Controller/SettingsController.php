@@ -28,6 +28,7 @@ final class SettingsController
             request: $request,
             defaultPayload: (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']),
             reviewTimeout: (string) $this->settings->getReviewScanTimeoutMs(),
+            reviewDecisionDelay: (string) $this->settings->getReviewDecisionDelaySeconds(),
             errors: [],
             message: $request->query->getString('message') ?: null,
         );
@@ -37,8 +38,10 @@ final class SettingsController
     public function save(Request $request): Response
     {
         $parameters = $request->request->all();
+        $hasReviewDecisionDelay = array_key_exists('review_decision_delay_seconds', $parameters);
         if (!is_string($parameters['default_payload'] ?? null)
             || !is_string($parameters['review_timeout_ms'] ?? null)
+            || ($hasReviewDecisionDelay && !is_string($parameters['review_decision_delay_seconds']))
         ) {
             return new Response($this->i18n->trans('Ungültige Einstellungsangaben.'), Response::HTTP_BAD_REQUEST, [
                 'Content-Type' => 'text/plain; charset=UTF-8',
@@ -48,6 +51,9 @@ final class SettingsController
 
         $defaultPayload = trim($parameters['default_payload']);
         $reviewTimeout = trim($parameters['review_timeout_ms']);
+        $reviewDecisionDelay = $hasReviewDecisionDelay
+            ? trim($parameters['review_decision_delay_seconds'])
+            : (string) $this->settings->getReviewDecisionDelaySeconds();
         $errors = [];
         if ($defaultPayload === '') {
             $errors['default_payload'] = $this->i18n->trans('Das Standardkennzeichen darf nicht leer sein.');
@@ -60,15 +66,22 @@ final class SettingsController
                 $errors['review_timeout_ms'] = $this->i18n->trans('Das Zeitlimit muss zwischen 1000 und 120000 Millisekunden liegen.');
             }
         }
-
-        if ($errors !== []) {
-            return $this->render($request, $defaultPayload, $reviewTimeout, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        if (!in_array($reviewDecisionDelay, ['0', '3', '5'], true)) {
+            $errors['review_decision_delay_seconds'] = $this->i18n->trans('Wähle für die Entscheidungspause Aus, 3 oder 5 Sekunden.');
         }
 
-        $this->settings->save([
+        if ($errors !== []) {
+            return $this->render($request, $defaultPayload, $reviewTimeout, $reviewDecisionDelay, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $values = [
             'intake.default_payload' => $defaultPayload,
             'review.scan_timeout_ms' => (string) (int) $reviewTimeout,
-        ]);
+        ];
+        if ($hasReviewDecisionDelay) {
+            $values['review.decision_delay_seconds'] = $reviewDecisionDelay;
+        }
+        $this->settings->save($values);
 
         return new RedirectResponse('/settings?message='.rawurlencode($this->i18n->trans('Einstellungen gespeichert.')));
     }
@@ -78,6 +91,7 @@ final class SettingsController
         Request $request,
         string $defaultPayload,
         string $reviewTimeout,
+        string $reviewDecisionDelay,
         array $errors,
         ?string $message,
         int $status = Response::HTTP_OK,
@@ -89,6 +103,7 @@ final class SettingsController
             'author' => AppInfo::AUTHOR,
             'homepage' => AppInfo::HOMEPAGE,
             'flickrUrl' => AppInfo::FLICKR_URL,
+            'donationUrl' => AppInfo::DONATION_URL,
             'profile' => AppInfo::OPENBUGBOUNTY_PROFILE,
             'profileUrl' => AppInfo::OPENBUGBOUNTY_URL,
             'repository' => AppInfo::REPOSITORY,

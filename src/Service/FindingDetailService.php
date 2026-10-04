@@ -9,6 +9,7 @@ use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
 use App\Entity\FindingReviewAcknowledgement;
+use App\Entity\FindingAssessmentReset;
 use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
 use App\Repository\EvidenceRepository;
@@ -48,6 +49,11 @@ final class FindingDetailService
         $assessments = $this->assessmentRepository->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']);
         $noticesAvailable = $this->reviewNotices->available();
         $acknowledgements = $noticesAvailable ? $this->entityManager->getRepository(FindingReviewAcknowledgement::class)->findBy(['finding' => $finding], ['reviewedAt' => 'DESC', 'id' => 'DESC']) : [];
+        $connection = $this->entityManager->getConnection();
+        $resetsAvailable = AssessmentHistoryProjection::available($connection);
+        $resets = $resetsAvailable ? $this->entityManager->getRepository(FindingAssessmentReset::class)->findBy(['finding' => $finding], ['resetAt' => 'DESC', 'id' => 'DESC']) : [];
+        $cancelled = $resetsAvailable ? $connection->fetchAllKeyValue('SELECT c.assessment_id, c.reset_id FROM finding_assessment_cancellation c INNER JOIN finding_assessment_reset r ON r.id = c.reset_id WHERE r.finding_id = ?', [$id]) : [];
+        $effectiveAssessments = array_values(array_filter($assessments, static fn (FindingAssessment $entry): bool => !isset($cancelled[$entry->getId()])));
         if ($refresh) {
             // A rejected concurrent POST may already have these records in the
             // identity map. Refresh the current case in batches before deriving
@@ -72,9 +78,11 @@ final class FindingDetailService
             screenshotJobs: $screenshotJobs,
             assessments: $assessments,
             screenshots: $this->screenshots($evidence, $screenshotJobs),
-            assessmentState: $this->assessmentState($finding, $runs, $assessments[0] ?? null, $notice),
+            assessmentState: $this->assessmentState($finding, $runs, $effectiveAssessments[0] ?? null, $notice),
             notice: $notice,
             reviewAcknowledgements: $acknowledgements,
+            reviewResets: $resets,
+            cancelledAssessmentIds: $cancelled,
         );
     }
 

@@ -27,6 +27,9 @@ final readonly class FindingDetailView
         public FindingAssessmentState $assessmentState,
         public ?ReviewNoticeView $notice = null,
         public array $reviewAcknowledgements = [],
+        public array $reviewResets = [],
+        /** @var array<string, string> Assessment ID => explicit reset ID. */
+        public array $cancelledAssessmentIds = [],
     ) {
     }
 }

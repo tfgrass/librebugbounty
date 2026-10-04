@@ -13,6 +13,10 @@ $assessment = $finding->getManualAssessment();
 $state = $view->assessmentState;
 $latestRun = $state->latestRun;
 $latestJob = $view->screenshotJobs[0] ?? null;
+$reviewResetById = [];
+foreach ($view->reviewResets as $reset) {
+    $reviewResetById[$reset->getId()] = $reset;
+}
 $findingPath = '/findings/'.$finding->getId();
 $returnPath ??= null;
 $returnField = $returnPath !== null
@@ -308,9 +312,16 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
               <?php if ($view->assessments === []): ?><p class="studio-detail-hint"><?= $escape($t('Noch keine Bewertungsänderung aufgezeichnet.')) ?></p><?php endif; ?>
               <ol class="studio-record-list">
                 <?php foreach ($view->assessments as $entry): ?>
-                  <?php $snapshot = $entry->getReferenceSnapshot() ?? []; ?>
-                  <li class="studio-record">
+                  <?php
+                    $snapshot = $entry->getReferenceSnapshot() ?? [];
+                    $resetId = $view->cancelledAssessmentIds[$entry->getId()] ?? null;
+                    $reset = $resetId !== null ? ($reviewResetById[$resetId] ?? null) : null;
+                  ?>
+                  <li class="studio-record"<?= $resetId !== null ? ' data-cancelled-assessment="'.$escape($entry->getId()).'"' : '' ?>>
                     <div class="studio-record-heading"><strong><?= $escape($t(FindingReadLabels::assessment($entry->getAssessment(), $entry->getDiscardReason()))) ?></strong><span><?= $escape($formatTime($entry->getAssessedAt())) ?></span></div>
+                    <?php if ($reset !== null): ?>
+                      <p class="studio-detail-hint"><a href="#assessment-reset-<?= $escape($resetId) ?>"><?= $escape($t('Durch Zurück aufgehoben am {date}', ['date' => $formatTime($reset->getResetAt())])) ?></a> · <?= $escape($t('Nur Historie, keine wirksame Bewertung.')) ?></p>
+                    <?php endif; ?>
                     <p class="studio-detail-hint"><?= $escape($t('Herkunft')) ?>: <?= $escape($entry->getSource() === 'manual' ? $t('Manuell') : $entry->getSource()) ?></p>
                     <dl class="studio-record-data">
                       <dt><?= $escape($t('Beobachtungsgrundlage')) ?></dt><dd><?= $entry->getObservationId() !== null ? '<code>'.$escape($entry->getObservationId()).'</code>' : $escape($t('Unbekannt / keine konkrete Beobachtung')) ?>
@@ -324,6 +335,21 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                 <?php endforeach; ?>
               </ol>
             </section>
+            <?php if ($view->reviewResets !== []): ?>
+              <section aria-labelledby="studio-reset-history-title">
+                <h2 id="studio-reset-history-title"><?= $escape($t('Zurückgesetzte Bewertungen')) ?></h2>
+                <p class="studio-detail-hint"><?= $escape($t('Zurück im Review setzt den Fall auf unbewertet. Frühere Bewertungen bleiben zur Nachvollziehbarkeit erhalten.')) ?></p>
+                <ol class="studio-record-list">
+                  <?php foreach ($view->reviewResets as $reset): ?>
+                    <?php $previousState = $reset->getPreviousState(); ?>
+                    <li class="studio-record" id="assessment-reset-<?= $escape($reset->getId()) ?>" data-review-reset="<?= $escape($reset->getId()) ?>">
+                      <div class="studio-record-heading"><strong><?= $escape($t('Auf unbewertet zurückgesetzt')) ?></strong><span><?= $escape($formatTime($reset->getResetAt())) ?></span></div>
+                      <p class="studio-detail-hint"><?= $escape($t('Vorher: {assessment}', ['assessment' => $t(FindingReadLabels::assessment($previousState['manual_assessment'] ?? null, $previousState['discard_reason'] ?? null))])) ?></p>
+                    </li>
+                  <?php endforeach; ?>
+                </ol>
+              </section>
+            <?php endif; ?>
             <?php if (($view->reviewAcknowledgements ?? []) !== []): ?>
               <section aria-labelledby="studio-review-history-title">
                 <h2 id="studio-review-history-title"><?= $escape($t('Gesichtete Hinweise')) ?></h2>

@@ -6,6 +6,7 @@ use App\Dto\FindingReadFilter;
 use App\Dto\FindingReadView;
 use App\Value\HostnameTld;
 use App\Service\ReviewNoticeService;
+use App\Service\AssessmentHistoryProjection;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 
@@ -141,7 +142,7 @@ final class FindingReadRepository
                 'reported' => 'COALESCE(f.submitted_at, f.created_at)',
                 'sent' => 'f.notified_owner_at',
                 'contacted' => 'f.contacted_at',
-                'confirmed', 'fixed' => '(SELECT MIN(a.assessed_at) FROM finding_assessment a WHERE a.finding_id = f.id AND a.assessment = :event_assessment)',
+                'confirmed', 'fixed' => '(SELECT MIN(a.assessed_at) FROM finding_assessment a WHERE a.finding_id = f.id AND a.assessment = :event_assessment AND '.AssessmentHistoryProjection::activeSql($this->connection).')',
             };
             if (in_array($filter->event, ['confirmed', 'fixed'], true)) {
                 $parameters['event_assessment'] = $filter->event;

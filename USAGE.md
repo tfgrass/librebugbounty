@@ -41,13 +41,45 @@ technical errors, or cases without a technical observation.
 | --- | --- |
 | **Vulnerable** / right arrow | A manual **Confirmed** assessment |
 | **Not vulnerable** / left arrow | A manual **Fixed** assessment |
-| **Skip** | No change; the case remains open for a later round |
+| **Skip** / Enter or number-pad Enter | No assessment change; the case remains open for a later round |
+| **Back** / down arrow | Returns to the previous case in this review round and resets its assessment to **Unassessed** |
+| **Open PoC** / up arrow | Opens the stored URL in another tab; the review remains on the same case |
 | **Discard case** | Preserves the case in the archive and removes it from normal review |
 
-The arrow keys work when focus is outside editable fields and other controls.
+The image fits the available workspace height, with details scrolling separately.
+The fixed controls follow the arrow-key layout: Open PoC above Back, with Skip
+beside Open PoC and above Vulnerable. Open the original image for closer inspection.
+
+The shortcuts work when focus is outside editable fields and other controls.
+Enter still activates a deliberately focused button or link normally. Holding
+a key does not repeatedly assess, skip, reset, or open tabs.
 On touch devices, the dedicated gesture strip supports the same left/right
 decisions; the screenshot itself remains available for ordinary scrolling and
 zooming. The buttons also work without JavaScript.
+
+Back follows the review round one case at a time, including skipped cases, and
+can be used repeatedly. Each returned case becomes unassessed; it does not regain
+an older judgment. Notes, contact records, screenshots, and technical observations
+remain available. Previous judgments stay visible in history with their reset
+record, but cancelled judgments no longer count as effective assessment events
+or export evidence bases. Ordinary browser history navigation does not reset data.
+Reset cases remain available in the general review queue until assessed again,
+even when their last technical observation had a conclusive result. A narrower
+review-reason filter can still exclude them.
+
+The round survives page reloads while its browser session remains available.
+Opening a fresh review round starts a new return history. If a case has changed
+since the recorded action, Back reports a conflict instead of replacing that change.
+Each browser session keeps up to 20 review rounds with the latest 200 steps per
+round; the review displays a notice when older steps have been dropped.
+If the previous case has been deleted, Back removes that unavailable step and
+leaves all remaining cases unchanged. Press Back again to reach the next earlier case.
+
+The optional **Review decision pause** gives you three or five seconds to inspect
+each newly displayed image before assessing it. A countdown shows when the
+decision buttons become available; Skip, Back, and Open PoC remain usable.
+The pause is off by default and requires JavaScript. Opening a stored URL uses
+normal browser navigation; it does not reproduce a stored POST request.
 
 **Not vulnerable** records your current judgment using the application's
 **Fixed** category. It does not establish that a vulnerability existed earlier.
@@ -161,6 +193,9 @@ Open the gear icon for **Settings & info**:
 - **Browser timeout:** 1,000–120,000 milliseconds per screenshot capture or
   browser check. The default is 45,000 ms; a larger value gives slow pages more
   time and keeps the worker occupied longer.
+- **Review decision pause:** Off, 3 seconds, or 5 seconds. With JavaScript,
+  assessment controls unlock after the displayed image is ready and the pause
+  has elapsed. This does not delay saving an assessment you already made.
 
 The About section shows the version and release name, release highlights,
 credits, project links, and license. Expand **Release history** to browse

@@ -411,7 +411,7 @@ final class StudioReviewTest extends DatabaseTestCase
     private function form(string $html): array
     {
         $fields = [];
-        foreach ($this->xpath($html)->query('//form[starts-with(@action,"/review/")]//input[@type="hidden"]') as $input) {
+        foreach ($this->xpath($html)->query('//form[@id="review-assessment-form"]//input[@type="hidden"]') as $input) {
             $fields[$input->getAttribute('name')] = $input->getAttribute('value');
         }
         self::assertNotEmpty($fields['_token'] ?? null);

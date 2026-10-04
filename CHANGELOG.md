@@ -18,6 +18,13 @@ branch.
   with duplicate detection and a persistent screenshot queue.
 - Screenshot-first manual review with keyboard, touch, and form controls for
   **Vulnerable** and **Not vulnerable** decisions.
+- A compact review workspace with a fitted image, separately scrolling details,
+  and a fixed arrow-key button layout. Up opens the stored URL, Enter (including
+  number-pad Enter) skips, and Down returns through the review round while
+  resetting each returned case to unassessed.
+- Auditable review resets that retain notes, contacts, observations, images,
+  and earlier judgments while excluding cancelled judgments from effective
+  statistics and export evidence selection.
 - Manual assessments kept separate from technical observations. New
   contradictions, inconclusive results, and errors can return an assessed case
   to review without replacing its existing decision.
@@ -30,7 +37,8 @@ branch.
 - Configurable exports: compact URL lists, current case-state JSON, and ZIP
   report packages with selected image evidence. Private notes are included only
   when explicitly selected.
-- Settings for the intake marker and browser time limit, plus version,
+- Settings for the intake marker, browser time limit, and an optional three- or
+  five-second review decision pause, plus version,
   release history, author, and license information in About.
 - English UI by default with a persistent German/English switcher in the header.
 - English documentation available inside the application, including offline

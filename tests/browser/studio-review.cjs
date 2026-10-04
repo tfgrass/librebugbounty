@@ -105,6 +105,7 @@ async function main() {
   }, { id, values });
   const touch = async (dx, dy = 0, target = page) => {
     const strip = target.locator('[data-review-gesture]');
+    await reveal(strip);
     await strip.scrollIntoViewIfNeeded();
     const box = await strip.boundingBox();
     assert.ok(box && box.width >= 220, 'Gesture strip needs enough room for a deliberate swipe');
@@ -119,6 +120,7 @@ async function main() {
   };
   const cancelMultiTouchOutsideStrip = async () => {
     const strip = page.locator('[data-review-gesture]');
+    await reveal(strip);
     await strip.scrollIntoViewIfNeeded();
     const box = await strip.boundingBox();
     const viewport = page.viewportSize();
@@ -278,6 +280,7 @@ async function main() {
       await saveScreenshot(`studio-review-${width}x${height}.png`);
       for (const selector of ['[data-review-fixed]', '[data-review-confirm]', '[data-review-skip]', '[data-review-gesture]']) {
         const control = page.locator(selector);
+        await reveal(control);
         await control.scrollIntoViewIfNeeded();
         const box = await control.boundingBox();
         assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${width}: ${selector} is not reachable`);
@@ -287,7 +290,7 @@ async function main() {
       await page.locator('[data-review-confirm]').scrollIntoViewIfNeeded();
       await assertDock(width, height);
       await saveScreenshot(`studio-review-${width}-actions.png`);
-      mark(`${width}×${height}: screenshot/PoC scroll normally; native decisions and navigation stay visible without overlap or overflow`);
+      mark(`${width}×${height}: inspector options remain reachable; native decisions and navigation stay visible without overlap or overflow`);
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     await gotoReview();
@@ -362,9 +365,11 @@ async function main() {
     assert.equal(postRequests.length, postsBeforeEditable, 'Left arrow must preserve text inspection without deciding');
     await page.evaluate(() => window.getSelection().removeAllRanges());
     await page.locator('[data-review-focus]').focus();
+    const beforeSkipSnapshot = (await fixture()).snapshot;
     await navigate(() => page.locator('[data-review-skip]').click());
     assert.equal(await currentId(), f.readyError.id);
-    assert.equal(postRequests.length, postsBeforeEditable, 'Separate skip link must advance without a write');
+    assert.equal(postRequests.length, postsBeforeEditable + 1, 'Skip records the tab trail through one explicit POST');
+    assert.deepEqual((await fixture()).snapshot, beforeSkipSnapshot, 'Skip leaves finding, assessment and evidence data unchanged');
     await gotoReview();
     await touch(50, 0);
     assert.equal(await currentId(), f.main.id, 'Short swipes must not decide or navigate');
@@ -380,6 +385,8 @@ async function main() {
     assert.equal(await fallback.locator('[data-review-confirm]').count(), 1);
     assert.equal(await fallback.locator('[data-review-skip]').count(), 1);
     assert.ok(await fallback.locator('[data-review-shot-link]').count() >= 2);
+    await fallback.locator('[data-review-inspector] > summary').click();
+    assert.equal(await fallback.locator('[data-review-inspector]').getAttribute('open'), null, 'Native inspector can collapse without JavaScript');
     await navigate(() => fallback.locator(`[data-review-shot-link][href*="evidence=${f.main.olderEvidenceId}"]`).click(), fallback);
     assert.match(await selectedShot(fallback).innerText(), /Aufnahme.*unbekannt/i);
     await assertNoOverflow(640, fallback);

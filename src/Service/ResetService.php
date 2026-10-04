@@ -40,6 +40,9 @@ final class ResetService
         if ($this->reviewNotices?->available()) {
             $preview['Review acknowledgements retained'] = (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM finding_review_acknowledgement');
         }
+        if (AssessmentHistoryProjection::available($this->entityManager->getConnection())) {
+            $preview['Assessment reset history retained'] = (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM finding_assessment_reset');
+        }
         return $preview;
     }
 

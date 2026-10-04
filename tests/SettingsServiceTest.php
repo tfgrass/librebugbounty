@@ -18,6 +18,7 @@ final class SettingsServiceTest extends TestCase
 
         self::assertSame('OPENBUGBOUNTY', $service->getDefaultPayload());
         self::assertSame(45000, $service->getReviewScanTimeoutMs());
+        self::assertSame(0, $service->getReviewDecisionDelaySeconds());
     }
 
     public function testSettingsCanBeSavedAndReloaded(): void
@@ -28,10 +29,12 @@ final class SettingsServiceTest extends TestCase
         $service->save([
             'intake.default_payload' => 'PAYLOAD123',
             'review.scan_timeout_ms' => '30000',
+            'review.decision_delay_seconds' => '3',
         ]);
 
         self::assertSame('PAYLOAD123', $service->getDefaultPayload());
         self::assertSame(30000, $service->getReviewScanTimeoutMs());
+        self::assertSame(3, $service->getReviewDecisionDelaySeconds());
     }
 
     public function testScreenshotTimeoutIsAlwaysClampedToTheWorkerLimits(): void
@@ -44,6 +47,22 @@ final class SettingsServiceTest extends TestCase
         self::assertSame(1000, $service->getReviewScanTimeoutMs());
         $service->save(['review.scan_timeout_ms' => '120001']);
         self::assertSame(120000, $service->getReviewScanTimeoutMs());
+    }
+
+    public function testDecisionPauseOnlyUsesSupportedDurations(): void
+    {
+        $store = [];
+        $repo = null;
+        $service = new SettingsService($this->createEntityManager($store, $repo));
+
+        foreach (['0', '3', '5'] as $value) {
+            $service->save(['review.decision_delay_seconds' => $value]);
+            self::assertSame((int) $value, $service->getReviewDecisionDelaySeconds());
+        }
+        foreach ([null, '', '2', '-1', '3.5', '3e0', '03', 'invalid'] as $value) {
+            $service->save(['review.decision_delay_seconds' => $value]);
+            self::assertSame(0, $service->getReviewDecisionDelaySeconds());
+        }
     }
 
     /**

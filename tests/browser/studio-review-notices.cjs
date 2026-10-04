@@ -161,11 +161,12 @@ async function main() {
       const height = width === 375 ? 844 : 1000;
       await page.setViewportSize({ width, height }); await gotoReview(); await assertDock(width, height);
       await saveScreenshot(`notice-${width}x${height}.png`);
+      await reveal(page.locator('[data-review-notice]'));
       await page.locator('[data-review-notice]').scrollIntoViewIfNeeded();
       await page.locator('[data-review-poc]').scrollIntoViewIfNeeded();
       for (const details of await page.locator('[data-review-card] details').all()) await details.evaluate((node) => { node.open = true; });
       await assertDock(width, height); await saveScreenshot(`notice-${width}-basis.png`);
-      mark(`${width}×${height}: notice/image/PoC scroll while judgments, keep, skip and navigation remain visible without overlap`);
+      mark(`${width}×${height}: inspector notice/PoC remain reachable while judgments, keep, skip and navigation stay visible without overlap`);
     }
     await page.setViewportSize({ width: 1440, height: 1000 }); await gotoReview();
     const postsBeforeShortcuts = postRequests.length;

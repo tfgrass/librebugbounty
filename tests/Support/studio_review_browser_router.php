@@ -46,6 +46,7 @@ if (PHP_SAPI === 'cli') {
             ->setRequestParams($name === 'main' ? ['q' => 'encoded & <fixture>', 'nested' => ['page' => 2, 'space' => 'a+b c']] : null)
             ->setPayload($name === 'main' ? '<script>window.__reviewFixtureExecuted = true</script>\n& marker' : null)
             ->setExpectedEvidence('LOCAL-REVIEW-ONLY')
+            ->setPrivateNotes($name === 'main' ? 'Synthetic private note retained across Review resets.' : null)
             ->setSubmittedAt(new DateTimeImmutable(sprintf('2026-10-03T08:%02d:00+00:00', $index)));
         if ($name === 'confirmed') $finding->setManualAssessment('confirmed', null, new DateTimeImmutable('2026-10-03T09:00:00+00:00'));
         if ($name === 'archived') $finding->setManualAssessment('discarded', null, new DateTimeImmutable('2026-10-03T09:00:00+00:00'));
@@ -138,8 +139,9 @@ $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if ($path === '/__studio_review_fixture') {
     $database = new PDO('sqlite:'.$root.'/database.sqlite');
     $snapshot = [];
-    foreach (['domain', 'finding', 'screenshot_job', 'retest_run', 'evidence', 'finding_assessment'] as $table) {
-        $snapshot[$table] = $database->query('SELECT * FROM '.$table.' ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+    foreach (['domain', 'finding', 'screenshot_job', 'retest_run', 'evidence', 'finding_assessment', 'finding_review_acknowledgement', 'finding_assessment_reset', 'finding_assessment_cancellation'] as $table) {
+        $order = $table === 'finding_assessment_cancellation' ? 'assessment_id' : 'id';
+        $snapshot[$table] = $database->query('SELECT * FROM '.$table.' ORDER BY '.$order)->fetchAll(PDO::FETCH_ASSOC);
     }
     header('Content-Type: application/json');
     header('Cache-Control: no-store');

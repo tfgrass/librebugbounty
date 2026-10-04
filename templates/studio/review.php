@@ -37,8 +37,12 @@ $jobTone = static fn (string $status): string => match ($status) {
     'failed' => 'error',
     default => 'neutral',
 };
-$reviewUrl = static function (array $changes) use ($view): string {
-    $query = ['kind' => $view->kind, 'images' => $view->images];
+$reviewUrl = static function (array $changes) use ($view, $reviewTrailId): string {
+    $query = ['kind' => $view->kind, 'images' => $view->images, 'trail' => $reviewTrailId];
+    parse_str((string) parse_url($view->currentPath, PHP_URL_QUERY), $currentQuery);
+    if (isset($currentQuery['card'])) {
+        $query['card'] = $currentQuery['card'];
+    }
     if ($view->after !== null) {
         $query['after'] = $view->after;
     }
@@ -49,6 +53,9 @@ $notes = $finding?->getPrivateNotes();
 $findingLink = $findingPath === null ? null : $findingPath.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
 $lastReviewedLink = $lastReviewedId === null ? null : '/findings/'.$lastReviewedId.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
 $canAssess = $finding !== null && $view->eligible;
+$pocUrl = $finding?->getUrl();
+$pocParts = is_string($pocUrl) ? parse_url($pocUrl) : false;
+$canOpenPoc = is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x20\x7f]/', $pocUrl);
 $hasError = $error !== null && $error !== '';
 $waitingForImages = $view->total === 0 && $view->images === 'ready' && $view->counts[$view->kind] > 0;
 $evidenceLabels = [];
@@ -75,8 +82,8 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
   <script src="/js/i18n.js" defer></script>
   <script src="/js/studio-review.js" defer></script>
 </head>
-<body data-studio data-studio-review data-total="<?= $view->total ?>" data-remaining="<?= $view->remaining ?>" data-current-id="<?= $escape($finding?->getId() ?? '') ?>">
-  <div class="studio-shell studio-review-shell<?= $finding !== null ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
+<body data-studio data-studio-review data-review-trail="<?= $escape($reviewTrailId) ?>" data-review-decision-delay="<?= $reviewDecisionDelaySeconds ?>" data-total="<?= $view->total ?>" data-remaining="<?= $view->remaining ?>" data-current-id="<?= $escape($finding?->getId() ?? '') ?>">
+  <div class="studio-shell studio-review-shell<?= $finding !== null || $reviewBackAvailable ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
       <div class="studio-header-tools">
@@ -99,6 +106,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
 
         <details class="review-filter-panel"><summary><span><?= $escape($t('Vorrat auswählen')) ?></span><span><?= $escape($t($kindLabels[$view->kind]).' · '.$t($imageLabels[$view->images])) ?></span></summary>
         <form method="get" action="/review" class="review-filters" aria-label="<?= $escape($t('Review-Vorrat auswählen')) ?>">
+          <input type="hidden" name="trail" value="<?= $escape($reviewTrailId) ?>">
           <label for="review-kind"><span><?= $escape($t('Review-Anlass')) ?></span><select id="review-kind" name="kind"><?php foreach ($kindLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $view->kind === $value ? ' selected' : '' ?>><?= $escape($t($label).' · '.$formatNumber($view->counts[$value] ?? 0)) ?></option><?php endforeach; ?></select></label>
           <label for="review-images"><span><?= $escape($t('Bildbelege')) ?></span><select id="review-images" name="images"><?php foreach ($imageLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $view->images === $value ? ' selected' : '' ?>><?= $escape($t($label).' · '.$formatNumber($view->counts[$value])) ?></option><?php endforeach; ?></select></label>
           <button class="review-button review-filter-button" type="submit"><?= $escape($t('Auswahl anwenden')) ?></button>
@@ -112,7 +120,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
         <?php if ($hasError): ?><p class="review-feedback" data-tone="error" role="alert" tabindex="-1" data-review-error><?= $escape($error) ?></p><?php endif; ?>
 
         <div class="review-round">
-          <p><strong><?= $formatNumber($view->remaining) ?></strong> <?= $escape($t('noch in dieser Runde')) ?> <span>· <?= $formatNumber($view->total) ?> <?= $escape($t('offene Fälle in der Auswahl')) ?></span></p>
+          <p><strong><?= $formatNumber($view->remaining) ?></strong> <?= $escape($t('noch in dieser Runde')) ?> <span>· <?= $formatNumber($view->total) ?> <?= $escape($t('offene Fälle in der Auswahl')) ?></span><?php if ($reviewTrailTruncated ?? false): ?><small class="review-trail-limit"><?= $escape($t('Der Verlauf enthält die letzten {count} Schritte.', ['count' => $formatNumber($reviewTrailLimit ?? 200)])) ?></small><?php endif; ?></p>
           <div class="review-round-links"><a href="<?= $escape($view->currentPath) ?>"><?= $escape($t('Aktualisieren')) ?> <span aria-hidden="true">↻</span></a><?php if ($view->after !== null): ?><a href="<?= $escape($view->restartPath) ?>"><?= $escape($t('Runde von vorn')) ?></a><?php endif; ?></div>
         </div>
 
@@ -130,20 +138,6 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
               <div class="review-case-title"><p class="studio-eyebrow"><?= $escape($t('Fall')) ?> <?= $escape(substr($finding->getId(), 0, 8)) ?> · <?= $escape($finding->getType()) ?></p><h2 tabindex="-1" data-review-focus><?= $escape($finding->getDomain()->getHostname()) ?></h2><p><?= $escape($finding->getTitle()) ?></p></div>
               <a class="review-text-link" href="<?= $escape($findingLink) ?>" data-review-return-link><?= $escape($t('Fall öffnen')) ?> <span aria-hidden="true">↗</span></a>
             </header>
-            <?php if ($isNotice): ?>
-              <section class="review-notice" aria-labelledby="review-notice-title" data-review-notice>
-                <div class="review-notice-heading"><div><p class="studio-eyebrow"><?= $escape($t('Erneut prüfen')) ?></p><h3 id="review-notice-title"><?= $escape($t('Neue Hinweise nach deinem Urteil')) ?></h3></div><span class="studio-status" data-tone="warning"><?= $escape($t(FindingReadLabels::assessment($finding->getManualAssessment(), $finding->getDiscardReason()))) ?></span></div>
-                <p><?= $escape($t('Bewertet: {value}. Deine Bewertung bleibt erhalten, bis du ausdrücklich neu entscheidest.', ['value' => $formatTime($finding->getAssessedAt(), true)])) ?></p>
-                <?php if ($view->lastAcknowledgedAt !== null): ?><p class="review-muted"><?= $escape($t('Zuletzt gesichtet: {value}', ['value' => $formatTime($view->lastAcknowledgedAt, true)])) ?></p><?php endif; ?>
-                <?php if (!$view->baselineKnown): ?><p class="review-history"><?= $escape($t('Frühere Bewertung ohne vollständig bekannten Beobachtungsstand. Zeitlich nicht eindeutig zugeordnete Hinweise werden zur Prüfung gezeigt.')) ?></p><?php endif; ?>
-                <ul class="review-notice-observations" aria-label="<?= $escape($t('Offene technische Hinweise')) ?>">
-                  <?php foreach ($view->triggeringObservations as $observation): ?>
-                    <li data-review-trigger="<?= $escape($observation['id']) ?>"><div><strong><?= $escape($t(FindingReadLabels::observation($observation['result']))) ?></strong><span><?= $escape($t($noticeReasonLabels[$observation['reason']])) ?></span></div><p class="review-muted"><?= $escape($storedTime($observation['finished_at'] ?? $observation['started_at'] ?? null)) ?> · <?= $escape($observation['mode']) ?> · <?= $escape(substr($observation['id'], 0, 8)) ?></p><?php if (($observation['error_message'] ?? '') !== ''): ?><p class="review-observation-error"><?= $escape($observation['error_message']) ?></p><?php endif; ?></li>
-                  <?php endforeach; ?>
-                </ul>
-                <p class="review-notice-hint"><?= $escape($t('Alle offenen Hinweise stehen hier; die letzte technische Beobachtung wird separat gezeigt. Mit „Geprüft · Bewertung behalten“ erledigst du diese Sichtung und behältst Urteil und Bewertungsdatum.')) ?></p>
-              </section>
-            <?php endif; ?>
             <div class="review-card-layout">
               <section class="review-evidence" aria-labelledby="review-evidence-title">
                 <div class="review-section-heading"><h3 id="review-evidence-title"><?= $escape($t('Bildbeleg')) ?></h3><span><?= $escape($t('{count} gespeichert', ['count' => $formatNumber(count($detail->screenshots))])) ?></span></div>
@@ -178,13 +172,27 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                     </figure>
                   <?php endforeach; ?>
                 <?php endif; ?>
-                <p class="review-image-hint"><?= $escape($t('Bild und technische Beobachtung sind getrennte Belege. Eine zeitliche Nähe belegt keinen gemeinsamen Prüflauf.')) ?></p>
-                <div class="review-gesture" data-review-gesture hidden aria-label="<?= $escape($t('Hier nach links für Not vulnerable oder nach rechts für Vulnerable wischen.')) ?>"><span><span aria-hidden="true">←</span> Not vulnerable</span><span class="review-gesture-grip"><?= $escape($t('Wischen')) ?></span><span>Vulnerable <span aria-hidden="true">→</span></span></div>
               </section>
 
+              <details class="review-inspector" open data-review-inspector><summary><?= $escape($t('Angaben & Optionen')) ?></summary>
               <aside class="review-source" aria-labelledby="review-source-title" data-review-poc>
+            <?php if ($isNotice): ?>
+              <section class="review-notice" aria-labelledby="review-notice-title" data-review-notice>
+                <div class="review-notice-heading"><div><p class="studio-eyebrow"><?= $escape($t('Erneut prüfen')) ?></p><h3 id="review-notice-title"><?= $escape($t('Neue Hinweise nach deinem Urteil')) ?></h3></div><span class="studio-status" data-tone="warning"><?= $escape($t(FindingReadLabels::assessment($finding->getManualAssessment(), $finding->getDiscardReason()))) ?></span></div>
+                <p><?= $escape($t('Bewertet: {value}. Deine Bewertung bleibt erhalten, bis du ausdrücklich neu entscheidest.', ['value' => $formatTime($finding->getAssessedAt(), true)])) ?></p>
+                <?php if ($view->lastAcknowledgedAt !== null): ?><p class="review-muted"><?= $escape($t('Zuletzt gesichtet: {value}', ['value' => $formatTime($view->lastAcknowledgedAt, true)])) ?></p><?php endif; ?>
+                <?php if (!$view->baselineKnown): ?><p class="review-history"><?= $escape($t('Frühere Bewertung ohne vollständig bekannten Beobachtungsstand. Zeitlich nicht eindeutig zugeordnete Hinweise werden zur Prüfung gezeigt.')) ?></p><?php endif; ?>
+                <ul class="review-notice-observations" aria-label="<?= $escape($t('Offene technische Hinweise')) ?>">
+                  <?php foreach ($view->triggeringObservations as $observation): ?>
+                    <li data-review-trigger="<?= $escape($observation['id']) ?>"><div><strong><?= $escape($t(FindingReadLabels::observation($observation['result']))) ?></strong><span><?= $escape($t($noticeReasonLabels[$observation['reason']])) ?></span></div><p class="review-muted"><?= $escape($storedTime($observation['finished_at'] ?? $observation['started_at'] ?? null)) ?> · <?= $escape($observation['mode']) ?> · <?= $escape(substr($observation['id'], 0, 8)) ?></p><?php if (($observation['error_message'] ?? '') !== ''): ?><p class="review-observation-error"><?= $escape($observation['error_message']) ?></p><?php endif; ?></li>
+                  <?php endforeach; ?>
+                </ul>
+                <p class="review-notice-hint"><?= $escape($t('Alle offenen Hinweise stehen hier; die letzte technische Beobachtung wird separat gezeigt. Mit „Geprüft · Bewertung behalten“ erledigst du diese Sichtung und behältst Urteil und Bewertungsdatum.')) ?></p>
+              </section>
+            <?php endif; ?>
                 <div class="review-section-heading"><h3 id="review-source-title"><?= $escape($t('PoC & Angaben')) ?></h3><span class="review-method"><?= $escape($finding->getMethod()) ?></span></div>
-                <section class="review-source-block"><div class="review-source-label"><h4><?= $escape($t('Gemeldete URL')) ?></h4><button class="review-copy" type="button" data-review-copy="review-url" hidden><?= $escape($t('Kopieren')) ?></button></div><code id="review-url" class="review-code"><?= $escape($finding->getUrl()) ?></code></section>
+                <section class="review-source-block"><div class="review-source-label"><h4><?= $escape($t('Gemeldete URL')) ?></h4><span class="review-url-actions"><?php if ($canOpenPoc): ?><a class="review-text-link" href="<?= $escape($pocUrl) ?>" target="_blank" rel="noopener noreferrer" data-review-poc-open><?= $escape($t('Öffnen')) ?> ↗</a><?php endif; ?><button class="review-copy" type="button" data-review-copy="review-url" hidden><?= $escape($t('Kopieren')) ?></button></span></div><code id="review-url" class="review-code"><?= $escape($finding->getUrl()) ?></code></section>
+                <?php if ($canOpenPoc && strtoupper($finding->getMethod()) !== 'GET'): ?><p class="review-muted"><?= $escape($t('Öffnen ruft nur die URL auf; Methode und Request-Parameter werden nicht nachgebildet.')) ?></p><?php endif; ?>
                 <section class="review-source-block"><h4><?= $escape($t('Erwartetes Kennzeichen')) ?></h4><?php if ($finding->getExpectedEvidence() !== null && $finding->getExpectedEvidence() !== ''): ?><code class="review-code"><?= $escape($finding->getExpectedEvidence()) ?></code><?php else: ?><p class="review-absent"><?= $escape($t('Kein Kennzeichen gespeichert.')) ?></p><?php endif; ?></section>
                 <section class="review-source-block"><h4>Payload</h4><?php if ($finding->getPayload() !== null && $finding->getPayload() !== ''): ?><pre class="review-code"><?= $escape($finding->getPayload()) ?></pre><?php else: ?><p class="review-absent"><?= $escape($t('Keine Payload gespeichert.')) ?></p><?php endif; ?></section>
                 <section class="review-source-block"><h4><?= $escape($t('Request-Parameter')) ?></h4><?php if ($finding->getRequestParams() !== null && $finding->getRequestParams() !== []): ?><pre class="review-code"><?= $escape(json_encode($finding->getRequestParams(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?></pre><?php else: ?><p class="review-absent"><?= $escape($t('Keine zusätzlichen Request-Parameter gespeichert.')) ?></p><?php endif; ?></section>
@@ -198,11 +206,10 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                 </section>
                 <section class="review-manual-state"><h4><?= $escape($t('Manuelle Bewertung')) ?></h4><p><?= $escape($t(FindingReadLabels::assessment($finding->getManualAssessment(), $finding->getDiscardReason()))) ?></p><?php if ($finding->getManualAssessment() !== null): ?><p class="review-muted"><?= $escape($formatTime($finding->getAssessedAt(), true)) ?></p><?php elseif ($finding->getStatus() !== 'new' || $finding->getReviewState() !== null): ?><p class="review-history"><?= $escape($t('Historischer Bestand · Herkunft und Entscheidungsgrundlage unbekannt. Status: {status} · Review: {review}.', ['status' => $finding->getStatus(), 'review' => $finding->getReviewState() ?? $t('unbekannt')])) ?></p><?php endif; ?></section>
                 <section class="review-note"><h4><?= $escape($t('Notiz')) ?></h4><p<?= $notes === null || $notes === '' ? ' class="review-absent"' : '' ?>><?= $escape($notes === null || $notes === '' ? $t('Keine Notiz gespeichert.') : $notes) ?></p></section>
-              </aside>
-            </div>
-
             <form method="post" action="<?= $escape('/review/'.$finding->getId().'/assessment') ?>" id="review-assessment-form" class="review-decision" data-review-form>
               <?= $csrfField('review_assessment_'.$finding->getId()) ?>
+              <input type="hidden" name="trail_id" value="<?= $escape($reviewTrailId) ?>">
+              <input type="hidden" name="trail_version" value="<?= $reviewTrailVersion ?>">
               <input type="hidden" name="context_token" value="<?= $escape($contextToken) ?>">
               <input type="hidden" name="kind" value="<?= $escape($view->kind) ?>">
               <input type="hidden" name="images" value="<?= $escape($view->images) ?>">
@@ -217,18 +224,40 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
               <p class="review-decision-hint"><?= $escape($t('Auch ohne Bild kannst du anhand einer eigenen Prüfung entscheiden. Nach dem Speichern folgt der nächste Fall.')) ?></p>
               <details class="review-discard" data-review-discard<?= ($submitted['assessment'] ?? '') === 'discarded' ? ' open' : '' ?>><summary><?= $escape($t('Fall verwerfen')) ?></summary><div><p><?= $escape($t('Der Fall bleibt gespeichert und wird im normalen Arbeiten ignoriert. Ein unzureichendes Bild kannst du stattdessen überspringen.')) ?></p><label for="review-discard-reason"><?= $escape($t('Grund')) ?><select id="review-discard-reason" name="discard_reason"<?= !$canAssess ? ' disabled' : '' ?>><option value=""><?= $escape($t('Ohne besonderen Grund')) ?></option><option value="duplicate"<?= ($submitted['discard_reason'] ?? '') === 'duplicate' ? ' selected' : '' ?>><?= $escape($t('Duplikat')) ?></option></select></label><button class="review-button review-button-discard" type="submit" name="assessment" value="discarded"<?= !$canAssess ? ' disabled' : '' ?>><?= $escape($t('Verwerfen speichern')) ?></button></div></details>
             </form>
+                <p class="review-image-hint"><?= $escape($t('Bild und technische Beobachtung sind getrennte Belege. Eine zeitliche Nähe belegt keinen gemeinsamen Prüflauf.')) ?></p>
+                <div class="review-gesture" data-review-gesture hidden aria-label="<?= $escape($t('Hier nach links für Not vulnerable oder nach rechts für Vulnerable wischen.')) ?>"><span><span aria-hidden="true">←</span> Not vulnerable</span><span class="review-gesture-grip"><?= $escape($t('Wischen')) ?></span><span>Vulnerable <span aria-hidden="true">→</span></span></div>
+              </aside>
+              </details>
+            </div>
+
+
           </article>
         <?php endif; ?>
       </div>
     </main>
-    <?php if ($finding !== null): ?>
+    <?php if ($finding !== null || $reviewBackAvailable): ?>
       <section class="review-action-dock" aria-label="<?= $escape($t('Entscheidung für den angezeigten Fall')) ?>" data-review-dock>
         <div class="review-dock-inner">
-          <p class="review-dock-case"><strong><?= $escape($finding->getDomain()->getHostname()) ?></strong><span><?= $escape($t('Not vulnerable speichert Behoben. Vulnerable bestätigt den Befund.')) ?></span></p>
-          <div class="review-dock-controls"><div class="review-actions"><button class="review-button review-button-fixed" type="submit" form="review-assessment-form" name="assessment" value="fixed" data-review-fixed<?= !$canAssess ? ' disabled' : '' ?>><span aria-hidden="true">←</span> Not vulnerable</button><button class="review-button review-button-primary" type="submit" form="review-assessment-form" name="assessment" value="confirmed" data-review-confirm<?= !$canAssess ? ' disabled' : '' ?>>Vulnerable <span aria-hidden="true">→</span></button></div><div class="review-dock-secondary"><?php if ($isNotice): ?><button class="review-button review-button-keep" type="submit" form="review-assessment-form" name="assessment" value="keep" data-review-keep<?= !$canAssess ? ' disabled' : '' ?>><?= $escape($t('Geprüft · Bewertung behalten')) ?></button><?php endif; ?><a class="review-dock-skip" href="<?= $escape($view->nextPath) ?>" data-review-skip><span><?= $escape($t('Überspringen')) ?></span><small><?= $escape($t($isNotice ? 'Hinweise bleiben offen' : 'ohne Bewertung')) ?></small></a></div></div>
+          <div class="review-dock-case"><strong><?= $escape($finding?->getDomain()->getHostname() ?? $t('Runde beendet')) ?></strong><span><?= $escape($t('Zurück setzt den vorherigen Fall wieder auf unbewertet.')) ?></span>
+            <?php if ($isNotice): ?><button class="review-button review-button-keep" type="submit" form="review-assessment-form" name="assessment" value="keep" data-review-keep<?= !$canAssess ? ' disabled' : '' ?>><?= $escape($t('Geprüft · Bewertung behalten')) ?></button><?php endif; ?>
+            <p class="review-delay-status" role="status" aria-live="polite" data-review-delay-status></p><progress class="review-delay-progress" data-review-delay-progress max="1" value="0" hidden></progress>
+          </div>
+          <div class="review-keypad" aria-label="<?= $escape($t('Review-Tasten')) ?>">
+            <?php if ($canOpenPoc): ?><a class="review-button review-key-poc" href="<?= $escape($pocUrl) ?>" target="_blank" rel="noopener noreferrer" data-review-poc-open><kbd>↑</kbd><span><?= $escape($t('PoC öffnen')) ?></span></a><?php else: ?><button class="review-button review-key-poc" type="button" disabled><kbd>↑</kbd><span><?= $escape($t('PoC öffnen')) ?></span></button><?php endif; ?>
+            <button class="review-button review-key-skip" type="submit" form="review-skip-form" data-review-skip<?= $finding === null ? ' disabled' : '' ?>><kbd>Enter</kbd><span><?= $escape($t('Überspringen')) ?></span></button>
+            <button class="review-button review-button-fixed review-key-fixed" type="submit" form="review-assessment-form" name="assessment" value="fixed" data-review-fixed<?= !$canAssess ? ' disabled' : '' ?>><kbd>←</kbd><span>Not vulnerable</span></button>
+            <button class="review-button review-key-back" type="submit" form="review-back-form" data-review-back<?= !$reviewBackAvailable ? ' disabled' : '' ?>><kbd>↓</kbd><span><?= $escape($t('Zurück & Reset')) ?></span></button>
+            <button class="review-button review-button-primary review-key-confirm" type="submit" form="review-assessment-form" name="assessment" value="confirmed" data-review-confirm<?= !$canAssess ? ' disabled' : '' ?>><span>Vulnerable</span><kbd>→</kbd></button>
+          </div>
           <p class="review-submit-status" role="status" aria-live="polite" data-review-submit-status></p>
         </div>
       </section>
+      <form method="post" action="<?= $escape($reviewBackPath) ?>" id="review-back-form" data-review-back-form hidden>
+        <input type="hidden" name="_token" value="<?= $escape($reviewBackToken) ?>"><input type="hidden" name="trail_id" value="<?= $escape($reviewTrailId) ?>"><input type="hidden" name="trail_version" value="<?= $reviewTrailVersion ?>">
+      </form>
+      <?php if ($finding !== null): ?><form method="post" action="<?= $escape($reviewSkipPath) ?>" id="review-skip-form" data-review-skip-form hidden>
+        <input type="hidden" name="_token" value="<?= $escape($reviewSkipToken) ?>"><input type="hidden" name="trail_id" value="<?= $escape($reviewTrailId) ?>"><input type="hidden" name="trail_version" value="<?= $reviewTrailVersion ?>"><input type="hidden" name="context_token" value="<?= $escape($contextToken) ?>"><input type="hidden" name="displayed_evidence_id" value="<?= $escape($selectedEvidenceId ?? '') ?>" data-review-displayed-evidence>
+      </form><?php endif; ?>
     <?php endif; ?>
     <?php $activeWorkspace = 'review'; require __DIR__.'/navigation.php'; ?>
   </div>

@@ -10,6 +10,7 @@ final class SettingsService
     public const DEFAULTS = [
         'intake.default_payload' => 'OPENBUGBOUNTY',
         'review.scan_timeout_ms' => '45000',
+        'review.decision_delay_seconds' => '0',
     ];
 
     public function __construct(
@@ -85,6 +86,13 @@ final class SettingsService
     public function getReviewScanTimeoutMs(): int
     {
         return min(120000, max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms'])));
+    }
+
+    public function getReviewDecisionDelaySeconds(): int
+    {
+        $value = trim($this->getString('review.decision_delay_seconds', self::DEFAULTS['review.decision_delay_seconds']));
+
+        return in_array($value, ['0', '3', '5'], true) ? (int) $value : 0;
     }
 
     private function getRaw(string $key): ?string
