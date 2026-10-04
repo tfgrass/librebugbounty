@@ -194,10 +194,17 @@ async function main() {
   };
 
   if (!aboutOnly) {
+    await capture('/', '[data-intake] #intake-form', 'intake.png');
+    assert.equal(await page.locator('[data-intake-entry]').count(), 0, 'Intake tour starts with a clean browser-tab history');
     await capture('/review', '[data-studio-review] [data-review-card]', 'review.png');
     await capture('/findings', '[data-studio-list] [data-finding-id]', 'inventory.png');
     await capture(`/findings/${fixture.fixtures._meta.detailId}`, '[data-studio-detail]', 'finding-detail.png');
     await capture('/statistics?period=month&anchor=2026-10-04', '[data-statistics] [data-activity-chart]', 'statistics.png');
+    await capture('/export?profile=report&screenshots=latest', '[data-studio-export] #export-filters', 'export.png');
+    assert.equal(await page.locator('[data-export-profile="report"]').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#export-filters').getAttribute('method'), 'get');
+    assert.equal(await page.locator('#export-filters [name="screenshots"]').inputValue(), 'latest');
+    assert.equal(await page.locator('#export-include-notes').isChecked(), false, 'Private notes stay excluded from the public export example');
   }
 
   for (const width of [1440, 760, 390]) {
@@ -209,6 +216,27 @@ async function main() {
     assert.match(await release.innerText(), /v2\.0\.0/);
     assert.match(await release.innerText(), /Moneta/);
     assert.equal(await about.locator('[data-release-notes] li').count(), 5);
+    const history = about.locator('details[data-release-history]');
+    assert.equal(await history.count(), 1);
+    assert.equal(await history.getAttribute('open'), null, 'Public About screenshot keeps release history compact');
+    assert.equal(await history.locator('summary').innerText(), expectedLocale === 'de' ? 'Versionsgeschichte' : 'Release history');
+    await history.locator('summary').click();
+    assert.notEqual(await history.getAttribute('open'), null, 'Release history opens natively');
+    const entries = history.locator('[data-release-entry]');
+    assert.equal(await entries.count(), 3);
+    const historyText = await history.innerText();
+    for (const version of ['v1.0.0', 'v1.1.0', 'v2.0.0']) assert.ok(historyText.includes(version));
+    for (const name of ['Scriptor', 'Scriptor Quo', 'Moneta']) assert.ok(historyText.includes(name));
+    for (const entry of await entries.all()) {
+      await entry.scrollIntoViewIfNeeded();
+      const box = await entry.boundingBox();
+      assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, `${width}: release history entry clipped`);
+    }
+    const changelog = about.locator('.studio-about-changelog a');
+    assert.equal(await changelog.count(), 1);
+    assert.match(await changelog.getAttribute('href'), /^https:\/\/github\.com\/tfgrass\/librebugbounty\/blob\/[^/]+\/CHANGELOG\.md$/);
+    assert.equal(await changelog.getAttribute('target'), '_blank');
+    assert.ok((await changelog.getAttribute('rel')).includes('noopener'));
     assert.equal(await about.locator('a[href="https://grassmann-it.de/"]').count(), 1);
     assert.equal(await about.locator('a[href="https://www.openbugbounty.org/researchers/grassmann-it/"]').count(), 1);
     assert.equal(await about.locator('a[href="https://github.com/tfgrass/librebugbounty"]').count(), 1);
@@ -226,6 +254,8 @@ async function main() {
       const box = await control.boundingBox();
       assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, `${width}: About link clipped`);
     }
+    await history.locator('summary').click();
+    assert.equal(await history.getAttribute('open'), null);
     const settingsForm = page.locator('.studio-settings-form');
     assert.equal(await settingsForm.getAttribute('method'), 'post');
     assert.equal(await settingsForm.getAttribute('action'), '/settings');
@@ -234,7 +264,7 @@ async function main() {
       const box = await control.boundingBox();
       assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, `${width}: settings input/action clipped`);
     }
-    console.log(`PASS ${expectedLocale} ${width}: named release, centered logo, five highlights, links and native settings form reachable`);
+    console.log(`PASS ${expectedLocale} ${width}: named release, centered logo, five highlights, three history entries, changelog and native controls reachable`);
   }
 
   const noJs = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
@@ -243,6 +273,12 @@ async function main() {
   assert.equal((await fallback.goto(base + '/settings#about')).status(), 200);
   assert.equal(await fallback.locator('html').getAttribute('lang'), expectedLocale);
   assert.equal(await fallback.locator('[data-release-notes] li').count(), 5);
+  const fallbackHistory = fallback.locator('details[data-release-history]');
+  assert.equal(await fallbackHistory.getAttribute('open'), null);
+  await fallbackHistory.locator('summary').click();
+  assert.notEqual(await fallbackHistory.getAttribute('open'), null);
+  assert.equal(await fallbackHistory.locator('[data-release-entry]').count(), 3);
+  assert.equal(await fallback.locator('.studio-about-changelog a').isVisible(), true);
   const form = fallback.locator('.studio-settings-form');
   assert.equal(await form.getAttribute('method'), 'post');
   assert.equal(await form.getAttribute('action'), '/settings');

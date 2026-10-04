@@ -767,4 +767,9 @@ return [
     'Gemeldete, kontaktierte und behobene Fälle gemeinsam im Rückblick auswerten.' => 'Track reported, contacted, and fixed cases together over time.',
     'URL-Listen, Fallstatus oder Berichtspakete mit ausgewählten Bildbelegen exportieren.' => 'Export URL lists, case states, or report packages with selected image evidence.',
     'Deutsche Oberfläche als Standard, Englisch über APP_LOCALE.' => 'German interface by default, English via APP_LOCALE.',
+    'Versionsgeschichte' => 'Release history',
+    'Die Idee eines lokalen OpenBugBounty-Workflows wurde zum ersten nutzbaren Prototyp: URL-Erfassung, Browserprüfung und Bildbelege als Grundlage für die manuelle Sichtung.' => 'The idea of a local OpenBugBounty-style workflow became the first working prototype: URL intake, browser checks, and image evidence as the basis for manual review.',
+    'Aus der täglichen Nutzung entstanden bessere Prüf- und Screenshot-Abläufe, Kontaktmarkierungen und Domain-Exporte. Schrittweise Verfeinerungen des bestehenden Workflows.' => 'Everyday use brought better verification and screenshot workflows, contact markers, and domain exports. Step-by-step refinements of the existing workflow.',
+    'Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.' => 'The prototype becomes a complete local workspace: fast intake, image-first review, activity statistics, and configurable exports.',
+    'Vollständigen Changelog lesen' => 'Read the full changelog',
 ];

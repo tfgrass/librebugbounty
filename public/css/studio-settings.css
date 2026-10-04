@@ -49,6 +49,16 @@
 .studio-about-release-notes h3 { margin: 0 0 10px; color: #e0e6ed; font-size: 12px; font-weight: 600; }
 .studio-about-release-notes ul { display: grid; gap: 9px; margin: 0; padding-left: 16px; color: #bfc9d5; font-size: 11px; line-height: 1.6; }
 .studio-about-release-notes li::marker { color: var(--studio-blue); }
+.studio-about-history { padding-top: 13px; border-top: 1px solid #30363e; }
+.studio-about-history summary { color: #e0e6ed; cursor: pointer; font-size: 12px; font-weight: 600; }
+.studio-about-history-entries { display: grid; gap: 15px; padding-top: 16px; }
+.studio-about-history-entries article { padding-left: 12px; border-left: 2px solid #414c5d; }
+.studio-about-history-entries h3 { margin: 0 0 5px; color: #d0def1; font-size: 12px; font-weight: 600; }
+.studio-about-history-entries h3 span { color: var(--studio-muted); }
+.studio-about-history-entries p { margin: 0; color: #bfc9d5; font-size: 11px; line-height: 1.65; }
+.studio-about-changelog { margin: 11px 0 20px; font-size: 11px; }
+.studio-about-changelog a { color: #b9d4fa; }
+.studio-about-changelog a:hover { color: var(--studio-blue); text-decoration: underline; text-underline-offset: 3px; }
 .studio-about-facts { display: grid; margin: 0; }
 .studio-about-facts > div { display: grid; gap: 4px; padding: 11px 0; border-top: 1px solid #30363e; }
 .studio-about-facts dt { color: var(--studio-muted); font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }

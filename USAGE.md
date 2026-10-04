@@ -162,7 +162,9 @@ Open the gear icon for **Settings & info**:
   time and keeps the worker occupied longer.
 
 The About section shows the version and release name, release highlights,
-credits, project links, and license.
+credits, project links, and license. Expand **Release history** for the story
+from Scriptor through Scriptor Quo to Moneta. The
+[changelog](CHANGELOG.md) lists the changes in each release.
 
 ### Language
 

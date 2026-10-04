@@ -22,6 +22,15 @@ OpenBugBounty.
   <a href="docs/screenshots/statistics.png"><img src="docs/screenshots/statistics.png" alt="LibreBugBounty activity statistics" width="32%"></a>
 </p>
 
+Capture new URLs on Intake, choose the contents of a report on Export, and
+explore the project history in About:
+
+<p align="center">
+  <a href="docs/screenshots/intake.png"><img src="docs/screenshots/intake.png" alt="LibreBugBounty fast URL intake" width="32%"></a>
+  <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="LibreBugBounty configurable report export" width="32%"></a>
+  <a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="LibreBugBounty About and release highlights" width="32%"></a>
+</p>
+
 ## What it does
 
 - Fast URL intake with durable SQLite storage and duplicate detection
@@ -75,7 +84,8 @@ The interface defaults to German. To use English, set `APP_LOCALE=en` in a local
 DDEV configuration as described in the [user guide](USAGE.md#language).
 
 Read the [user guide](USAGE.md) for review controls, export choices, settings,
-and troubleshooting.
+and troubleshooting. The [changelog](CHANGELOG.md) covers the first Scriptor
+prototype, the Scriptor Quo refinements, and the new Moneta workspace.
 
 ## Backup
 

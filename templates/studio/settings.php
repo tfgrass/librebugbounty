@@ -91,6 +91,24 @@
                 <li><?= $escape($t('Deutsche Oberfläche als Standard, Englisch über APP_LOCALE.')) ?></li>
               </ul>
             </section>
+            <details class="studio-about-history" data-release-history>
+              <summary><?= $escape($t('Versionsgeschichte')) ?></summary>
+              <div class="studio-about-history-entries">
+                <article data-release-entry>
+                  <h3>v1.0.0 <span aria-hidden="true">·</span> Scriptor</h3>
+                  <p><?= $escape($t('Die Idee eines lokalen OpenBugBounty-Workflows wurde zum ersten nutzbaren Prototyp: URL-Erfassung, Browserprüfung und Bildbelege als Grundlage für die manuelle Sichtung.')) ?></p>
+                </article>
+                <article data-release-entry>
+                  <h3>v1.1.0 <span aria-hidden="true">·</span> Scriptor Quo</h3>
+                  <p><?= $escape($t('Aus der täglichen Nutzung entstanden bessere Prüf- und Screenshot-Abläufe, Kontaktmarkierungen und Domain-Exporte. Schrittweise Verfeinerungen des bestehenden Workflows.')) ?></p>
+                </article>
+                <article data-release-entry>
+                  <h3>v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></h3>
+                  <p><?= $escape($t('Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.')) ?></p>
+                </article>
+              </div>
+            </details>
+            <p class="studio-about-changelog"><a href="<?= $escape($app['changelogUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Vollständigen Changelog lesen')) ?> <span aria-hidden="true">↗</span></a></p>
             <dl class="studio-about-facts">
               <div><dt><?= $escape($t('Autor')) ?></dt><dd><a href="<?= $escape($app['homepage']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['author']) ?> <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt>OpenBugBounty</dt><dd><a href="<?= $escape($app['profileUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['profile']) ?> <span aria-hidden="true">↗</span></a></dd></div>

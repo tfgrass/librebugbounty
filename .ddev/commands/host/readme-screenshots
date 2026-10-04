@@ -94,24 +94,19 @@ docker exec -u root "$WEB_CONTAINER" sh -c '
   source_dir=$1
   target_dir=$2
   mkdir -p "$target_dir"
+  for image in intake.png review.png inventory.png finding-detail.png statistics.png export.png about.png; do
+    test -s "$source_dir/$image"
+  done
   rm -f \
     "$target_dir/overview-redacted.png" \
-    "$target_dir/detail-redacted.png" \
-    "$target_dir/review.png" \
-    "$target_dir/inventory.png" \
-    "$target_dir/finding-detail.png" \
-    "$target_dir/statistics.png"
-  for image in review.png inventory.png finding-detail.png statistics.png; do
-    test -s "$source_dir/$image"
+    "$target_dir/detail-redacted.png"
+  for image in intake.png review.png inventory.png finding-detail.png statistics.png export.png about.png; do
     cp "$source_dir/$image" "$target_dir/$image"
+    chown "$3:$4" "$target_dir/$image"
   done
-  chown "$3:$4" "$target_dir" \
-    "$target_dir/review.png" \
-    "$target_dir/inventory.png" \
-    "$target_dir/finding-detail.png" \
-    "$target_dir/statistics.png"
+  chown "$3:$4" "$target_dir"
 ' sh "$TEMP_OUTPUT" "$FINAL_OUTPUT" "$HOST_UID" "$HOST_GID"
 
 docker cp "$WEB_CONTAINER:$TEMP_OUTPUT/about.png" "$ABOUT_PREVIEW_OUTPUT"
-echo "Wrote docs/screenshots/{review,inventory,finding-detail,statistics}.png"
+echo "Wrote docs/screenshots/{intake,review,inventory,finding-detail,statistics,export,about}.png"
 printf 'Wrote About preview to %s\n' "$ABOUT_PREVIEW_OUTPUT"
