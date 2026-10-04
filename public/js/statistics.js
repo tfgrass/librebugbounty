@@ -12,14 +12,12 @@
   try { view = JSON.parse(payload.textContent); } catch (_) { return; }
   if (!Array.isArray(view.series) || !Array.isArray(view.calendar)) return;
 
-  const labels = Object.fromEntries(Object.entries({ reported: 'Gemeldet', contacted: 'Kontaktiert', sent: 'Versendet', fixed: 'Behoben', confirmed: 'Bestätigt' }).map(([key, label]) => [key, t(label)]));
-  const colors = { reported: '#80adff', sent: '#bca4ff', fixed: '#77dbb0', confirmed: '#e9bf7e', contacted: '#78cee3' };
+  const labels = Object.fromEntries(Object.entries({ reported: 'Gemeldet', contacted: 'Kontaktiert', fixed: 'Behoben' }).map(([key, label]) => [key, t(label)]));
+  const colors = { reported: '#80adff', contacted: '#bca4ff', fixed: '#77dbb0' };
   const segmentColors = ['#80adff', '#bca4ff', '#77dbb0', '#e9bf7e', '#78cee3', '#e698b6', '#8c9cb4', '#adbe80'];
   const palettes = {
     reported: ['#283342', '#304f78', '#416fa8', '#5b90d2', '#80adff'],
-    sent: ['#283342', '#494068', '#69548e', '#9378bf', '#bca4ff'],
-    contacted: ['#283342', '#2a4f5e', '#3b7181', '#53a0b5', '#78cee3'],
-    confirmed: ['#283342', '#665037', '#96744c', '#be9b62', '#e9bf7e'],
+    contacted: ['#283342', '#494068', '#69548e', '#9378bf', '#bca4ff'],
     fixed: ['#283342', '#2a5149', '#3e7a66', '#59ad8e', '#77dbb0'],
   };
   const number = { format: i18n.number };
@@ -41,33 +39,33 @@
     for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
     return node;
   };
-  const selected = new Set(['reported', 'contacted', 'sent', 'fixed']);
-  const charts = [...root.querySelectorAll('[data-activity-chart]')];
+  const selected = new Set(metrics);
+  const chart = root.querySelector('[data-activity-chart]');
   const rows = Object.fromEntries(metrics.map(metric => [metric, root.querySelector(`[data-chart-series="${metric}"]`)]));
-  const axisMaximums = Object.fromEntries(metrics.map(metric => [metric, Math.max(1, Number(rows[metric].dataset.chartAxisMax))]));
+  if (!chart || metrics.some(metric => !rows[metric])) return;
+  const axisMaximum = Math.max(1, Number(chart.dataset.chartAxisMax) || 1);
+  const plotHeight = chart.viewBox.baseVal.height;
+  const crosshair = chart.querySelector('[data-chart-crosshair]');
   const tooltip = root.querySelector('[data-chart-tooltip]');
   const tooltipDate = root.querySelector('[data-chart-tooltip-date]');
   const tooltipValues = root.querySelector('[data-chart-tooltip-values]');
   let chartIndex = -1;
-  let activeMetric = 'reported';
 
-  function inspectChart(index, metric = activeMetric) {
-    if (!view.series.length || !charts.length || !tooltip || !selected.size) return;
-    activeMetric = selected.has(metric) ? metric : selected.values().next().value;
+  function inspectChart(index) {
+    if (!view.series.length || !tooltip || !selected.size) return;
     chartIndex = Math.max(0, Math.min(view.series.length - 1, index));
     const row = view.series[chartIndex];
     const x = view.series.length === 1 ? 500 : 1000 * chartIndex / (view.series.length - 1);
     tooltipDate.textContent = rowLabel(row);
     tooltipValues.replaceChildren();
+    crosshair.setAttribute('x1', String(x));
+    crosshair.setAttribute('x2', String(x));
+    crosshair.removeAttribute('hidden');
     for (const metric of metrics) {
       const point = root.querySelector(`[data-chart-point="${metric}"]`);
       point.toggleAttribute('hidden', !selected.has(metric));
       point.setAttribute('cx', String(x));
-      point.setAttribute('cy', String(120 - 120 * count(row[metric]) / axisMaximums[metric]));
-      const crosshair = root.querySelector(`[data-chart-crosshair="${metric}"]`);
-      crosshair.setAttribute('x1', String(x));
-      crosshair.setAttribute('x2', String(x));
-      crosshair.toggleAttribute('hidden', !selected.has(metric));
+      point.setAttribute('cy', String(plotHeight - plotHeight * count(row[metric]) / axisMaximum));
       if (!selected.has(metric)) continue;
       const url = localCaseUrl(row.urls[metric]);
       const item = document.createElement(url ? 'a' : 'span');
@@ -80,41 +78,41 @@
       if (url) item.setAttribute('aria-label', `${labels[metric]}: ${number.format(count(row[metric]))} · ${rowLabel(row)} · ${t('Fälle öffnen')}`);
       tooltipValues.append(item);
     }
-    if (tooltip.parentNode !== rows[activeMetric]) rows[activeMetric].append(tooltip);
     tooltip.hidden = false;
-    for (const chart of charts) chart.setAttribute('aria-describedby', `statistics-chart-summary statistics-scale-${chart.dataset.chartMetric} statistics-chart-inspection`);
+    chart.setAttribute('aria-describedby', 'statistics-chart-summary statistics-chart-inspection');
   }
 
   function renderChart() {
     for (const metric of metrics) {
-      rows[metric].hidden = !selected.has(metric);
+      rows[metric].toggleAttribute('hidden', !selected.has(metric));
       if (!selected.has(metric)) {
-        root.querySelector(`[data-chart-crosshair="${metric}"]`).setAttribute('hidden', '');
         root.querySelector(`[data-chart-point="${metric}"]`).setAttribute('hidden', '');
       }
     }
     root.querySelector('[data-chart-empty-selection]').hidden = selected.size > 0;
-    root.querySelector('.stat-shared-axis').hidden = selected.size === 0;
-    if (!selected.size) tooltip.hidden = true;
+    if (!selected.size) {
+      tooltip.hidden = true;
+      crosshair.setAttribute('hidden', '');
+      chart.setAttribute('aria-describedby', 'statistics-chart-summary');
+    }
     else if (chartIndex >= 0) inspectChart(chartIndex);
   }
 
   if (tooltip) tooltip.id = 'statistics-chart-inspection';
-  for (const chart of charts) {
-    const metric = chart.dataset.chartMetric;
+  {
     chart.setAttribute('tabindex', '0');
     chart.setAttribute('role', 'group');
-    chart.setAttribute('aria-roledescription', t('interaktives Liniendiagramm mit eigener Skala'));
+    chart.setAttribute('aria-roledescription', t('interaktives Liniendiagramm mit gemeinsamer Skala'));
     const pointerIndex = event => {
       const rect = chart.getBoundingClientRect();
       return Math.round((event.clientX - rect.left) / Math.max(1, rect.width) * (view.series.length - 1));
     };
-    chart.addEventListener('pointermove', event => inspectChart(pointerIndex(event), metric));
+    chart.addEventListener('pointermove', event => inspectChart(pointerIndex(event)));
     chart.addEventListener('pointerdown', event => {
-      inspectChart(pointerIndex(event), metric);
+      inspectChart(pointerIndex(event));
       chart.focus({ preventScroll: true });
     });
-    chart.addEventListener('focus', () => inspectChart(chartIndex < 0 ? view.series.length - 1 : chartIndex, metric));
+    chart.addEventListener('focus', () => inspectChart(chartIndex < 0 ? view.series.length - 1 : chartIndex));
     chart.addEventListener('keydown', event => {
       let index = chartIndex < 0 ? view.series.length - 1 : chartIndex;
       if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') index--;
@@ -125,11 +123,11 @@
         tooltip.hidden = true;
         for (const item of root.querySelectorAll('[data-chart-crosshair], [data-chart-point]')) item.setAttribute('hidden', '');
         chartIndex = -1;
-        for (const item of charts) item.setAttribute('aria-describedby', `statistics-chart-summary statistics-scale-${item.dataset.chartMetric}`);
+        chart.setAttribute('aria-describedby', 'statistics-chart-summary');
         return;
       } else return;
       event.preventDefault();
-      inspectChart(index, metric);
+      inspectChart(index);
     });
   }
   root.querySelectorAll('[data-series-toggle]').forEach(input => input.addEventListener('change', () => {

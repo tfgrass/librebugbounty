@@ -81,7 +81,7 @@ if (PHP_SAPI === 'cli') {
         $manager->persist(new App\Entity\FindingAssessment($finding, $assessment, null, new DateTimeImmutable($date)));
     }
     $manager->flush();
-    $fixtures['_expect'] = ['total' => 510, 'octoberReported' => 507, 'octoberSent' => 3, 'octoberFixed' => 2,
+    $fixtures['_expect'] = ['total' => 510, 'octoberReported' => 507, 'octoberContacted' => 2, 'openContactCount' => 2, 'octoberFixed' => 2,
         'octoberHosts' => 6, 'yearReported' => 508, 'allReported' => 510,
         'spikeDay' => '2026-10-01', 'spikeDayReported' => 500, 'spikeDayContacted' => 1,
         'historicalContacts' => 4, 'historicalContactFrom' => '2025-10-10',

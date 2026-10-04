@@ -20,6 +20,13 @@ nachfolgenden datierten Arbeitsabschnitte und Abnahmen dokumentieren den Weg zu
 offene UI-Arbeit sind historische Prüfstände und werden durch diesen Nachtrag
 ersetzt.
 
+Der Dashboard-Folgeauftrag vom 2026-10-04 ersetzt die frühere Versandreihe und
+getrennte Zahlenskalen: Gemeldet (Ingest), Kontaktiert und Behoben stehen nun in
+einem gemeinsamen Diagramm mit gemeinsamer Skala. Kennzahlen, Jahreskalender und
+offene Kontaktarbeit verwenden dieselben Begriffe; gespeicherte Versanddaten
+bleiben erhalten. Der aktuelle Datenvertrag steht am Anfang von
+[Studio-Statistiken](studio-statistiken.md).
+
 ## Historische Zielsetzung vor 2.0.0
 
 LibreBugBounty ist eine lokale Fall- und Belegverwaltung für URL-basierte

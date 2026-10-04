@@ -1,5 +1,35 @@
 # Abnahme Studio-Statistiken v1
 
+## Dashboard-Folgeauftrag vom 2026-10-04
+
+Geprüft wurde die Arbeitskopie auf Basis von `053f874`. Der neue Auftrag
+entfernt „Versendet“ aus dem Dashboard und vereint Gemeldet, Kontaktiert und
+Behoben in einem Diagramm mit gemeinsamer Zahlenskala. Dieser Nachtrag ersetzt
+die nachfolgenden historischen Aussagen zu Versandkennzahlen und Einzelachsen;
+der aktuelle [Datenvertrag](studio-statistiken.md) dokumentiert die Änderung.
+
+- Vollständige DDEV-PHPUnit-Suite: **263 Tests, 10.249 Assertions erfolgreich**.
+- Dashboard-Browserabnahme: **11 Szenariogruppen erfolgreich**, einschließlich
+  1440×1000, 960×1000, 640×1000 und 390×844 sowie Nutzung ohne JavaScript.
+- Gleiche Fallzahlen liegen in allen Reihen auf derselben Höhe; Ein-/Ausblenden
+  verändert weder Skala noch Pfade oder Plotposition. Auch ein Verhältnis von
+  500 Ingests zu einem Kontakt liefert exakte Tooltipwerte und Listenlinks.
+- Kennzahlen, Kalender, historische Kontakte, undatierte Altbestandsmarker und
+  offene Kontaktarbeit stimmen mit ihren Falllisten überein. Versandmarker
+  bleiben gespeichert und erzeugen keine Kontaktmarkierung.
+- Browserabrufe erhalten den Datenbestand unverändert und erzeugen keine POSTs,
+  externen Requests, JavaScript-Fehler oder fehlgeschlagenen Ressourcen.
+- `ddev readme-screenshots` lief erfolgreich auf einer isolierten englischen
+  Demo-Datenbank; der Statistik-Screenshot wurde aktualisiert und visuell geprüft.
+- PHP-/JavaScript-Syntax und `git diff --check` sind erfolgreich.
+
+Der Browserbericht liegt lokal unter
+`/tmp/librebugbounty-studio-statistics-combined-report`. Die isolierten Testdaten
+und Testserver wurden entfernt. Der normale Speicher wurde für diese Abnahme
+nicht verändert.
+
+## Historische Abnahme vom 2026-10-03
+
 Stand: 2026-10-03. Geprüft wurde die lokale Arbeitskopie auf Basis von `bc59865`
 mit den noch nicht committeten Dashboard-Änderungen. Auftrag: „setzte das dashboard
 um“. [Umfang, Begriffe und Datenvertrag](studio-statistiken.md).

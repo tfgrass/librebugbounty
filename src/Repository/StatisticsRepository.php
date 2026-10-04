@@ -18,9 +18,8 @@ final class StatisticsRepository
         $value = $this->connection->fetchOne(
             'SELECT MIN(event_at) FROM ('
             .'SELECT COALESCE(submitted_at, created_at) AS event_at FROM finding '
-            .'UNION ALL SELECT notified_owner_at FROM finding WHERE notified_owner_at IS NOT NULL '
             .'UNION ALL SELECT contacted_at FROM finding WHERE contacted_at IS NOT NULL '
-            .'UNION ALL SELECT a.assessed_at FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id WHERE a.assessment IN (\'confirmed\', \'fixed\')'
+            .'UNION ALL SELECT a.assessed_at FROM finding_assessment a INNER JOIN finding f ON f.id = a.finding_id WHERE a.assessment = \'fixed\''
             .')',
         );
 
@@ -40,7 +39,7 @@ final class StatisticsRepository
         return $this->connection->iterateAssociative(
             'SELECT f.id, d.hostname, f.status, f.review_state, f.manual_assessment, f.discard_reason, '
             .'COALESCE(f.submitted_at, f.created_at) AS reported_at, '
-            .'f.notified_owner_at AS sent_at, f.contacted_at, '
+            .'f.contacted_at, '
             .'a.confirmed_at, a.fixed_at, '
             .'CASE WHEN '.FindingReadRepository::ACTIVE.' THEN 1 ELSE 0 END AS active, '
             .'CASE WHEN '.FindingReadRepository::DUPLICATES.' THEN 1 ELSE 0 END AS duplicate '

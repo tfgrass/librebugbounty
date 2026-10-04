@@ -1,5 +1,38 @@
 # Studio-Statistiken v1 – Umfang und Datenvertrag
 
+## Aktueller Folgeauftrag vom 2026-10-04
+
+Der Nutzer verwendet inzwischen „Kontaktiert“ und verlangt, „Versendet“ aus dem
+Dashboard zu entfernen. Die Zahlen für Ingest, Kontakte und Behebungen liegen
+nach seiner Beobachtung inzwischen in einer vergleichbaren Größenordnung;
+deshalb sollen sie gemeinsam in einem Diagramm stehen. Dieser Auftrag ersetzt
+die unten dokumentierte frühere Entscheidung für getrennte Diagramme und eine
+eigene Versandreihe. Die weiteren Abschnitte halten den damaligen Stand fest.
+
+Umgesetzt sind genau drei Aktivitätsreihen: **Gemeldet** (Ingest),
+**Kontaktiert** (gespeicherte Kontaktmarkierung) und **Behoben** (erste
+aufgezeichnete manuelle Behebungsbewertung). Sie teilen eine Zeitachse und eine
+beschriftete Zahlenskala. Alle drei Reihen sind zunächst sichtbar; Farben und
+Linienmuster unterscheiden sie. Ein- und Ausblenden verändert die Skala nicht.
+Tooltip, Tastaturbedienung, verlinkte Wertetabelle und Darstellung ohne
+JavaScript bleiben vorhanden.
+
+Die vier oberen Kennzahlen zeigen Gemeldet, Kontaktiert, Behoben und
+unterschiedliche Hosts. Auch der Jahreskalender bietet nur die drei
+Aktivitätsreihen. Bestätigte aktive Fälle gelten als offene Kontaktarbeit,
+solange `contacted_at` fehlt; ein separater Versandmarker beeinflusst diese
+Auswertung nicht mehr. Historische Versandzeitpunkte bleiben unverändert
+gespeichert und werden nicht zu Kontakten umgedeutet. Die vorhandenen Detail-,
+Listen-, Export- und Schreibverträge für Versanddaten bleiben bestehen.
+
+Historische Kontakte bleiben am gespeicherten Datum sichtbar. Undatierte
+Behebungsmarker erscheinen weiterhin gesondert im historischen Bestand und
+erhalten keinen erfundenen Ereignistag. Alte Kalenderbookmarks mit
+`heatmapMetric=sent` wechseln zur Kontaktansicht; `confirmed` wechselt zur
+Ingestansicht.
+
+## Historischer Stand vom 2026-10-03
+
 Stand: 2026-10-03. Der Nutzer hat nach dem Sparring ausdrücklich beauftragt:
 „setzte das dashboard um“. Die eigene Statistikseite und die folgenden
 Zählregeln sind umgesetzt; die [Laufzeit- und Browserabnahme](abnahme-studio-statistiken.md)

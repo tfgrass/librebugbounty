@@ -30,7 +30,7 @@ final class StatisticsServiceTest extends DatabaseTestCase
         date_default_timezone_set($this->sourceTimezone);
     }
 
-    public function testActivityIncludesArchiveAndUsesFirstManualJudgmentWithoutInferringDelivery(): void
+    public function testActivityIncludesArchiveAndUsesRecordedContactsAndFirstManualJudgment(): void
     {
         $manual = $this->finding('one.example.de', '2026-10-01 10:00:00', ['manual_assessment' => 'fixed', 'status' => 'fixed', 'contacted_at' => '2026-10-03 11:00:00', 'notified_owner_at' => '2026-10-02 11:00:00']);
         $this->assessment($manual, 'confirmed', '2026-10-01 11:00:00');
@@ -48,7 +48,7 @@ final class StatisticsServiceTest extends DatabaseTestCase
 
         $view = $this->service()->get(['period' => 'month', 'anchor' => '2026-10-03'], $this->now('2026-10-03 18:00:00'));
         self::assertSame(3, $view['kpis']['reported']['count']);
-        self::assertSame(1, $view['kpis']['sent']['count']);
+        self::assertArrayNotHasKey('sent', $view['kpis']);
         self::assertSame(2, $view['kpis']['contacted']['count']);
         self::assertSame(1, $view['kpis']['confirmed']['count']);
         self::assertSame(1, $view['kpis']['fixed']['count']);
@@ -56,12 +56,24 @@ final class StatisticsServiceTest extends DatabaseTestCase
         self::assertSame(1, $view['totals']['archived']);
         self::assertSame(1, $view['snapshotCounts']['fixed']);
         self::assertSame(1, $view['snapshotCounts']['unknown']);
-        self::assertSame(1, $view['coverage']['contactedWithoutSentCount']);
+        self::assertArrayNotHasKey('sent', $view['snapshotCounts']);
+        self::assertArrayNotHasKey('sentDatedCount', $view['coverage']);
+        self::assertArrayNotHasKey('contactedWithoutSentCount', $view['coverage']);
         self::assertSame(1, $view['coverage']['fixedWithoutDateCount']);
         $series = array_column($view['series'], null, 'date');
         self::assertSame(1, $series['2026-10-02']['fixed']);
         self::assertSame(0, $series['2026-10-03']['fixed']);
-        self::assertSame('/findings?scope=all&event=sent&from=2026-10-01&to=2026-10-31', $view['kpis']['sent']['url']);
+        self::assertSame(1, $series['2026-10-02']['contacted']);
+        self::assertSame(1, $series['2026-10-03']['contacted']);
+        self::assertSame('/findings?scope=all&event=contacted&from=2026-10-01&to=2026-10-31', $view['kpis']['contacted']['url']);
+        $calendar = array_column($view['calendar'], null, 'date');
+        self::assertSame(1, $calendar['2026-10-02']['contacted']);
+        self::assertSame(1, $calendar['2026-10-03']['contacted']);
+        foreach ([$series['2026-10-02'], $calendar['2026-10-02']] as $row) {
+            self::assertSame(['reported', 'contacted', 'fixed'], array_keys($row['urls']));
+            self::assertArrayNotHasKey('sent', $row);
+            self::assertArrayNotHasKey('confirmed', $row);
+        }
         self::assertSame($before, $this->databaseSnapshot(), 'Statistics reads must leave every table unchanged.');
         self::assertIsString(json_encode($view, JSON_THROW_ON_ERROR));
     }
@@ -86,6 +98,25 @@ final class StatisticsServiceTest extends DatabaseTestCase
         $this->finding('fall-next.test', '2026-10-26 00:00:00');
         $fall = $this->service()->get(['period' => 'custom', 'from' => '2026-10-25', 'to' => '2026-10-25'], $this->now('2026-11-01'));
         self::assertSame(2, $fall['kpis']['reported']['count']);
+    }
+
+    public function testHistoricalDeliveryDatesDoNotExtendActivityRangeOrBecomeContacts(): void
+    {
+        $this->finding('delivery-history.test', '2026-10-01 10:00:00', ['notified_owner_at' => '2020-01-01 09:00:00']);
+        $this->finding('contact-history.test', '2026-10-02 10:00:00', ['contacted_at' => '2026-09-20 09:00:00']);
+        $before = $this->databaseSnapshot();
+        $view = $this->service()->get(['period' => 'all', 'heatmapMetric' => 'sent'], $this->now('2026-10-03 18:00:00'));
+
+        self::assertSame('2026-09-20', $view['period']['from']);
+        self::assertSame('2026-09-20', $view['coverage']['firstActivityDate']);
+        self::assertSame(1, $view['kpis']['contacted']['count']);
+        self::assertSame('contacted', $view['filters']['heatmapMetric']);
+        self::assertSame(1, $view['history']['contactDatedCount']);
+        self::assertStringNotContainsString('versendet', implode(' ', $view['notes']));
+        self::assertSame($before, $this->databaseSnapshot(), 'Historical delivery data stays stored independently of the dashboard.');
+
+        $oldConfirmationBookmark = $this->service()->get(['heatmapMetric' => 'confirmed'], $this->now('2026-10-03'));
+        self::assertSame('reported', $oldConfirmationBookmark['filters']['heatmapMetric']);
     }
 
     public function testNaiveTimestampsUseRuntimeSourceZoneAndFallbackCreatedAt(): void
@@ -162,7 +193,7 @@ final class StatisticsServiceTest extends DatabaseTestCase
         $filtered = $this->service()->get(['anchor' => '2026-10-03', 'tld' => '.de', 'heatmapMetric' => 'sent', 'tldMeasure' => 'hosts'], $this->now('2026-10-03'));
         self::assertSame(3, $filtered['kpis']['reported']['count']);
         self::assertSame(2, $filtered['kpis']['hosts']['count']);
-        self::assertSame('sent', $filtered['filters']['heatmapMetric']);
+        self::assertSame('contacted', $filtered['filters']['heatmapMetric'], 'Old sent heatmap bookmarks open the current contact calendar.');
         self::assertStringContainsString('tld=.de', $filtered['period']['previousUrl']);
         self::assertSame(3, $filtered['totals']['all']);
     }
@@ -210,10 +241,12 @@ final class StatisticsServiceTest extends DatabaseTestCase
         $aging = array_column($view['aging'], null, 'key');
         self::assertSame(1, $aging['recent']['count']);
         self::assertSame(2, $aging['waiting']['count']);
-        self::assertSame(1, $aging['old']['count']);
+        self::assertSame(2, $aging['old']['count'], 'Historical delivery markers no longer exclude uncontacted cases.');
         self::assertStringContainsString('from=2026-09-03&to=2026-09-25', $aging['waiting']['url']);
         self::assertStringContainsString('to=2026-09-02', $aging['old']['url']);
-        self::assertStringContainsString('contact=no&sent=no', $aging['old']['url']);
+        self::assertStringContainsString('contact=no&event=reported', $aging['old']['url']);
+        self::assertStringNotContainsString('sent=', $aging['old']['url']);
+        $this->assertHistoryLinksMatch($view['aging']);
     }
 
     public function testPreservedLegacyMarkersRemainVisibleWithoutInventingJudgmentDates(): void

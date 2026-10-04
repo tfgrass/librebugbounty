@@ -45,7 +45,8 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
             $data = $this->payload($response->getContent());
             self::assertSame('Europe/Berlin', $data['period']['timezone']);
             self::assertArrayHasKey('reported', $data['kpis']);
-            self::assertArrayHasKey('sent', $data['kpis']);
+            self::assertArrayHasKey('contacted', $data['kpis']);
+            self::assertArrayNotHasKey('sent', $data['kpis']);
             self::assertArrayHasKey('fixed', $data['kpis']);
             if ($query === '') self::assertSame('month', $data['period']['kind']);
         }
@@ -59,6 +60,7 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
         $second = $this->finding('second', 'alpha.test')->setSubmittedAt(new \DateTimeImmutable('2026-10-02T10:00:00'))
             ->setManualAssessment('confirmed', null, new \DateTimeImmutable('2026-10-02T12:00:00'));
         $archived = $this->finding('archived', 'beta.invalid')->setSubmittedAt(new \DateTimeImmutable('2026-10-03T10:00:00'))
+            ->setContactedAt(new \DateTimeImmutable('2026-10-03T11:00:00'))
             ->setManualAssessment('discarded', null, new \DateTimeImmutable('2026-10-03T12:00:00'));
         $old = $this->finding('old', 'gamma.example')->setSubmittedAt(new \DateTimeImmutable('2026-09-01T09:00:00'))
             ->setNotifiedOwnerAt(new \DateTimeImmutable('2026-10-03T09:00:00'))
@@ -69,17 +71,17 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
         $before = $this->snapshot();
         $data = $this->payload($this->request('/statistics?period=month&anchor=2026-10-03')->getContent());
         self::assertSame(3, $data['kpis']['reported']['count']);
-        self::assertSame(2, $data['kpis']['sent']['count']);
-        self::assertSame(0, $data['kpis']['contacted']['count']);
+        self::assertArrayNotHasKey('sent', $data['kpis']);
+        self::assertSame(1, $data['kpis']['contacted']['count']);
         self::assertSame(1, $data['kpis']['fixed']['count']);
-        foreach (['reported', 'sent', 'fixed', 'confirmed', 'contacted'] as $event) {
+        foreach (['reported', 'fixed', 'confirmed', 'contacted'] as $event) {
             $kpi = $data['kpis'][$event];
             $response = $this->request($kpi['url']);
             self::assertSame(200, $response->getStatusCode(), $event);
             self::assertSame($kpi['count'], $this->listCount($response->getContent()), $event);
         }
         foreach ($data['series'] as $bucket) {
-            foreach (['reported', 'sent', 'fixed'] as $event) {
+            foreach (['reported', 'contacted', 'fixed'] as $event) {
                 $response = $this->request($bucket['urls'][$event]);
                 self::assertSame(200, $response->getStatusCode());
                 self::assertSame($bucket[$event], $this->listCount($response->getContent()), $bucket['date'].' '.$event);
@@ -95,12 +97,12 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
             self::assertSame(200, $response->getStatusCode());
             self::assertSame($card['count'], $this->listCount($response->getContent()), $card['key']);
         }
-        self::assertSame(1, array_sum(array_column($data['aging'], 'count')), 'Already sent confirmed cases are excluded from open contact work');
+        self::assertSame(2, array_sum(array_column($data['aging'], 'count')), 'Only contact markers exclude confirmed cases from open contact work');
         $reported = $this->request($data['kpis']['reported']['url']);
         $ids = [];
         foreach ($this->xpath($reported->getContent())->query('//*[@data-finding-id]') as $row) $ids[] = $row->getAttribute('data-finding-id');
         self::assertContains($archived->getId(), $ids, 'Activity includes retained archived cases');
-        self::assertNotContains($old->getId(), $ids, 'Sent activity does not change the ingest date');
+        self::assertNotContains($old->getId(), $ids, 'Historical delivery markers do not change the ingest date');
         self::assertSame($before, $this->snapshot());
     }
 

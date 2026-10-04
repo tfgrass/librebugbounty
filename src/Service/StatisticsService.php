@@ -11,12 +11,13 @@ use App\Value\HostnameTld;
 
 final class StatisticsService
 {
-    private const METRICS = [
+    private const ACTIVITY_METRICS = [
         'reported' => 'Gemeldet',
-        'sent' => 'Versendet',
         'contacted' => 'Kontaktiert',
+        'fixed' => 'Behoben',
+    ];
+    private const METRICS = self::ACTIVITY_METRICS + [
         'confirmed' => 'Bestätigt',
-        'fixed' => 'Manuell behoben',
     ];
     private const MAX_BUCKETS = 730;
 
@@ -43,14 +44,14 @@ final class StatisticsService
         $calendar = [];
         for ($date = $calendarStart; $date < $calendarStart->modify('+1 year'); $date = $date->modify('+1 day')) {
             $key = $date->format('Y-m-d');
-            $calendar[$key] = ['date' => $key] + array_fill_keys(array_keys(self::METRICS), 0) + [
+            $calendar[$key] = ['date' => $key] + array_fill_keys(array_keys(self::ACTIVITY_METRICS), 0) + [
                 'urls' => $this->eventUrls($key, $key, $filters['tld']),
             ];
         }
         $counts = $currentComparison = $previousCounts = array_fill_keys(array_keys(self::METRICS), 0);
         $hosts = $comparisonHosts = $previousHosts = [];
         $tldCases = $tldHosts = $options = [];
-        $snapshotCounts = ['active' => 0, 'confirmed' => 0, 'fixed' => 0, 'unknown' => 0, 'contacted' => 0, 'sent' => 0];
+        $snapshotCounts = ['active' => 0, 'confirmed' => 0, 'fixed' => 0, 'unknown' => 0, 'contacted' => 0];
         $agingCounts = ['recent' => 0, 'waiting' => 0, 'old' => 0];
         $totals = ['all' => 0, 'active' => 0, 'archived' => 0, 'duplicates' => 0];
         $legacyCounts = ['fixed_marker' => 0, 'checked_marker' => 0, 'fixed_status' => 0];
@@ -59,8 +60,6 @@ final class StatisticsService
         $coverage = [
             'firstActivityDate' => $first?->format('Y-m-d'),
             'assessmentHistoryFrom' => $historyFrom?->format('Y-m-d'),
-            'sentDatedCount' => 0,
-            'contactedWithoutSentCount' => 0,
             'fixedWithoutDateCount' => 0,
             'confirmedWithoutDateCount' => 0,
         ];
@@ -74,7 +73,6 @@ final class StatisticsService
             }
             $events = [
                 'reported' => $parse($fact['reported_at']),
-                'sent' => $parse($fact['sent_at']),
                 'contacted' => $parse($fact['contacted_at']),
                 'confirmed' => $parse($fact['confirmed_at']),
                 'fixed' => $parse($fact['fixed_at']),
@@ -82,8 +80,6 @@ final class StatisticsService
             $totals['all']++;
             $totals[(bool) $fact['active'] ? 'active' : 'archived']++;
             $totals['duplicates'] += (int) $fact['duplicate'];
-            $coverage['sentDatedCount'] += $events['sent'] !== null ? 1 : 0;
-            $coverage['contactedWithoutSentCount'] += $events['contacted'] !== null && $events['sent'] === null ? 1 : 0;
             $coverage['fixedWithoutDateCount'] += ($fact['manual_assessment'] === 'fixed' || $fact['status'] === 'fixed') && $events['fixed'] === null ? 1 : 0;
             $coverage['confirmedWithoutDateCount'] += $fact['manual_assessment'] === 'confirmed' && $events['confirmed'] === null ? 1 : 0;
             if ($events['contacted'] !== null) {
@@ -104,7 +100,7 @@ final class StatisticsService
                 if ($this->within($date, $period->from, $period->until)) {
                     $counts[$metric]++;
                     $index = $this->bucketIndex($series, $date->getTimestamp());
-                    if ($index !== null) {
+                    if ($index !== null && isset(self::ACTIVITY_METRICS[$metric])) {
                         $series[$index][$metric]++;
                     }
                     if ($metric === 'reported') {
@@ -114,7 +110,7 @@ final class StatisticsService
                     }
                 }
                 $day = $date->format('Y-m-d');
-                if (isset($calendar[$day])) {
+                if (isset($calendar[$day]) && isset(self::ACTIVITY_METRICS[$metric])) {
                     $calendar[$day][$metric]++;
                 }
                 if ($comparison !== null && $this->within($date, $comparison[0], $comparison[1])) {
@@ -139,8 +135,7 @@ final class StatisticsService
                 $snapshotCounts[$assessment]++;
             }
             $snapshotCounts['contacted'] += $events['contacted'] !== null ? 1 : 0;
-            $snapshotCounts['sent'] += $events['sent'] !== null ? 1 : 0;
-            if ($assessment === 'confirmed' && $events['contacted'] === null && $events['sent'] === null && $events['reported'] !== null) {
+            if ($assessment === 'confirmed' && $events['contacted'] === null && $events['reported'] !== null) {
                 // Waiting age is the calendar age since Ingest, matching list links.
                 $age = (int) $events['reported']->setTime(0, 0)->diff($today)->format('%r%a');
                 $agingCounts[$age <= 7 ? 'recent' : ($age <= 30 ? 'waiting' : 'old')]++;
@@ -167,9 +162,9 @@ final class StatisticsService
             $snapshot[] = ['key' => $key, 'label' => $label, 'count' => $snapshotCounts[$key], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => $key], $filters['tld'])];
         }
         $aging = [
-            ['key' => 'recent', 'label' => 'Bis 7 Tage', 'count' => $agingCounts['recent'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'sent' => 'no', 'event' => 'reported', 'from' => $today->modify('-7 days')->format('Y-m-d')], $filters['tld'])],
-            ['key' => 'waiting', 'label' => '8–30 Tage', 'count' => $agingCounts['waiting'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'sent' => 'no', 'event' => 'reported', 'from' => $today->modify('-30 days')->format('Y-m-d'), 'to' => $today->modify('-8 days')->format('Y-m-d')], $filters['tld'])],
-            ['key' => 'old', 'label' => 'Über 30 Tage', 'count' => $agingCounts['old'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'sent' => 'no', 'event' => 'reported', 'to' => $today->modify('-31 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'recent', 'label' => 'Bis 7 Tage', 'count' => $agingCounts['recent'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'from' => $today->modify('-7 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'waiting', 'label' => '8–30 Tage', 'count' => $agingCounts['waiting'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'from' => $today->modify('-30 days')->format('Y-m-d'), 'to' => $today->modify('-8 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'old', 'label' => 'Über 30 Tage', 'count' => $agingCounts['old'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'to' => $today->modify('-31 days')->format('Y-m-d')], $filters['tld'])],
         ];
         $history = [
             'contactDatedCount' => $contactDatedCount,
@@ -190,9 +185,6 @@ final class StatisticsService
         }
         if ($historyFrom !== null && $period->from < $historyFrom) {
             $notes[] = 'Bewertungshistorie ist erst ab '.$historyFrom->format('d.m.Y').' im erhaltenen Bestand belegt.';
-        }
-        if ($coverage['contactedWithoutSentCount'] > 0) {
-            $notes[] = 'Kontaktmarkierungen ohne ausdrücklichen Versandzeitpunkt werden nicht als versendet gezählt.';
         }
         if ($contactDatedCount > 0) {
             $notes[] = 'Historische Kontakte erscheinen am gespeicherten Markierungsdatum. Frühere erneute Markierungen konnten diesen Zeitpunkt ersetzen; er belegt deshalb nicht immer den ersten Kontakt.';
@@ -227,8 +219,14 @@ final class StatisticsService
             }
         }
         $filters = ['tld' => $query['tld'] ?? '', 'heatmapMetric' => $query['heatmapMetric'] ?? 'reported', 'tldMeasure' => $query['tldMeasure'] ?? 'cases'];
+        // Keep old dashboard bookmarks usable without reinterpreting stored data.
+        $filters['heatmapMetric'] = match ($filters['heatmapMetric']) {
+            'sent' => 'contacted',
+            'confirmed' => 'reported',
+            default => $filters['heatmapMetric'],
+        };
         new FindingReadFilter(scope: 'all', tld: $filters['tld']);
-        if (!isset(self::METRICS[$filters['heatmapMetric']]) || !in_array($filters['tldMeasure'], ['cases', 'hosts'], true)) {
+        if (!isset(self::ACTIVITY_METRICS[$filters['heatmapMetric']]) || !in_array($filters['tldMeasure'], ['cases', 'hosts'], true)) {
             throw new \InvalidArgumentException('Unbekannte Statistikdarstellung.');
         }
 
@@ -254,7 +252,7 @@ final class StatisticsService
     private function eventUrls(string $from, string $to, string $tld): array
     {
         $urls = [];
-        foreach (self::METRICS as $metric => $_) {
+        foreach (self::ACTIVITY_METRICS as $metric => $_) {
             $urls[$metric] = $this->eventUrl($metric, $from, $to, $tld);
         }
         return $urls;
@@ -324,7 +322,7 @@ final class StatisticsService
             $fromDate = $cursor->format('Y-m-d');
             $toDate = $until->modify('-1 day')->format('Y-m-d');
             $label = $granularity === 'day' ? $cursor->format('d.m.') : $cursor->format('d.m.').' – '.$until->modify('-1 day')->format('d.m.Y');
-            $rows[] = ['date' => $fromDate, 'label' => $label, 'from' => $fromDate, 'to' => $toDate, '_from' => $cursor->getTimestamp(), '_until' => $until->getTimestamp()] + array_fill_keys(array_keys(self::METRICS), 0) + ['urls' => $this->eventUrls($fromDate, $toDate, $tld)];
+            $rows[] = ['date' => $fromDate, 'label' => $label, 'from' => $fromDate, 'to' => $toDate, '_from' => $cursor->getTimestamp(), '_until' => $until->getTimestamp()] + array_fill_keys(array_keys(self::ACTIVITY_METRICS), 0) + ['urls' => $this->eventUrls($fromDate, $toDate, $tld)];
         }
         return [$rows, $granularity, $bucketMonths];
     }

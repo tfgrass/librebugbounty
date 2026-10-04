@@ -80,7 +80,10 @@ async function main() {
     let data = await gotoStats();
     assert.equal(data.period.kind, 'month');
     assert.equal(data.kpis.reported.count, f._expect.octoberReported);
-    assert.equal(data.kpis.sent.count, f._expect.octoberSent);
+    assert.equal(data.kpis.contacted.count, f._expect.octoberContacted);
+    assert.equal(Object.hasOwn(data.kpis, 'sent'), false, 'Sent is no longer a dashboard metric');
+    assert.ok(data.series.every((row) => !Object.hasOwn(row, 'sent')));
+    assert.ok(data.calendar.every((row) => !Object.hasOwn(row, 'sent')));
     assert.equal(data.kpis.fixed.count, f._expect.octoberFixed);
     assert.equal(data.kpis.hosts.count, f._expect.octoberHosts);
     assert.equal(data.history.contactDatedCount, f._expect.historicalContacts);
@@ -90,9 +93,18 @@ async function main() {
     assert.equal(data.period.timezone, 'Europe/Berlin');
     assert.equal(await page.evaluate(() => window.__statisticsFixtureExecuted), undefined);
     assert.equal(await page.locator('.studio-workspace-nav a[href="/statistics"][aria-current="page"]').count(), 1);
-    assert.equal(await page.locator('[data-series-toggle="contacted"]').isChecked(), true, 'Contacted must be visible by default');
-    assert.equal(await page.locator('[data-chart-series="contacted"]').isVisible(), true);
-    mark('Month dashboard uses ingest, independent first-send and first manual fixed histories with distinct host totals');
+    assert.equal(await page.locator('[data-activity-chart]').count(), 1, 'All activity shares one SVG plot');
+    assert.equal(await page.locator('[data-chart-crosshair]').count(), 1, 'The shared chart has one inspection crosshair');
+    assert.equal(await page.locator('[data-series-toggle]').count(), 3);
+    assert.equal(await page.locator('[data-chart-series]').count(), 3);
+    assert.equal(await page.locator('[data-chart-y-axis]').count(), 1, 'All lines share one labeled Y axis');
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      assert.equal(await page.locator(`[data-series-toggle="${metric}"]`).isChecked(), true, `${metric} must be visible by default`);
+      assert.equal(await page.locator(`svg[data-activity-chart] > g[data-chart-series="${metric}"]`).isVisible(), true);
+    }
+    assert.equal(await page.locator('[data-stat-kpi="sent"], [data-heatmap-metric="sent"]').count(), 0);
+    assert.doesNotMatch(await page.locator('main').innerText(), /\bVersendet\b/);
+    mark('Month dashboard uses ingest, contact and first manual fixed histories in one chart, with distinct host totals');
 
     for (const width of [1440, 960, 640, 390]) {
       const height = width === 390 ? 844 : 1000;
@@ -136,18 +148,18 @@ async function main() {
       assert.ok(scrollGeometry.last.top >= 0 && scrollGeometry.last.bottom <= scrollGeometry.footer.top + 1, `${width}: final work card is covered by footer`);
       await snapshot(`studio-statistics-${width}x${height}-lower.png`);
       if (width === 390) {
-        const contactPlot = page.locator('[data-activity-chart][data-chart-metric="contacted"]');
-        await page.locator('[data-series-toggle="confirmed"]').check();
-        await contactPlot.scrollIntoViewIfNeeded();
-        await contactPlot.focus();
-        await contactPlot.press('Home');
-        assert.ok(Number(await page.locator('[data-chart-point="contacted"]').getAttribute('cy')) < 102, '390: single contact remains clear above its own baseline');
-        const tooltipBox = await page.locator('[data-chart-tooltip]').boundingBox();
-        const nextHeadingBox = await page.locator('[data-chart-series="sent"] h3').boundingBox();
+        const activity = page.locator('[data-activity-chart]');
+        await activity.scrollIntoViewIfNeeded();
+        await activity.focus();
+        await activity.press('Home');
+        const mobileInspection = page.locator('[data-chart-tooltip]');
+        assert.match(await mobileInspection.innerText(), /Kontaktiert\s+1/);
+        assert.equal(await mobileInspection.locator('a').count(), 3, '390: all three values remain available as drilldowns');
+        const tooltipBox = await mobileInspection.boundingBox();
+        const nextHeadingBox = await page.locator('#statistics-tld-title').boundingBox();
         assert.ok(tooltipBox && nextHeadingBox);
-        assert.ok(tooltipBox.y + tooltipBox.height <= nextHeadingBox.y, '390: active tooltip must not cover the next metric heading, including optional confirmed values');
-        await snapshot('studio-statistics-390x844-contact-spike.png');
-        await page.locator('[data-series-toggle="confirmed"]').uncheck();
+        assert.ok(tooltipBox.y + tooltipBox.height <= nextHeadingBox.y, '390: inspection must not cover the following card heading');
+        await snapshot('studio-statistics-390x844-shared-spike.png');
         const calendar = page.locator('[data-heatmap-chart]');
         await calendar.focus();
         await calendar.press('End');
@@ -169,65 +181,76 @@ async function main() {
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
 
-    const sentToggle = page.locator('[data-series-toggle="sent"]');
-    assert.equal(await sentToggle.isChecked(), true);
-    await sentToggle.uncheck();
-    assert.equal(await sentToggle.isChecked(), false);
-    assert.equal(await page.locator('[data-chart-series="sent"]').evaluate((node) => node.hasAttribute('hidden') || getComputedStyle(node).display === 'none'), true);
-    await sentToggle.check();
-    assert.equal(await sentToggle.isChecked(), true);
-    assert.equal(await page.locator('[data-chart-series="sent"]').evaluate((node) => node.hasAttribute('hidden') || getComputedStyle(node).display === 'none'), false);
-    const chart = page.locator('[data-activity-chart][data-chart-metric="reported"]');
-    await chart.scrollIntoViewIfNeeded();
-    const chartBox = await chart.boundingBox();
-    assert.ok(chartBox);
-    await page.mouse.move(chartBox.x + 1, chartBox.y + chartBox.height * 0.45);
+    const chart = page.locator('[data-activity-chart]');
+    const sharedScale = Number(await chart.getAttribute('data-chart-axis-max'));
+    assert.ok(sharedScale >= 500, 'The shared Y scale must accommodate the largest ingest spike');
+    assert.equal(Number((await page.locator('[data-chart-y-axis] span').first().textContent()).replaceAll('.', '')), sharedScale);
     const spikeBucket = data.series.find((row) => row.date === f._expect.spikeDay);
     assert.equal(spikeBucket.reported, f._expect.spikeDayReported);
     assert.equal(spikeBucket.contacted, f._expect.spikeDayContacted);
-    const contactScale = Number(await page.locator('[data-chart-series="contacted"]').getAttribute('data-chart-axis-max'));
-    const ingestScale = Number(await page.locator('[data-chart-series="reported"]').getAttribute('data-chart-axis-max'));
-    assert.ok(ingestScale >= 500 && contactScale <= 4, 'Each metric needs its own labeled scale for 500 ingests versus one contact');
-    assert.equal(Number((await page.locator('[data-chart-y-axis="contacted"] span').first().textContent()).replaceAll('.', '')), contactScale);
-    assert.equal(Number((await page.locator('[data-chart-y-axis="reported"] span').first().textContent()).replaceAll('.', '')), ingestScale);
-    const point = page.locator('[data-chart-point="contacted"]');
-    const contactBaseline = await page.locator('[data-activity-chart][data-chart-metric="contacted"]').evaluate((node) => node.viewBox.baseVal.height);
-    assert.ok(Number(await point.getAttribute('cy')) < contactBaseline * 0.85, 'A single contact must be clearly above its own baseline');
-    assert.equal(await point.evaluate((node) => node.hasAttribute('hidden')), false, 'The selected contact marker must remain visible');
-    assert.match(await page.locator('[data-chart-tooltip]').innerText(), /01\.10\.2026/);
+    await chart.scrollIntoViewIfNeeded();
+    await chart.focus();
+    await chart.press('Home');
+    assert.match(await page.locator('[data-chart-tooltip-date]').innerText(), /01\.10\.2026/);
+    assert.match(await page.locator('[data-chart-tooltip-values]').innerText(), /Gemeldet\s+500/);
+    assert.match(await page.locator('[data-chart-tooltip-values]').innerText(), /Kontaktiert\s+1/);
+    assert.match(await page.locator('[data-chart-tooltip-values]').innerText(), /Behoben\s+0/);
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      const point = page.locator(`[data-chart-point="${metric}"]`);
+      assert.equal(await point.evaluate((node) => node.hasAttribute('hidden')), false, `${metric}: selected marker remains visible`);
+      const expectedY = await chart.evaluate((node, count) => node.viewBox.baseVal.height * (1 - count / Number(node.dataset.chartAxisMax)), spikeBucket[metric]);
+      assert.ok(Math.abs(Number(await point.getAttribute('cy')) - expectedY) < 0.01, `${metric}: selected point uses the shared count scale`);
+      const link = page.locator('[data-chart-tooltip-values] a').filter({ hasText: new RegExp({ reported: 'Gemeldet', contacted: 'Kontaktiert', fixed: 'Behoben' }[metric]) });
+      assert.equal(await link.count(), 1, `${metric}: inspection supplies a dated event link`);
+      assert.equal(await link.getAttribute('href'), spikeBucket.urls[metric]);
+    }
     await assertList(spikeBucket.urls.contacted, 1, 'Single contact on spike day');
     await assertList(spikeBucket.urls.reported, 500, '500 ingests on spike day');
-    const plotPositions = () => page.locator('[data-activity-chart]').evaluateAll((nodes) => nodes
-      .filter((node) => node.getBoundingClientRect().width > 0)
-      .map((node) => ({ metric: node.dataset.chartMetric, top: node.getBoundingClientRect().top + document.querySelector('main').scrollTop })));
-    for (const metric of ['contacted', 'sent', 'reported']) {
-      const target = page.locator(`[data-activity-chart][data-chart-metric="${metric}"]`);
-      await target.scrollIntoViewIfNeeded();
-      const box = await target.boundingBox();
-      assert.ok(box);
-      const beforeHover = await plotPositions();
-      await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
-      const afterHover = await plotPositions();
-      for (let index = 0; index < beforeHover.length; index++) assert.ok(Math.abs(beforeHover[index].top - afterHover[index].top) <= 0.5, `${metric}: hovering moved ${beforeHover[index].metric} plot from ${beforeHover[index].top} to ${afterHover[index].top}`);
-      const beforeFocus = await plotPositions();
-      await target.focus();
-      await target.press('Home');
-      const afterFocus = await plotPositions();
-      for (let index = 0; index < beforeFocus.length; index++) assert.ok(Math.abs(beforeFocus[index].top - afterFocus[index].top) <= 0.5, `${metric}: keyboard focus moved ${beforeFocus[index].metric} plot from ${beforeFocus[index].top} to ${afterFocus[index].top}`);
+    await chart.press('ArrowRight');
+    await chart.press('ArrowRight');
+    const equalBucket = data.series[2];
+    assert.equal(equalBucket.contacted, 1);
+    assert.equal(equalBucket.fixed, 1);
+    assert.equal(await page.locator('[data-chart-point="contacted"]').getAttribute('cy'), await page.locator('[data-chart-point="fixed"]').getAttribute('cy'), 'Equal contact and fixed counts occupy the same Y coordinate');
+    const chartGeometry = () => chart.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { left: rect.left, width: rect.width, height: rect.height, top: rect.top + document.querySelector('main').scrollTop };
+    });
+    const beforeToggle = await chartGeometry();
+    const paths = await page.locator('[data-series-path]').evaluateAll((nodes) => Object.fromEntries(nodes.map((node) => [node.dataset.seriesPath, node.getAttribute('d')])));
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      await page.locator(`[data-series-toggle="${metric}"]`).uncheck();
+      assert.equal(await page.locator(`[data-chart-series="${metric}"]`).evaluate((node) => node.hasAttribute('hidden') || getComputedStyle(node).display === 'none'), true);
+      assert.equal(Number(await chart.getAttribute('data-chart-axis-max')), sharedScale, 'Deselecting a metric must preserve the common scale');
+      assert.deepEqual(await page.locator('[data-series-path]').evaluateAll((nodes) => Object.fromEntries(nodes.map((node) => [node.dataset.seriesPath, node.getAttribute('d')]))), paths, 'Deselecting a metric must preserve all path coordinates');
+      const geometry = await chartGeometry();
+      for (const key of Object.keys(beforeToggle)) assert.ok(Math.abs(geometry[key] - beforeToggle[key]) <= 0.5, `${metric}: deselecting moved the chart ${key}`);
     }
-    await page.locator('[data-chart-series="contacted"]').scrollIntoViewIfNeeded();
-    await snapshot('studio-statistics-independent-scales.png');
-    await chart.scrollIntoViewIfNeeded();
-    const nextChartBox = await chart.boundingBox();
-    assert.ok(nextChartBox);
-    await page.mouse.move(nextChartBox.x + nextChartBox.width * 0.15, nextChartBox.y + nextChartBox.height * 0.45);
+    assert.equal(await page.locator('[data-chart-empty-selection]').isVisible(), true);
+    assert.equal(await page.locator('[data-chart-tooltip]').isVisible(), false);
+    assert.equal(await page.locator('[data-chart-crosshair]').evaluate((node) => node.hasAttribute('hidden')), true);
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      await page.locator(`[data-series-toggle="${metric}"]`).check();
+      assert.equal(await page.locator(`[data-chart-series="${metric}"]`).evaluate((node) => node.hasAttribute('hidden') || getComputedStyle(node).display === 'none'), false);
+      assert.equal(Number(await chart.getAttribute('data-chart-axis-max')), sharedScale);
+    }
+    assert.equal(await page.locator('[data-chart-empty-selection]').isVisible(), false);
+    await chart.focus();
+    await chart.press('Home');
+    assert.equal(await page.locator('[data-chart-tooltip-values] a').count(), 3);
+    const chartBox = await chart.boundingBox();
+    assert.ok(chartBox);
+    await page.mouse.move(chartBox.x + chartBox.width * 0.15, chartBox.y + chartBox.height * 0.45);
     await page.locator('[data-chart-tooltip]').waitFor({ state: 'visible' });
     const firstInspection = await page.locator('[data-chart-tooltip]').innerText();
-    await page.mouse.move(nextChartBox.x + nextChartBox.width * 0.75, nextChartBox.y + nextChartBox.height * 0.45);
+    const beforeHover = await chartGeometry();
+    await page.mouse.move(chartBox.x + chartBox.width * 0.75, chartBox.y + chartBox.height * 0.45);
     assert.notEqual(await page.locator('[data-chart-tooltip]').innerText(), firstInspection, 'Pointer position must select different dated values');
-    assert.match(await page.locator('[data-chart-tooltip]').innerText(), /Gemeldet|Versendet/i);
-    await snapshot('studio-statistics-tooltip.png');
-    mark('Independent labeled plots preserve one contact beside 500 ingests; full-date tooltips, toggles and focus keep plot positions stable');
+    const afterHover = await chartGeometry();
+    for (const key of Object.keys(beforeHover)) assert.ok(Math.abs(afterHover[key] - beforeHover[key]) <= 0.5, `Hovering moved the chart ${key}`);
+    assert.match(await page.locator('[data-chart-tooltip]').innerText(), /Gemeldet|Kontaktiert|Behoben/i);
+    await snapshot('studio-statistics-shared-scale.png');
+    mark('One shared scale aligns equal counts; the contact beside a 500-ingest spike remains available through dated tooltips and exact links, and toggles keep paths and chart position stable');
 
     data = await gotoStats({ period: 'week' });
     assert.equal(data.period.kind, 'week');
@@ -258,22 +281,25 @@ async function main() {
     await tldCases.click();
     assert.equal(await tldCases.getAttribute('aria-pressed'), 'true');
     assert.match(await page.locator('[data-tld-segment=".example"] .stat-tld-percent').textContent(), /<\s*1\s*%/, 'A nonzero tiny TLD share must not be labeled zero percent');
-    const heatmapSent = page.locator('[data-heatmap-metric="sent"]');
-    await heatmapSent.click();
-    assert.equal(await heatmapSent.getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('[data-heatmap-metric]').count(), 3);
+    for (const metric of ['contacted', 'fixed']) {
+      const selector = page.locator(`[data-heatmap-metric="${metric}"]`);
+      await selector.click();
+      assert.equal(await selector.getAttribute('aria-pressed'), 'true');
+    }
     await page.locator('[data-heatmap-metric="reported"]').click();
     await snapshot('studio-statistics-tld-calendar.png');
-    mark('TLD case/host mode and reported/sent calendar selector respond without changing database records');
+    mark('TLD case/host mode and reported/contacted/fixed calendar selector respond without changing database records');
 
-    for (const event of ['reported', 'sent', 'fixed', 'confirmed', 'contacted']) {
+    for (const event of ['reported', 'fixed', 'confirmed', 'contacted']) {
       await assertList(data.kpis[event].url, data.kpis[event].count, event + ' metric list');
     }
     for (const tld of data.tlds.cases) await assertList(tld.url, tld.count, tld.key + ' TLD case list');
     for (const card of [...data.snapshot, ...data.aging]) await assertList(card.url, card.count, card.key + ' current work list');
     for (const marker of data.history.items) await assertList(marker.url, marker.count, marker.key + ' historical marker list');
-    assert.equal(data.aging.reduce((sum, row) => sum + row.count, 0), 1, 'Confirmed cases already sent or contacted are excluded from open contact work');
-    for (const bucket of data.series.filter((row) => row.reported || row.sent || row.fixed)) {
-      for (const event of ['reported', 'sent', 'fixed']) await assertList(bucket.urls[event], bucket[event], bucket.date + ' ' + event + ' list');
+    assert.equal(data.aging.reduce((sum, row) => sum + row.count, 0), f._expect.openContactCount, 'Only contacted confirmed cases are excluded; a sent-only historical case remains open contact work');
+    for (const bucket of data.series.filter((row) => row.reported || row.contacted || row.fixed)) {
+      for (const event of ['reported', 'contacted', 'fixed']) await assertList(bucket.urls[event], bucket[event], bucket.date + ' ' + event + ' list');
     }
     const reportedLink = page.locator('[data-stat-kpi="reported"]').first();
     await reportedLink.click();
@@ -321,18 +347,27 @@ async function main() {
     const noJs = await browser.newContext({ viewport: { width: 640, height: 1000 }, javaScriptEnabled: false });
     await protect(noJs);
     const fallback = await noJs.newPage();
-    assert.equal((await fallback.goto(base + '/statistics?period=custom&anchor=2026-10-03&from=2026-10-01&to=2026-10-03')).status(), 200);
+    assert.equal((await fallback.goto(base + '/statistics?anchor=2026-10-03')).status(), 200);
     assert.equal((await payload(fallback)).kpis.reported.count, f._expect.octoberReported);
-    assert.equal(await fallback.locator('[data-chart-series="contacted"]').isVisible(), true, 'Contacted plot remains visible without JavaScript');
-    assert.ok(Number(await fallback.locator('[data-chart-series="contacted"]').getAttribute('data-chart-axis-max')) <= 4, 'SSR keeps the contact scale independently readable');
+    assert.equal(await fallback.locator('[data-activity-chart]').count(), 1);
+    assert.ok(Number(await fallback.locator('[data-activity-chart]').getAttribute('data-chart-axis-max')) >= 500, 'SSR preserves the same shared scale');
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      assert.equal(await fallback.locator(`svg[data-activity-chart] > g[data-chart-series="${metric}"]`).isVisible(), true, `${metric} line remains visible without JavaScript`);
+      assert.equal(await fallback.locator(`[data-series-path="${metric}"]`).getAttribute('d'), paths[metric], `${metric}: server-rendered path equals the enhanced shared path`);
+    }
+    assert.equal(await fallback.locator('[data-stat-kpi="sent"], [data-heatmap-metric="sent"]').count(), 0);
     assert.match(await fallback.locator('[data-tld-segment=".example"] .stat-tld-percent').textContent(), /<\s*1\s*%/, 'SSR must preserve a nonzero tiny TLD share');
+    await fallback.locator('.stat-custom > summary').click();
     await fallback.locator('#statistics-custom-period [name="from"]').fill('2026-10-02');
     await fallback.locator('#statistics-custom-period [name="to"]').fill('2026-10-03');
     await submit(fallback);
     assert.equal((await payload(fallback)).kpis.reported.count, 7);
     const table = fallback.locator('[data-series-table]');
     await table.evaluate((node) => { if (node instanceof HTMLDetailsElement) node.open = true; });
-    assert.match(await table.innerText(), /Gemeldet|Versendet/);
+    assert.match(await table.innerText(), /Gemeldet/);
+    assert.match(await table.innerText(), /Kontaktiert/);
+    assert.match(await table.innerText(), /Behoben/);
+    assert.doesNotMatch(await table.innerText(), /Versendet/);
     await fallback.locator('[data-stat-kpi="reported"]').first().click();
     assert.equal(new URL(fallback.url()).pathname, '/findings');
     assert.equal(Number(await fallback.locator('[data-total-filtered]').getAttribute('data-total-filtered')), 7);

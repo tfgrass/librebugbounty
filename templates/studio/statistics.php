@@ -7,9 +7,9 @@ $filters = $view['filters'];
 $series = $view['series'];
 $history = $view['history'] ?? null;
 $contactHistoryUrl = '/findings?'.http_build_query(['scope' => 'all', 'event' => 'contacted'] + ($filters['tld'] === '' ? [] : ['tld' => $filters['tld']]), '', '&', PHP_QUERY_RFC3986);
-$metrics = ['reported' => 'Gemeldet', 'contacted' => 'Kontaktiert', 'sent' => 'Versendet', 'fixed' => 'Behoben', 'confirmed' => 'Bestätigt'];
-$metricColors = ['reported' => '#80adff', 'sent' => '#bca4ff', 'fixed' => '#77dbb0', 'confirmed' => '#e9bf7e', 'contacted' => '#78cee3', 'hosts' => '#9fb0c8'];
-$mainMetrics = ['reported', 'contacted', 'sent', 'fixed'];
+$metrics = ['reported' => 'Gemeldet', 'contacted' => 'Kontaktiert', 'fixed' => 'Behoben'];
+$metricColors = ['reported' => '#80adff', 'contacted' => '#bca4ff', 'fixed' => '#77dbb0', 'confirmed' => '#e9bf7e', 'hosts' => '#9fb0c8'];
+$mainMetrics = array_keys($metrics);
 $formatShare = static fn (float $share): string => $share > 0 && $share < 1 ? '< 1%' : $t('{number} %', ['number' => $formatNumber($share)]);
 $fullRowLabel = static fn (array $row): string => $formatDate($row['from']).($row['from'] === $row['to'] ? '' : ' – '.$formatDate($row['to']));
 $baseQuery = ['period' => $period['kind'], 'anchor' => $period['anchor'], 'granularity' => $period['requestedGranularity']] + $filters;
@@ -24,29 +24,30 @@ $statisticsUrl = static function (array $changes) use ($baseQuery): string {
     }
     return '/statistics?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986);
 };
-$plotAxes = [];
-foreach ($metrics as $metric => $label) {
-    $maximum = max(1, ...array_column($series, $metric));
-    $step = 1;
-    if ($maximum > 4) {
-        $target = $maximum / 4;
-        $base = 10 ** floor(log10($target));
-        foreach ([1, 2, 5, 10] as $factor) {
-            if ($factor * $base >= $target) {
-                $step = max(1, (int) ($factor * $base));
-                break;
-            }
+$maximum = 1;
+foreach ($mainMetrics as $metric) {
+    $maximum = max($maximum, ...array_column($series, $metric));
+}
+$step = 1;
+if ($maximum > 4) {
+    $target = $maximum / 4;
+    $base = 10 ** floor(log10($target));
+    foreach ([1, 2, 5, 10] as $factor) {
+        if ($factor * $base >= $target) {
+            $step = max(1, (int) ($factor * $base));
+            break;
         }
     }
-    $axisMaximum = (int) (ceil($maximum / $step) * $step);
-    $plotAxes[$metric] = ['maximum' => $axisMaximum, 'ticks' => range($axisMaximum, 0, -$step)];
 }
-$plotPath = static function (string $metric) use ($series, $plotAxes): string {
+$axisMaximum = (int) (ceil($maximum / $step) * $step);
+$axisTicks = range($axisMaximum, 0, -$step);
+$plotHeight = 240;
+$plotPath = static function (string $metric) use ($series, $axisMaximum, $plotHeight): string {
     $points = [];
     $last = count($series) - 1;
     foreach ($series as $index => $row) {
         $x = $last === 0 ? 500 : 1000 * $index / $last;
-        $y = 120 - 120 * $row[$metric] / $plotAxes[$metric]['maximum'];
+        $y = $plotHeight - $plotHeight * $row[$metric] / $axisMaximum;
         $points[] = ($index === 0 ? 'M' : 'L').round($x, 2).' '.round($y, 2);
     }
     return implode(' ', $points);
@@ -61,9 +62,7 @@ $snapshotTotal = array_sum(array_column($view['snapshot'], 'count'));
 $calendarMetric = $filters['heatmapMetric'];
 $heatmapPalettes = [
     'reported' => ['#283342', '#304f78', '#416fa8', '#5b90d2', '#80adff'],
-    'sent' => ['#283342', '#494068', '#69548e', '#9378bf', '#bca4ff'],
-    'contacted' => ['#283342', '#2a4f5e', '#3b7181', '#53a0b5', '#78cee3'],
-    'confirmed' => ['#283342', '#665037', '#96744c', '#be9b62', '#e9bf7e'],
+    'contacted' => ['#283342', '#494068', '#69548e', '#9378bf', '#bca4ff'],
     'fixed' => ['#283342', '#2a5149', '#3e7a66', '#59ad8e', '#77dbb0'],
 ];
 $calendarMaximum = max(1, ...array_column($view['calendar'], $calendarMetric));
@@ -165,8 +164,8 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
         </section>
 
         <section class="stat-kpis" aria-label="<?= $escape($t('Kennzahlen im gewählten Zeitraum')) ?>">
-          <?php foreach (['reported', 'contacted', 'sent', 'fixed', 'hosts'] as $metric): ?>
-            <?php $kpi = $view['kpis'][$metric]; $tag = $kpi['url'] === null ? 'div' : 'a'; $hint = match ($metric) { 'reported' => 'Neue Fälle im Eingang', 'contacted' => 'Gespeicherte Kontaktmarkierungen', 'sent' => 'Als versendet markierte Fälle', 'fixed' => 'Manuell als behoben bewertet', default => 'Verschiedene Hosts neuer Fälle' }; ?>
+          <?php foreach (['reported', 'contacted', 'fixed', 'hosts'] as $metric): ?>
+            <?php $kpi = $view['kpis'][$metric]; $tag = $kpi['url'] === null ? 'div' : 'a'; $hint = match ($metric) { 'reported' => 'Neue Fälle im Eingang', 'contacted' => 'Gespeicherte Kontaktmarkierungen', 'fixed' => 'Manuell als behoben bewertet', default => 'Verschiedene Hosts neuer Fälle' }; ?>
             <<?= $tag ?> class="stat-kpi" data-stat-kpi="<?= $escape($metric) ?>" data-count="<?= $escape($kpi['count']) ?>" style="--metric-color: <?= $escape($metricColors[$metric]) ?>"<?= $kpi['url'] === null ? '' : ' href="'.$escape($kpi['url']).'"' ?>>
               <span class="stat-kpi-label"><?= $escape($t($metrics[$metric] ?? $kpi['label'])) ?><?= $kpi['url'] === null ? '' : '<span aria-hidden="true">↗</span>' ?></span>
               <strong class="stat-kpi-value"><?= $escape($formatNumber($kpi['count'])) ?></strong>
@@ -178,41 +177,33 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
         </section>
 
         <section class="stat-card stat-chart-card" aria-labelledby="statistics-activity-title">
-          <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktivität')) ?></p><h2 id="statistics-activity-title"><?= $escape($t('Deine Arbeit im Verlauf')) ?></h2><p><?= $escape($t(match ($period['granularity']) { 'week' => 'Wochenwerte', 'month' => $period['bucketMonths'] > 1 ? '{months}-Monatswerte' : 'Monatswerte', default => 'Tageswerte' }, ['months' => $formatNumber($period['bucketMonths'])])) ?> · <?= $escape($t('Jeder Schritt zählt an seinem eigenen Datum.')) ?></p><p class="stat-scale-explanation"><?= $escape($t('Jede Reihe hat eine eigene Skala. Die Zeitachse gilt für alle.')) ?></p></div></div>
-          <div class="stat-static-legend" data-no-js><?php foreach ($mainMetrics as $metric): ?><span style="--metric-color: <?= $escape($metricColors[$metric]) ?>"><i class="stat-legend-line" aria-hidden="true"></i><?= $escape($t($metrics[$metric])) ?></span><?php endforeach; ?></div>
-          <fieldset class="stat-series-controls" data-js-only hidden><legend class="studio-sr-only"><?= $escape($t('Diagrammlinien auswählen')) ?></legend><?php foreach ($metrics as $metric => $label): ?><label style="--metric-color: <?= $escape($metricColors[$metric]) ?>"><input type="checkbox" data-series-toggle="<?= $escape($metric) ?>"<?= in_array($metric, $mainMetrics, true) ? ' checked' : '' ?>><i class="stat-legend-line" aria-hidden="true"></i><?= $escape($t($label)) ?></label><?php endforeach; ?></fieldset>
-          <div class="stat-chart-rows" data-chart-rows>
-            <?php foreach ($metrics as $metric => $label): ?>
-              <?php $axis = $plotAxes[$metric]; ?>
-              <section class="stat-chart-row" data-chart-series="<?= $escape($metric) ?>" data-chart-axis-max="<?= $escape($axis['maximum']) ?>" data-count="<?= $escape($view['kpis'][$metric]['count']) ?>" style="--metric-color: <?= $escape($metricColors[$metric]) ?>" aria-labelledby="statistics-row-<?= $escape($metric) ?>"<?= in_array($metric, $mainMetrics, true) ? '' : ' hidden' ?>>
-                <div class="stat-chart-row-heading"><h3 id="statistics-row-<?= $escape($metric) ?>"><i class="stat-legend-line" aria-hidden="true"></i><?= $escape($t($label)) ?></h3><a class="stat-chart-row-total" href="<?= $escape($view['kpis'][$metric]['url']) ?>" aria-label="<?= $escape($t('{label}: {count} Fälle im gewählten Zeitraum öffnen', ['label' => $t($label), 'count' => $formatNumber($view['kpis'][$metric]['count'])])) ?>"><strong><?= $escape($formatNumber($view['kpis'][$metric]['count'])) ?></strong> <?= $escape($t('Im Zeitraum')) ?> <span aria-hidden="true">↗</span></a></div>
-                <div class="stat-chart-row-scale" data-chart-scale="<?= $escape($metric) ?>"><?= $escape($t('Eigene Skala · 0–{maximum} Fälle', ['maximum' => $formatNumber($axis['maximum'])])) ?></div>
-                <div class="stat-chart-plot">
-                  <div class="stat-chart-axis-y" aria-hidden="true" data-chart-y-axis="<?= $escape($metric) ?>"><?php foreach ($axis['ticks'] as $tick): ?><span><?= $escape($formatNumber($tick)) ?></span><?php endforeach; ?></div>
-                  <div class="stat-chart-graphic">
-                    <svg class="stat-chart-svg" data-activity-chart data-chart-metric="<?= $escape($metric) ?>" viewBox="0 0 1000 120" preserveAspectRatio="none" role="img" aria-labelledby="statistics-row-<?= $escape($metric) ?>" aria-describedby="statistics-chart-summary statistics-scale-<?= $escape($metric) ?>">
-                      <defs><linearGradient id="statistics-<?= $escape($metric) ?>-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="<?= $escape($metricColors[$metric]) ?>" stop-opacity=".12"/><stop offset="100%" stop-color="<?= $escape($metricColors[$metric]) ?>" stop-opacity="0"/></linearGradient></defs>
-                      <g data-chart-grid="<?= $escape($metric) ?>"><?php foreach ($axis['ticks'] as $tick): ?><?php $tickY = 120 - 120 * $tick / $axis['maximum']; ?><line class="stat-chart-grid" x1="0" x2="1000" y1="<?= $escape($tickY) ?>" y2="<?= $escape($tickY) ?>"/><?php endforeach; ?></g>
-                      <path data-series-area="<?= $escape($metric) ?>" d="<?= $escape($plotPath($metric).' L1000 120 L0 120 Z') ?>" fill="url(#statistics-<?= $escape($metric) ?>-fill)"<?= count($series) < 2 ? ' hidden' : '' ?>/>
-                      <path class="stat-series-line" data-series-path="<?= $escape($metric) ?>" d="<?= $escape($plotPath($metric)) ?>" stroke="<?= $escape($metricColors[$metric]) ?>"/>
-                      <?php if (count($series) === 1): ?><circle data-series-single="<?= $escape($metric) ?>" cx="500" cy="<?= $escape(120 - 120 * $series[0][$metric] / $axis['maximum']) ?>" r="3" fill="<?= $escape($metricColors[$metric]) ?>" vector-effect="non-scaling-stroke"/><?php endif; ?>
-                      <line class="stat-crosshair" data-chart-crosshair="<?= $escape($metric) ?>" x1="0" x2="0" y1="0" y2="120" hidden/>
-                      <circle data-chart-point="<?= $escape($metric) ?>" cx="0" cy="0" r="3.5" fill="<?= $escape($metricColors[$metric]) ?>" stroke="#1b212a" stroke-width="1.5" vector-effect="non-scaling-stroke" hidden/>
-                    </svg>
-                  </div>
-                </div>
-                <p id="statistics-scale-<?= $escape($metric) ?>" class="studio-sr-only"><?= $escape($t('{label}: eigene Skala von 0 bis {maximum} Fällen. Insgesamt {count} im gewählten Zeitraum.', ['label' => $t($label), 'maximum' => $formatNumber($axis['maximum']), 'count' => $formatNumber($view['kpis'][$metric]['count'])])) ?></p>
-              </section>
-            <?php endforeach; ?>
+          <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktivität')) ?></p><h2 id="statistics-activity-title"><?= $escape($t('Deine Arbeit im Verlauf')) ?></h2><p><?= $escape($t(match ($period['granularity']) { 'week' => 'Wochenwerte', 'month' => $period['bucketMonths'] > 1 ? '{months}-Monatswerte' : 'Monatswerte', default => 'Tageswerte' }, ['months' => $formatNumber($period['bucketMonths'])])) ?> · <?= $escape($t('Jeder Schritt zählt an seinem eigenen Datum.')) ?></p><p class="stat-scale-explanation"><?= $escape($t('Gemeinsame Skala für gemeldete, kontaktierte und behobene Fälle.')) ?></p></div></div>
+          <div class="stat-static-legend" data-no-js><?php foreach ($metrics as $metric => $label): ?><span data-metric="<?= $escape($metric) ?>" style="--metric-color: <?= $escape($metricColors[$metric]) ?>"><i class="stat-legend-line" aria-hidden="true"></i><?= $escape($t($label)) ?></span><?php endforeach; ?></div>
+          <fieldset class="stat-series-controls" data-js-only hidden><legend class="studio-sr-only"><?= $escape($t('Diagrammlinien auswählen')) ?></legend><?php foreach ($metrics as $metric => $label): ?><label data-metric="<?= $escape($metric) ?>" style="--metric-color: <?= $escape($metricColors[$metric]) ?>"><input type="checkbox" data-series-toggle="<?= $escape($metric) ?>" checked><i class="stat-legend-line" aria-hidden="true"></i><?= $escape($t($label)) ?></label><?php endforeach; ?></fieldset>
+          <div class="stat-chart-plot">
+            <div class="stat-chart-axis-y" aria-hidden="true" data-chart-y-axis><?php foreach ($axisTicks as $tick): ?><span><?= $escape($formatNumber($tick)) ?></span><?php endforeach; ?></div>
+            <div class="stat-chart-graphic">
+              <svg class="stat-chart-svg" data-activity-chart data-chart-axis-max="<?= $escape($axisMaximum) ?>" viewBox="0 0 1000 <?= $plotHeight ?>" preserveAspectRatio="none" role="img" aria-labelledby="statistics-activity-title" aria-describedby="statistics-chart-summary">
+                <g data-chart-grid><?php foreach ($axisTicks as $tick): ?><?php $tickY = $plotHeight - $plotHeight * $tick / $axisMaximum; ?><line class="stat-chart-grid" x1="0" x2="1000" y1="<?= $escape($tickY) ?>" y2="<?= $escape($tickY) ?>"/><?php endforeach; ?></g>
+                <line class="stat-crosshair" data-chart-crosshair x1="0" x2="0" y1="0" y2="<?= $plotHeight ?>" hidden/>
+                <?php foreach ($metrics as $metric => $label): ?>
+                  <g data-chart-series="<?= $escape($metric) ?>" data-count="<?= $escape($view['kpis'][$metric]['count']) ?>" style="--metric-color: <?= $escape($metricColors[$metric]) ?>">
+                    <path class="stat-series-line" data-series-path="<?= $escape($metric) ?>" d="<?= $escape($plotPath($metric)) ?>" stroke="<?= $escape($metricColors[$metric]) ?>"/>
+                    <?php if (count($series) === 1): ?><circle data-series-single="<?= $escape($metric) ?>" cx="500" cy="<?= $escape($plotHeight - $plotHeight * $series[0][$metric] / $axisMaximum) ?>" r="3" fill="<?= $escape($metricColors[$metric]) ?>" vector-effect="non-scaling-stroke"/><?php endif; ?>
+                    <circle data-chart-point="<?= $escape($metric) ?>" cx="0" cy="0" r="4" fill="<?= $escape($metricColors[$metric]) ?>" stroke="#1b212a" stroke-width="1.5" vector-effect="non-scaling-stroke" hidden/>
+                  </g>
+                <?php endforeach; ?>
+              </svg>
+              <div class="stat-chart-axis-x stat-shared-axis" aria-hidden="true"><?php if ($series !== []): ?><span><?= $escape($fullRowLabel($series[0])) ?></span><?php if (count($series) > 2): ?><span><?= $escape($fullRowLabel($series[(int) floor((count($series) - 1) / 2)])) ?></span><?php endif; ?><?php if (count($series) > 1): ?><span><?= $escape($fullRowLabel($series[count($series) - 1])) ?></span><?php endif; ?><?php endif; ?></div>
+            </div>
           </div>
-          <div class="stat-chart-axis-x stat-shared-axis" aria-hidden="true"><?php if ($series !== []): ?><span><?= $escape($fullRowLabel($series[0])) ?></span><?php if (count($series) > 2): ?><span><?= $escape($fullRowLabel($series[(int) floor((count($series) - 1) / 2)])) ?></span><?php endif; ?><?php if (count($series) > 1): ?><span><?= $escape($fullRowLabel($series[count($series) - 1])) ?></span><?php endif; ?><?php endif; ?></div>
-          <p id="statistics-chart-summary" class="studio-sr-only"><?= $escape($t('Aktivität im Zeitraum {period}. Getrennte Diagramme mit jeweils eigener Skala und gemeinsamer Zeitachse. Alle Werte stehen in der aufklappbaren Tabelle.', ['period' => $periodLabel])) ?></p>
-          <div class="stat-chart-inspection" data-chart-tooltip data-js-only hidden aria-live="polite"><strong data-chart-tooltip-date></strong><div class="stat-chart-inspection-values" data-chart-tooltip-values></div></div>
+          <p id="statistics-chart-summary" class="studio-sr-only"><?= $escape($t('Aktivität im Zeitraum {period}. Gemeldet, Kontaktiert und Behoben auf einer gemeinsamen Skala von 0 bis {maximum} Fällen. Alle Werte stehen in der aufklappbaren Tabelle.', ['period' => $periodLabel, 'maximum' => $formatNumber($axisMaximum)])) ?></p>
+          <div class="stat-chart-inspection-slot" data-js-only hidden><div class="stat-chart-inspection" data-chart-tooltip hidden aria-live="polite"><strong data-chart-tooltip-date></strong><div class="stat-chart-inspection-values" data-chart-tooltip-values></div></div></div>
           <p class="stat-chart-instructions" data-js-only hidden><?= $escape($t('Tippe ins Diagramm oder bewege den Zeiger. Mit den Pfeiltasten wechselst du zwischen den Werten.')) ?></p>
           <p class="stat-empty-note" data-chart-empty-selection hidden><?= $escape($t('Wähle mindestens eine Reihe für den Verlauf.')) ?></p>
-          <?php if ($isEmpty): ?><p class="stat-empty-note"><?= $escape($t('Für diese Auswahl sind noch keine Meldungen, Kontaktmarkierungen, Versandmarkierungen oder Behebungen aufgezeichnet.')) ?></p><?php endif; ?>
+          <?php if ($isEmpty): ?><p class="stat-empty-note"><?= $escape($t('Für diese Auswahl sind noch keine Meldungen, Kontakte oder Behebungen aufgezeichnet.')) ?></p><?php endif; ?>
           <?php if ($period['comparisonLabel'] !== null): ?><p class="stat-card-note"><?= $escape($localizeServiceText($period['comparisonLabel'])) ?></p><?php endif; ?>
-          <details class="stat-table-details" data-series-table><summary><?= $escape($t('Alle Diagrammwerte als Tabelle')) ?></summary><div class="stat-table-wrap"><table class="stat-table"><caption class="studio-sr-only"><?= $escape($t('Aktivitäten nach Zeitraum, einschließlich optionaler Diagrammlinien')) ?></caption><thead><tr><th scope="col"><?= $escape($t('Zeitraum')) ?></th><?php foreach ($metrics as $metric => $label): ?><th scope="col"><?= $escape($t($label)) ?></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($series as $row): ?><tr><td><?= $escape($fullRowLabel($row)) ?></td><?php foreach ($metrics as $metric => $label): ?><td><a href="<?= $escape($row['urls'][$metric]) ?>" aria-label="<?= $escape($t('{label}: {count} · {period}', ['label' => $t($label), 'count' => $formatNumber($row[$metric]), 'period' => $fullRowLabel($row)])) ?>"><?= $escape($formatNumber($row[$metric])) ?></a></td><?php endforeach; ?></tr><?php endforeach; ?></tbody></table></div></details>
+          <details class="stat-table-details" data-series-table><summary><?= $escape($t('Alle Diagrammwerte als Tabelle')) ?></summary><div class="stat-table-wrap"><table class="stat-table"><caption class="studio-sr-only"><?= $escape($t('Gemeldete, kontaktierte und behobene Fälle nach Zeitraum')) ?></caption><thead><tr><th scope="col"><?= $escape($t('Zeitraum')) ?></th><?php foreach ($metrics as $metric => $label): ?><th scope="col"><?= $escape($t($label)) ?></th><?php endforeach; ?></tr></thead><tbody><?php foreach ($series as $row): ?><tr><td><?= $escape($fullRowLabel($row)) ?></td><?php foreach ($metrics as $metric => $label): ?><td><a href="<?= $escape($row['urls'][$metric]) ?>" aria-label="<?= $escape($t('{label}: {count} · {period}', ['label' => $t($label), 'count' => $formatNumber($row[$metric]), 'period' => $fullRowLabel($row)])) ?>"><?= $escape($formatNumber($row[$metric])) ?></a></td><?php endforeach; ?></tr><?php endforeach; ?></tbody></table></div></details>
         </section>
 
         <?php if ($history !== null): ?>
@@ -245,7 +236,7 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
           </section>
 
           <section class="stat-card stat-calendar-card" aria-labelledby="statistics-calendar-title">
-            <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Jahresblick')) ?></p><h2 id="statistics-calendar-title"><?= $escape($t('Dein Jahr {year}', ['year' => $view['calendarYear']])) ?></h2><p><?= $escape($t('Jeder Tag auf einen Blick · das gesamte Kalenderjahr')) ?></p></div><nav class="stat-segmented" aria-label="<?= $escape($t('Aktivität im Jahreskalender')) ?>"><?php foreach (['reported', 'sent', 'contacted'] as $metric): ?><a data-heatmap-metric="<?= $escape($metric) ?>" href="<?= $escape($statisticsUrl(['heatmapMetric' => $metric])) ?>"<?= $calendarMetric === $metric ? ' aria-current="page"' : '' ?>><?= $escape($t($metrics[$metric])) ?></a><?php endforeach; ?></nav></div>
+            <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Jahresblick')) ?></p><h2 id="statistics-calendar-title"><?= $escape($t('Dein Jahr {year}', ['year' => $view['calendarYear']])) ?></h2><p><?= $escape($t('Jeder Tag auf einen Blick · das gesamte Kalenderjahr')) ?></p></div><nav class="stat-segmented" aria-label="<?= $escape($t('Aktivität im Jahreskalender')) ?>"><?php foreach ($mainMetrics as $metric): ?><a data-heatmap-metric="<?= $escape($metric) ?>" href="<?= $escape($statisticsUrl(['heatmapMetric' => $metric])) ?>"<?= $calendarMetric === $metric ? ' aria-current="page"' : '' ?>><?= $escape($t($metrics[$metric])) ?></a><?php endforeach; ?></nav></div>
             <div class="stat-heatmap-wrap" tabindex="0" aria-label="<?= $escape($t('Jahreskalender, auf schmalen Bildschirmen seitlich scrollbar')) ?>"><svg class="stat-heatmap-svg" data-heatmap-chart viewBox="0 0 795 136" role="img" aria-labelledby="statistics-calendar-title" aria-describedby="statistics-heatmap-description">
               <?php foreach ($weekdayLabels as $weekday => $label): ?><text x="0" y="<?= 35 + $weekday * 14 ?>"><?= $escape($label) ?></text><?php endforeach; ?>
               <?php for ($month = 1; $month <= 12; $month++): ?><?php $monthStart = $calendarStart->setDate($view['calendarYear'], $month, 1); $monthColumn = (int) floor(((int) $calendarStart->diff($monthStart)->days + $calendarOffset) / 7); ?><text x="<?= 30 + $monthColumn * 14 ?>" y="12"><?= $escape($monthLabels[$month - 1]) ?></text><?php endfor; ?>
@@ -258,13 +249,13 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
           </section>
 
           <section class="stat-card stat-aging-card" aria-labelledby="statistics-aging-title">
-            <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktueller Stand')) ?></p><h2 id="statistics-aging-title"><?= $escape($t('Offene Kontaktarbeit')) ?></h2><p><?= $escape($t('Bestätigte Fälle ohne Kontakt oder Versand · Alter seit Eingang')) ?></p></div></div>
+            <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktueller Stand')) ?></p><h2 id="statistics-aging-title"><?= $escape($t('Offene Kontaktarbeit')) ?></h2><p><?= $escape($t('Bestätigte Fälle ohne Kontakt · Alter seit Eingang')) ?></p></div></div>
             <ul class="stat-aging-list"><?php foreach ($view['aging'] as $row): ?><li><a data-aging="<?= $escape($row['key']) ?>" data-count="<?= $escape($row['count']) ?>" href="<?= $escape($row['url']) ?>"><span class="stat-row-label"><?= $escape($t($row['label'])) ?></span><strong class="stat-row-count"><?= $escape($formatNumber($row['count'])) ?></strong></a></li><?php endforeach; ?></ul>
             <p class="stat-card-note"><?= $escape($t('Aktiver Bestand, unabhängig vom gewählten Zeitraum{filter}.', ['filter' => $filters['tld'] !== '' ? $t(' · mit dem gewählten TLD-Filter') : ''])) ?></p>
           </section>
         </div>
 
-        <div class="stat-definitions"><p><?= $escape($t('Gemeldet = neue Fälle im Eingang')) ?> · <?= $escape($t('Versendet = als versendet markierte Fälle')) ?> · <?= $escape($t('Behoben = aufgezeichnete manuelle Behebung.')) ?></p><details><summary><?= $escape($t('Zählweise und verfügbare Historie')) ?></summary><ul><li><?= $escape($t('Jeder Fall zählt je Schritt höchstens einmal. Kontaktmarkierung und Versandmarkierung werden getrennt gezählt.')) ?></li><li><?= $escape($t('Aktivitäten bleiben im Rückblick erhalten, solange ihre Fälle gespeichert sind; verworfene Fälle und Duplikate gehören zum Rückblick.')) ?></li><li><?= $escape($t('Historische Behebungen ohne bekanntes Datum erscheinen nicht im Verlauf.')) ?></li><?php foreach ($view['notes'] as $note): ?><li><?= $escape($localizeServiceText($note)) ?></li><?php endforeach; ?></ul></details></div>
+        <div class="stat-definitions"><p><?= $escape($t('Gemeldet = neue Fälle im Eingang')) ?> · <?= $escape($t('Kontaktiert = Fälle mit gespeicherter Kontaktmarkierung')) ?> · <?= $escape($t('Behoben = aufgezeichnete manuelle Behebung.')) ?></p><details><summary><?= $escape($t('Zählweise und verfügbare Historie')) ?></summary><ul><li><?= $escape($t('Jeder Fall zählt je Schritt höchstens einmal. Gemeldet zählt den Eingang, Kontaktiert die Kontaktmarkierung und Behoben die erste manuelle Behebung.')) ?></li><li><?= $escape($t('Aktivitäten bleiben im Rückblick erhalten, solange ihre Fälle gespeichert sind; verworfene Fälle und Duplikate gehören zum Rückblick.')) ?></li><li><?= $escape($t('Historische Behebungen ohne bekanntes Datum erscheinen nicht im Verlauf.')) ?></li><?php foreach ($view['notes'] as $note): ?><li><?= $escape($localizeServiceText($note)) ?></li><?php endforeach; ?></ul></details></div>
       </div>
     </main>
 
