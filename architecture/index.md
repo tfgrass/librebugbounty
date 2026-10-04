@@ -1,8 +1,26 @@
 # LibreBugBounty – Architekturstand
 
-Stand: 2026-10-03. Einstieg für weitere Architekturgespräche und Umsetzung.
+Stand: 2026-10-04. Einstieg für weitere Architekturgespräche und Umsetzung.
 
-## Ziel und bestätigte Richtung
+## Aktueller Release-Stand 2.0.0
+
+Studio ist die einzige Produktoberfläche. Die kanonischen Seiten liegen unter
+`/`, `/findings`, `/review`, `/statistics`, `/export` und `/settings`; es gibt
+keine zweite Webdarstellung und keinen klassischen Renderer mehr. Verbleibende
+`/legacy`- und `/legacy/findings/{id}`-GET-Adressen dienen ausschließlich als
+Weiterleitungen für alte Bookmarks auf die entsprechende Studio-Seite.
+`/legacy/settings` rendert vorübergehend dieselbe moderne Settings-Seite, damit
+bereits im Browser gespeicherte permanente Weiterleitungen keine Schleife bilden.
+
+Der UI-Abbau ändert weder gespeicherte Fälle und Belege noch die gemeinsamen
+POST-, CLI- und Artefaktverträge. Historische Datenwerte und Diagnosefilter
+bleiben lesbar, ohne daraus neue manuelle Entscheidungen abzuleiten. Die
+nachfolgenden datierten Arbeitsabschnitte und Abnahmen dokumentieren den Weg zu
+2.0.0; Aussagen über damals parallele Oberflächen, damalige Zielrouten oder noch
+offene UI-Arbeit sind historische Prüfstände und werden durch diesen Nachtrag
+ersetzt.
+
+## Historische Zielsetzung vor 2.0.0
 
 LibreBugBounty ist eine lokale Fall- und Belegverwaltung für URL-basierte
 Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
@@ -23,7 +41,7 @@ Security-Funde als persönliche Alternative zu OpenBugBounty. Bestätigt sind:
   erhält auch die Fallbearbeitung eine Studio-Ansicht mit großem Belegfeld und
   kompaktem Inspector. Der weitere Resolve-Umbau folgt in eigenen Vorhaben.
 
-## Umgesetzter Stand
+## Historische Arbeits- und Prüfstände
 
 ### Arbeitsabschnitt 1: sichere Daten- und Belegbasis
 
@@ -95,7 +113,7 @@ Anwendungstabellen und die vorhandenen Artefakte blieben bei der Migration
 inhaltlich unverändert. Nach Migration und Laufzeitabnahme wurde zusätzlich ein
 Post-Migrationsbackup erstellt und restore-validiert.
 
-## Noch offen
+## Historische Folgeplanung und damalige offene Punkte
 
 Arbeitsabschnitt 2 ist funktional umgesetzt. Stop/Start nach dem zuletzt ergänzten
 Warten auf das Queue-Schema war erfolgreich; Worker, Sidecar, echte Bilder,
@@ -343,65 +361,39 @@ Persistenz nach Neustart sind nachgewiesen. Prä- und Post-Migrationsbackups sin
 restore-validiert. [Review-Abnahme](studio-review.md#neue-hinweise-nach-einem-urteil),
 [N01-Abnahme](abnahme-betriebsabschluss.md), [Sicherung](backup.md).
 
-**Aktuelles MVP-Release-Sparring, vom Nutzer konkretisiert:** Betreiber-Priorität
-und bisheriger HTML-Prioritätsexport sollen entfernt werden. Screenshot-Einreihen,
-Recheck und endgültiges Löschen sollen ins Studio-Falldetail; Einstellungen und
-Credits/Info folgen als abschließender Polish vor dem Legacy-Abbau.
-Die Fallaktionen und eine schlichte JSON-Export-Seite wurden anschließend mit
-„1. 2. umsetzen“ beauftragt. Export, bestätigtes Löschen und der Abbau der
-Betreiber-Priorität sind implementiert; neue Recheck-/Screenshot-Ausführung
-gegen beliebige externe PoC-Ziele wurde in diesem Paket nicht angebunden.
-**Export nach Verwendungszweck umgesetzt:** `/export` bietet eine neutrale
-URL-/Typ-Liste, einen konfigurierbaren aktuellen Fallstand und ein ZIP-
-Meldungspaket mit Markdown-Bericht, Manifest und gewählten lokalen Screenshots.
+**Releasekandidat 2.0.0 umgesetzt:** Betreiber-Priorität und der frühere
+HTML-Prioritätsexport sind entfernt. Das Studio-Falldetail bietet getrennte
+Aktionen zum Einreihen eines Screenshots, zum technischen Recheck und zum
+endgültigen Löschen mit expliziter Bestätigung. `/export` bietet eine neutrale
+URL-/Typ-Liste, einen konfigurierbaren JSON-Fallstand und ein ZIP-Meldungspaket
+mit lokalisiertem Markdown-Bericht, Manifest und bewusst gewählten Bildern.
 Request-/PoC-, Bewertungs-/Beobachtungs-, Kontakt-/Versanddaten und private
-Notizen lassen sich getrennt wählen. Als Bilder stehen die dokumentierte
-Bewertungsgrundlage, das neueste Bild, alle Bilder oder keine zur Wahl; fehlende
-Dateien und unbekannte Grundlagen werden ausgewiesen. Fallfremde Pfade,
-Hashabweichungen und nicht unterstützte Bilddateien werden nicht beigefügt. Das
-bisherige vollständige JSON-v1-Profil bleibt kompatibel; reduzierte Fallstände
-verwenden den selbstbeschreibenden Vertrag v2. Ein konkretes OpenBugBounty-Importformat ist
-weiterhin nicht belegt und wird deshalb nicht behauptet.
-[Festlegung und Umsetzung](ui-workflow.md#export-nach-verwendungszweck-sparring-zur-erweiterung).
-Zum Polish aus Punkt 3 konkretisiert der Nutzer die Autorenzeile als
-**Tom Graßmann IT+Media** mit „Proudly vibe-coded“, `grassmann-it.de` und dem
-aktuellen OBB-Profil `grassmann-it`; Lizenzinfo und Einstellungen sind vorgeschlagen.
-Gemeinsame Studio-Seite hinter dem Zahnrad bleibt die Empfehlung; Seitenaufteilung,
-übrige Altlinks und Releaseversion sind noch offen. Der Settings-Abgleich belegt
-Standardkennzeichen und ein Zeitlimit für Screenshot-Aufnahmen; die alte
-Review-/Retest-Hilfe beschreibt die tatsächlichen Verbraucher ungenau.
-Diese Sparring-Runde hat keine Produktänderungen für Punkt 3 ausgeführt.
-**Zusätzliche Release-Richtung:** Der Nutzer wünscht DE-/EN-Mehrsprachigkeit und
-bevorzugt Deutsch. Anschließend konkretisiert er die Wahl per ENV für die ganze
-Installation. Empfohlener Vertrag: optionales `APP_LOCALE=de|en`, Deutsch als
-Standard/Fallback; die frühere Browser-/Settings-Umschaltung ist damit ersetzt.
-Alle Studio-Anzeigen,
-JS-Meldungen und Serverrückmeldungen gehören zum kleinen Umfang; Einstellungen
-und Credits sollen auf dieser Grundlage direkt zweisprachig entstehen.
-i18n ist noch nicht implementiert.
-[Befund und Vorschlag](ui-workflow.md#mehrsprachigkeit-vor-dem-release).
-**Öffentlicher Auftritt:** Die README soll auf Nutzerwunsch die attraktive lokale
-OpenBugBounty-Alternative und den Studio-Workflow vermitteln. Die aktuelle
-478-Zeilen-README, zwei Legacy-Bilder und widersprüchliche aktive Dokuclaims sind
-abzugleichen. Empfehlung: englische Haupt-README mit kompaktem Produkteinstieg,
-vier neutralen Studio-Demobildern und verlinkter Bedienungs-/Betriebsdoku; deutsche
-Einführung und vollständige Galerie bleiben Optionen. Isolierte Demo-Daten
-ersetzen den bisher am Live-Bestand arbeitenden Screenshotweg. Neue README/Bilder
-sind noch nicht umgesetzt.
-[Befunde und vorgeschlagener Umfang](ui-workflow.md#readme-und-öffentliche-release-darstellung).
-Die aktuelle isolierte Abnahme besteht mit **247 PHP-Tests / 4.100 Assertions**
-und **23 Browserprüfungen / 15 JSON-/ZIP-Downloads**, einschließlich schmaler/kurzer
-Fenster und Bedienung ohne JavaScript. Details stehen im
-[Umsetzungsstand](ui-workflow.md#umsetzungsstand-nach-dem-auftrag-für-punkt-1-und-2).
-Eine Upgrade-Anleitung ist ausdrücklich kein
-MVP-Ziel; Init/Start und Datenerhalt sollen am fertigen Kandidaten mit dem
-vorhandenen isolierten N01-Verfahren nachgewiesen werden, ohne die verwendete
-Installation oder Nutzdaten zu überschreiben. Der alte README-Screenshot-Befehl
-redigiert Studio nicht zuverlässig und muss für neue Bilder aktualisiert werden.
-**Ziellizenz für den MVP: `GPL-3.0-or-later`, ausdrücklich bestätigt.**
-Die Lizenzumstellung bleibt ein späterer Release-Schritt; aktuell liegt BSD vor.
-Gemeinsame POST-/Artefaktrouten und historische Daten bleiben erforderlich.
-[Befunde und vorgeschlagener Zuschnitt](ui-workflow.md#release-sparring-studio-vervollständigen-und-legacy-ablösen).
+Notizen lassen sich getrennt einschließen. Fallfremde, veränderte, ungültige,
+fehlende oder zu große Dateien werden nicht still beigefügt.
+
+Die Settings-/Info-Seite bearbeitet Standardkennzeichen und Browser-Zeitlimit
+und zeigt Version, Autor **Tom Graßmann IT+Media**, `grassmann-it.de`, das
+OpenBugBounty-Profil, Repository und Lizenz. `APP_LOCALE=de|en` wählt die Sprache
+der gesamten Studio-Oberfläche; Deutsch ist Standard und Fallback. API- und
+Sitzungsrückmeldungen verwenden stabile Schlüssel plus Parameter, damit ein
+Sprachwechsel erhaltene Entwürfe und Sitzungsverläufe neu darstellen kann.
+
+Version ist `2.0.0`, Lizenz `GPL-3.0-or-later`. Die englische Haupt-README
+beschreibt das lokale Produkt und verwendet vier synthetische Studio-Bilder.
+`ddev readme-screenshots` erzeugt sie aus einer eigenen temporären Datenbank und
+einem eigenen Artefaktbaum, verweigert den normalen Speicher und räumt auch bei
+Fehlern auf. Die Classic-Templates, -Dienste, der alternative Intake-Renderer,
+alte Oberflächenmarker und zwei frühere Bilder sind entfernt. Nur die oben
+beschriebenen GET-Weiterleitungen, alte POST-Eingabeverträglichkeit und
+historische Diagnosewerte bleiben erhalten.
+
+Der aktuelle Arbeitsbaum bestand 262 PHP-Tests mit 10.254 Assertions, 12
+Node-Worker-Tests, 10 Backup-Tests, Composer-/npm-Audits und alle sieben
+isolierten Studio-Browsersuiten einschließlich NoJS, schmalen Ansichten,
+DE-/EN-Sitzungsmigration, Exportdownloads und Löschung. Der abschließende N01-
+Nachweis muss nach dem finalen Commit aus einer separaten frischen DDEV-Kopie
+erfolgen; er darf die verwendete Installation und ihre Daten nicht berühren.
+[Festlegungen und Umsetzungsdetails](ui-workflow.md#release-sparring-studio-vervollständigen-und-legacy-ablösen).
 
 ## Dokumente
 

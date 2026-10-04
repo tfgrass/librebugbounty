@@ -25,5 +25,5 @@ hooks:
     - exec: "supervisorctl restart webextradaemons:screenshot-queue"
 web_extra_daemons:
   - name: screenshot-queue
-    command: "php bin/console app:screenshot:worker --sleep=2 --no-interaction"
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:screenshot:worker --sleep=2 --no-interaction"
     directory: /var/www/html

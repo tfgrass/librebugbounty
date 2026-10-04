@@ -6,7 +6,7 @@ Review v1 wurde vor dem Folgepaket als `7a37dac` committed. Eine aktuelle
 konsistente Sicherung wurde mit dem vorhandenen Werkzeug erstellt und separat
 wiederhergestellt:
 
-`/home/tomka/.local/share/librebugbounty/backups/20261003T193607Z-efc801fa`
+`~/.local/share/librebugbounty/backups/20261003T193607Z-efc801fa`
 
 Sie enthält 8 Migrationen, 5.703 Findings, 5.039 Domains, 8.673 Evidence-Zeilen,
 8.897 RetestRuns, 75 Bewertungen, 660 Screenshot-Aufträge und 4 Settings.
@@ -24,7 +24,7 @@ stimmen unverändert mit der Sicherung überein.
 Da die Anwendung während der Umsetzung weiter genutzt wurde, entstand vor dem
 abschließenden Migrationsschritt eine zweite aktuelle restore-validierte Sicherung:
 
-`/home/tomka/.local/share/librebugbounty/backups/20261003T200554Z-fdf836c8`
+`~/.local/share/librebugbounty/backups/20261003T200554Z-fdf836c8`
 
 Sie enthält 5.715 Findings, 5.051 Domains, 8.685 Evidence-Zeilen, 8.897 RetestRuns,
 75 Bewertungen, 672 Screenshot-Aufträge, 4 Settings und 8 Migrationen.
@@ -47,7 +47,7 @@ die temporäre Datenwiederherstellung wurde danach entfernt.
 Auch der migrierte Zustand wurde mit dem gleichen Werkzeug gesichert und separat
 wiederhergestellt:
 
-`/home/tomka/.local/share/librebugbounty/backups/20261003T202943Z-578a30ca`
+`~/.local/share/librebugbounty/backups/20261003T202943Z-578a30ca`
 
 Der geprüfte Rückkehrpunkt enthält 9 Migrationen, 5.735 Findings, 5.071 Domains,
 8.705 Evidence-Zeilen, 8.897 RetestRuns, 75 Bewertungen, 692 Screenshot-Aufträge,
@@ -144,7 +144,7 @@ eigener Vorgang; das Sicherungsskript nimmt es nicht automatisch vor.
 Erstellter Stand auf diesem Rechner:
 
 ```text
-/home/tomka/.local/share/librebugbounty/backups/20261002T161417Z-fe6aa087
+~/.local/share/librebugbounty/backups/20261002T161417Z-fe6aa087
 ```
 
 - SQLite-Integritätsprüfung erfolgreich; 6 Tabellen gesichert.
@@ -183,7 +183,7 @@ wurde mit demselben Verfahren ein neuer Stand erstellt und erfolgreich
 wiederhergestellt:
 
 ```text
-/home/tomka/.local/share/librebugbounty/backups/20261002T165845Z-d697f3b8
+~/.local/share/librebugbounty/backups/20261002T165845Z-d697f3b8
 ```
 
 Der Stand vor der Migration enthielt:
@@ -211,7 +211,7 @@ Nach Migration und abschließender Laufzeitprüfung wurde außerdem der migriert
 Zustand dauerhaft gesichert und separat wiederhergestellt:
 
 ```text
-/home/tomka/.local/share/librebugbounty/backups/20261002T172248Z-293f5bb8
+~/.local/share/librebugbounty/backups/20261002T172248Z-293f5bb8
 ```
 
 Der verifizierte Snapshot enthält 7 Migrationen, 4.692 Domains, 5.348 Findings,

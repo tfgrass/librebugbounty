@@ -195,7 +195,7 @@ Empfängerliste. Der Umfang einer konkreten Meldung wird separat zusammengestell
 
 ## Vorschlag zur Codex-CLI-Anbindung
 
-Der vorhandene [report-gen-Skill](/home/tomka/.codex/skills/report-gen/SKILL.md)
+Der vorhandene `report-gen`-Skill
 passt zu Kontaktrecherche und Mailentwürfen. Er versendet keine Nachrichten und
 trennt Quellen von Empfängertext; interne Fall-/Toolkennungen gehören nicht in
 die ausgehende Mail. Seine Vorlagen und Referenzen bleiben Grundlage der Erstellung.
@@ -207,9 +207,9 @@ Aktion, damit eine Gruppierung nicht schon eine Meldung erzeugt.
 
 Die offizielle [Dokumentation zu codex exec](https://developers.openai.com/codex/noninteractive/)
 beschreibt nichtinteraktive Aufrufe, JSONL-Fortschritt über `--json` und strukturierte
-Endergebnisse über `--output-schema`. Das lokale Programm liegt unter
-`/home/tomka/.local/bin/codex`. Eine vollständige Anbindung oder Authentifizierung
-aus DDEV wurde bisher nicht geprüft.
+Endergebnisse über `--output-schema`. Das lokale Programm liegt üblicherweise als
+`codex` im `PATH` (lokal beispielsweise unter `~/.local/bin/codex`). Eine
+vollständige Anbindung oder Authentifizierung aus DDEV wurde bisher nicht geprüft.
 
 Empfehlung: ein Hintergrundauftrag mit einem festgehaltenen Eingabestand. Die App
 übernimmt das validierte Ergebnis; der CLI-Prozess bearbeitet nicht selbst die
@@ -867,6 +867,39 @@ Produktumsetzung war zu diesem Zeitpunkt noch nicht beauftragt. Anschließend
 hat der Nutzer die Fallaktionen und den schlichten Export mit „1. 2. umsetzen“
 beauftragt; zum Polish aus Punkt 3 sollen danach Rückfragen folgen.
 
+### Finaler Umsetzungsnachtrag für 2.0.0
+
+Der nachfolgende Entscheidungsweg bleibt als zeitlicher Projektstand erhalten;
+seine damaligen Aussagen über offene Arbeit, BSD-/proprietary-Metadaten,
+Classic-Seiten, alte README-Bilder und noch fehlende Mehrsprachigkeit beschreiben
+nicht mehr das Produkt. Der abschließende Stand ersetzt diese Momentaufnahmen:
+
+- Studio ist die einzige Produktoberfläche. Classic-Templates, Classic-Dienste,
+  der alternative Intake-Renderer und alle sichtbaren Umschalter sind entfernt.
+  `/legacy` und `/legacy/findings/{id}` bleiben ausschließlich als permanente
+  Bookmark-Weiterleitungen; `/legacy/settings` liefert wegen möglicher gecachter
+  Redirects dieselbe moderne Settings-Seite. Historische Daten-, Diagnose-,
+  POST-, CLI- und Artefaktverträge bleiben erhalten.
+- Screenshot-Einreihen, technischer Recheck und vollständiges Löschen sind im
+  Studio-Falldetail erreichbar. Betreiber-Priorität und HTML-Prioritätsexport
+  sind entfernt. Der Export bietet die drei umgesetzten JSON-/ZIP-Profile mit
+  bewusst wählbaren Inhalten und abgesicherter Artefaktauswahl.
+- Die moderne Settings-/Info-Seite enthält die zwei wirksamen Einstellungen,
+  Version, Autor, Website, OpenBugBounty-Profil, Repository und Lizenz. Version
+  ist `2.0.0`, Lizenz `GPL-3.0-or-later`.
+- `APP_LOCALE=de|en` lokalisiert die gesamte Studio-Oberfläche; Deutsch ist
+  Standard und Fallback. Stabile Meldungsschlüssel erlauben die Neudarstellung
+  gespeicherter Intake-Sitzungen nach einem Sprachwechsel.
+- Die englische Haupt-README und vier synthetische Studio-Bilder beschreiben den
+  aktuellen Workflow. `ddev readme-screenshots` arbeitet ausschließlich mit
+  einer temporären Demo-Datenbank und einem temporären Artefaktbaum.
+
+Der vollständige Arbeitsbaum bestand 262 PHP-Tests mit 10.254 Assertions, 12
+Node-Worker-Tests, 10 Backup-Tests, Composer-/npm-Audits und alle sieben
+isolierten Browser-Suiten. Der frische N01-Aufbau wird nach dem finalen Commit
+separat protokolliert. Diese Liste ist der aktuelle Umsetzungsstand; die folgenden
+Abschnitte erklären Anforderungen, frühere Befunde und Entscheidungsgründe.
+
 **Bestätigte Richtung:**
 
 - Betreiber-Priorität und bisheriger HTML-Prioritätsexport sollen entfallen.
@@ -903,7 +936,7 @@ hinaus. Es bleiben diese konkreten Abhängigkeiten:
 | Einstellungen | Studio-Zahnrad öffnet `/legacy/settings`; `GET /settings` leitet dorthin. Zwei Werte sind editierbar: Standardkennzeichen und Prüfzeitlimit. | Im abschließenden Polish als kleine Studio-Seite übernehmen. |
 | Betreiber-Priorität / HTML-Export | Eigener Controller unter `/legacy/operator-priority`; `/operator-priority` ist nur Weiterleitung. | Auf Nutzerwunsch entfernen; keine Übernahme von Gruppierung, Research-Ledger oder Kontaktpriorisierung in den neuen Export. |
 | Manuelle Wartungsaktionen | Screenshot einreihen, Recheck mit Screenshot und endgültiges Löschen haben nur klassische Formulare. | Ausdrückliche Aktionen im Studio-Falldetail übernehmen; Löschung getrennt und klar beschriften. |
-| Info / Version | `/about` öffnet ein klassisches Modal; dessen Inhalt nennt noch `v1.0.1`. | Credits/Info und gemeinsame Versionsangabe im abschließenden Polish. |
+| Info / Version | `/about` öffnet ein klassisches Modal; dessen Inhalt nennt noch eine veraltete Produktversion. | Credits/Info und gemeinsame Versionsangabe im abschließenden Polish. |
 
 Belege: `templates/studio/navigation.php`, `templates/studio/finding.php`,
 `src/Controller/StudioController.php`, `src/Controller/WebController.php` und

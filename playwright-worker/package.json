@@ -2,8 +2,8 @@
   "name": "playwright-worker",
   "private": true,
   "type": "commonjs",
-  "version": "0.1.0",
-  "description": "Small HTTP API for browser retests inside the DDEV Playwright sidecar.",
+  "version": "2.0.0",
+  "description": "Small HTTP API for browser retests and screenshots inside the DDEV Playwright sidecar.",
   "scripts": {
     "start": "node server.js",
     "test": "node --test server.test.js"

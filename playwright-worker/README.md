@@ -96,8 +96,9 @@ HTTP 500 with `errorMessage`.
 
 ## Retest endpoint
 
-`POST /retest` is the existing technical verification endpoint. It supports
-headless Chromium or Firefox and optional legacy direct screenshot capture.
+`POST /retest` is the technical verification endpoint. It supports headless
+Chromium or Firefox and an optional direct screenshot response for explicit
+retest commands.
 
 Example request:
 
@@ -112,9 +113,10 @@ Example request:
 }
 ```
 
-New application intake deliberately calls this route headless and queues evidence
-through `/screenshot` separately. Generic Symfony `app:retest:* --screenshot`
-commands still use the legacy direct capture behavior.
+Application intake does not call this route. Technical checks run only through
+an explicit recheck command or UI action. Persistent evidence capture remains a
+separate operation through `/screenshot`; Symfony `app:retest:* --screenshot`
+commands can request a direct capture when that is deliberately needed.
 
 ## Shared-display serialization
 

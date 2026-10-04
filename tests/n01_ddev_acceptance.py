@@ -115,6 +115,8 @@ class Acceptance:
         process_list = self.ddev("exec", "ps", "-eo", "args=")
         workers = [line for line in process_list.splitlines() if line.startswith("php bin/console app:screenshot:worker --sleep=2 --no-interaction")]
         self.check(len(workers) == 1, "Exactly one real screenshot-queue process exists")
+        waiters = [line for line in process_list.splitlines() if "vendor/autoload.php" in line]
+        self.check(not waiters, "Composer dependency wait hands supervision to the real screenshot worker")
         self.ddev("exec", "php", "bin/console", "doctrine:schema:validate", "--skip-sync", "--no-interaction")
         self.check(True, "Committed Doctrine mappings validate")
         validation = self.ddev("exec", "php", "bin/console", "doctrine:schema:validate", "--no-interaction", required=False)
@@ -223,7 +225,14 @@ class Acceptance:
         self.guard()
         try:
             self.started = True
-            self.ddev("start")
+            start_output = self.ddev("start")
+            web_logs = self.ddev("logs", "--service", "web", "--tail=-1")
+            startup_diagnostics = f"{start_output}\n{web_logs}".splitlines()
+            failure_markers = ("spawn error", "exited:", "backoff", "fatal", "gave up")
+            worker_failures = [line for line in startup_diagnostics
+                               if "screenshot-queue" in line.lower()
+                               and any(marker in line.lower() for marker in failure_markers)]
+            self.check(not worker_failures, "Fresh Composer install causes no screenshot-worker Supervisor failure")
             self.runtime()
             self.check(not self.rows("SELECT * FROM finding") and not self.rows("SELECT * FROM evidence") and not self.rows("SELECT * FROM retest_run"),
                        "Fresh migrated database contains no live or imported records")

@@ -78,8 +78,8 @@ Verlauf bilden die gesamte Arbeitsfläche:
 │ Kennzeichen: OPENBUGBOUNTY · Details hinzufügen            │
 │ Screenshot-Auftrag wird separat verarbeitet.                │
 ├ DIESE SITZUNG ──────────────────────────────────────────────┤
-│ ● soxo.de                         gespeichert · wartet      │
-│   https://soxo.de/…                         Fall öffnen ↗   │
+│ ● shop-demo.test                  gespeichert · wartet      │
+│   https://shop-demo.test/…                  Fall öffnen ↗   │
 │ ✓ example.org                     Screenshot verfügbar     │
 │   https://example.org/…                    Fall öffnen ↗   │
 │ ! example.net                     Speicherung unbestätigt  │
