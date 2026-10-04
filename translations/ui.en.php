@@ -416,6 +416,7 @@ return [
     'Zeitraum' => 'Period',
     'Tag' => 'Day',
     'Woche' => 'Week',
+    'Letzte 3 Monate' => 'Last 3 months',
     'Monat' => 'Month',
     'Jahr' => 'Year',
     'Anwenden' => 'Apply',

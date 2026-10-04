@@ -130,13 +130,74 @@ final class StatisticsServiceTest extends DatabaseTestCase
         self::assertSame(1, $view['series'][0]['reported']);
     }
 
+    public function testDefaultRollingThreeMonthsIncludesSelectedDayAndPreciselyBoundsDrilldowns(): void
+    {
+        foreach (['2026-07-05 23:59:59', '2026-07-06 00:00:00', '2026-09-30 12:00:00', '2026-10-05 23:59:59', '2026-10-06 00:00:00'] as $date) {
+            $this->finding('rolling.test', $date);
+        }
+        $before = $this->databaseSnapshot();
+        $view = $this->service()->get([], $this->now('2026-10-05 12:00:00'));
+        self::assertSame('last_3_months', $view['period']['kind']);
+        self::assertSame('2026-07-06', $view['period']['from']);
+        self::assertSame('2026-10-05', $view['period']['to']);
+        self::assertSame('day', $view['period']['granularity']);
+        self::assertCount(92, $view['series']);
+        self::assertSame(3, $view['kpis']['reported']['count']);
+        self::assertSame(3, array_sum(array_column($view['series'], 'reported')));
+        self::assertStringContainsString('from=2026-07-06', $view['kpis']['reported']['url']);
+        self::assertStringContainsString('to=2026-10-05', $view['kpis']['reported']['url']);
+        $selected = $this->service()->get(['period' => 'last_3_months', 'anchor' => '2026-09-30', 'granularity' => 'week', 'tld' => '.test'], $this->now('2026-10-05'));
+        self::assertSame('2026-07-01', $selected['period']['from']);
+        self::assertSame('2026-09-30', $selected['period']['to']);
+        self::assertStringContainsString('anchor=2026-06-30', $selected['period']['previousUrl']);
+        self::assertStringContainsString('anchor=2026-12-31', $selected['period']['nextUrl']);
+        self::assertStringContainsString('granularity=week', $selected['period']['previousUrl']);
+        self::assertStringContainsString('tld=.test', $selected['period']['nextUrl']);
+        self::assertSame($before, $this->databaseSnapshot());
+    }
+
+    public function testRollingMonthsClampMonthEndsAndKeepPreviousWindowAdjacent(): void
+    {
+        foreach ([
+            ['2026-05-30', '2026-02-28', '2026-05-31', '2025-11-28'],
+            ['2028-05-30', '2028-02-29', '2028-05-31', '2027-11-29'],
+            ['2026-03-31', '2026-01-01', '2026-04-01', '2025-10-01'],
+            ['2026-10-05', '2026-07-06', '2026-10-06', '2026-04-06'],
+        ] as [$anchor, $from, $until, $previousFrom]) {
+            $period = StatisticsPeriod::fromQuery(['anchor' => $anchor], $this->now('2028-10-05'));
+            self::assertSame($from, $period->from->format('Y-m-d'), $anchor);
+            self::assertSame($until, $period->until->format('Y-m-d'), $anchor);
+            self::assertSame($previousFrom, $period->previousFrom->format('Y-m-d'), $anchor);
+            parse_str(parse_url($period->navigationUrl(false), PHP_URL_QUERY), $query);
+            $previous = StatisticsPeriod::fromQuery($query, $period->now);
+            self::assertEquals($period->previousFrom, $previous->from);
+            self::assertEquals($period->from, $previous->until);
+        }
+        $lower = StatisticsPeriod::fromQuery(['anchor' => '0001-04-01'], $this->now('2026-10-05'));
+        self::assertNull($lower->navigationUrl(false));
+        $upper = StatisticsPeriod::fromQuery(['anchor' => '9998-12-31'], $this->now('2026-10-05'));
+        self::assertNull($upper->navigationUrl(true));
+    }
+
+    public function testOngoingRollingComparisonUsesEqualElapsedSecondsAcrossBerlinDst(): void
+    {
+        $period = StatisticsPeriod::fromQuery([], $this->now('2026-03-30 12:00:00'));
+        self::assertSame('2025-12-31', $period->from->format('Y-m-d'));
+        self::assertSame('+01:00', $period->from->format('P'));
+        self::assertSame('+02:00', $period->until->format('P'));
+        $comparison = $period->comparison();
+        self::assertNotNull($comparison);
+        self::assertSame($comparison[1]->getTimestamp() - $comparison[0]->getTimestamp(), $comparison[3]->getTimestamp() - $comparison[2]->getTimestamp());
+        self::assertLessThanOrEqual($period->previousUntil, $comparison[3]);
+    }
+
     public function testOngoingMonthComparesOnlyEqualElapsedPriorSpan(): void
     {
         $this->finding('current-first.test', '2026-10-01 11:00:00');
         $this->finding('current-second.test', '2026-10-03 11:00:00');
         $this->finding('previous-first.test', '2026-09-01 11:00:00');
         $this->finding('previous-late.test', '2026-09-20 11:00:00');
-        $view = $this->service()->get(['anchor' => '2026-10-03'], $this->now('2026-10-03 12:00:00'));
+        $view = $this->service()->get(['period' => 'month', 'anchor' => '2026-10-03'], $this->now('2026-10-03 12:00:00'));
         self::assertSame(2, $view['kpis']['reported']['count']);
         self::assertSame(2, $view['kpis']['reported']['comparisonCount']);
         self::assertSame(1, $view['kpis']['reported']['previousCount']);

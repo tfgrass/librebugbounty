@@ -38,7 +38,7 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
             self::assertSame(200, $response->getStatusCode());
             self::assertGreaterThanOrEqual(1, $this->xpath($response->getContent())->query('//nav[contains(@class,"studio-workspace-nav")]//a[@href="/statistics"]')->length, $path);
         }
-        foreach (['', '?period=week&anchor=2026-10-03', '?period=month&anchor=2026-10-03', '?period=year&anchor=2026-10-03&granularity=day', '?period=all&granularity=month', '?period=custom&from=2026-10-01&to=2026-10-03&granularity=week'] as $query) {
+        foreach (['', '?period=last_3_months&anchor=2026-10-03', '?period=week&anchor=2026-10-03', '?period=month&anchor=2026-10-03', '?period=year&anchor=2026-10-03&granularity=day', '?period=all&granularity=month', '?period=custom&from=2026-10-01&to=2026-10-03&granularity=week'] as $query) {
             $response = $this->request('/statistics'.$query);
             self::assertSame(200, $response->getStatusCode(), $query);
             self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
@@ -48,7 +48,30 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
             self::assertArrayHasKey('contacted', $data['kpis']);
             self::assertArrayNotHasKey('sent', $data['kpis']);
             self::assertArrayHasKey('fixed', $data['kpis']);
-            if ($query === '') self::assertSame('month', $data['period']['kind']);
+            if ($query === '') self::assertSame('last_3_months', $data['period']['kind']);
+            if ($data['period']['kind'] === 'last_3_months') {
+                self::assertSame(1, $this->xpath($response->getContent())->query('//a[@data-period="last_3_months" and @aria-current="page"]')->length);
+            }
+        }
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testRollingRangeDrilldownsIncludeEarlierMonthsAndExcludeBothOuterBoundaries(): void
+    {
+        foreach (['2026-07-03T23:59:59', '2026-07-04T00:00:00', '2026-09-30T12:00:00', '2026-10-03T23:59:59', '2026-10-04T00:00:00'] as $index => $date) {
+            $this->finding('rolling-'.$index)->setSubmittedAt(new \DateTimeImmutable($date))->setContactedAt(new \DateTimeImmutable($date));
+        }
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+        $data = $this->payload($this->request('/statistics?anchor=2026-10-03')->getContent());
+        self::assertSame('last_3_months', $data['period']['kind']);
+        foreach (['reported', 'contacted'] as $event) {
+            self::assertSame(3, $data['kpis'][$event]['count']);
+            self::assertSame(3, $this->listCount($this->request($data['kpis'][$event]['url'])->getContent()));
+        }
+        self::assertSame(3, array_sum(array_column($data['series'], 'reported')));
+        foreach ($data['tlds']['cases'] as $tld) {
+            self::assertSame($tld['count'], $this->listCount($this->request($tld['url'])->getContent()));
         }
         self::assertSame($before, $this->snapshot());
     }

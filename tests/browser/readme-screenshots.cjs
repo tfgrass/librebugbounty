@@ -199,7 +199,7 @@ async function main() {
     await capture('/review', '[data-studio-review] [data-review-card]', 'review.png');
     await capture('/findings', '[data-studio-list] [data-finding-id]', 'inventory.png');
     await capture(`/findings/${fixture.fixtures._meta.detailId}`, '[data-studio-detail]', 'finding-detail.png');
-    await capture('/statistics?period=month&anchor=2026-10-04', '[data-statistics] [data-activity-chart]', 'statistics.png');
+    await capture('/statistics?period=last_3_months&anchor=2026-10-04', '[data-statistics] [data-activity-chart]', 'statistics.png');
     await capture('/export?profile=report&screenshots=latest', '[data-studio-export] #export-filters', 'export.png');
     assert.equal(await page.locator('[data-export-profile="report"]').getAttribute('aria-current'), 'page');
     assert.equal(await page.locator('#export-filters').getAttribute('method'), 'get');

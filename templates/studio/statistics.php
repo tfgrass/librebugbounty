@@ -137,7 +137,7 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
         <section class="stat-controls" aria-label="<?= $escape($t('Zeitraum und Filter')) ?>">
           <div class="stat-period-bar">
             <nav class="stat-segmented" aria-label="<?= $escape($t('Statistikzeitraum')) ?>">
-              <?php foreach (['week' => 'Woche', 'month' => 'Monat', 'year' => 'Jahr', 'all' => 'Gesamt'] as $kind => $label): ?>
+              <?php foreach (['week' => 'Woche', 'month' => 'Monat', 'last_3_months' => 'Letzte 3 Monate', 'year' => 'Jahr', 'all' => 'Gesamt'] as $kind => $label): ?>
                 <a data-period="<?= $escape($kind) ?>" href="<?= $escape($statisticsUrl(['period' => $kind])) ?>"<?= $period['kind'] === $kind ? ' aria-current="page"' : '' ?>><?= $escape($t($label)) ?></a>
               <?php endforeach; ?>
             </nav>

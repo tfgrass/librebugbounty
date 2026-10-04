@@ -27,9 +27,9 @@ final readonly class StatisticsPeriod
                 throw new \InvalidArgumentException('Statistikfilter müssen einzelne Textwerte sein.');
             }
         }
-        $kind = $query['period'] ?? 'month';
+        $kind = $query['period'] ?? 'last_3_months';
         $granularity = $query['granularity'] ?? 'day';
-        if (!in_array($kind, ['week', 'month', 'year', 'all', 'custom'], true)) {
+        if (!in_array($kind, ['week', 'month', 'last_3_months', 'year', 'all', 'custom'], true)) {
             throw new \InvalidArgumentException('Unbekannter Statistikzeitraum.');
         }
         if (!in_array($granularity, ['day', 'week', 'month'], true)) {
@@ -57,6 +57,12 @@ final readonly class StatisticsPeriod
             $from = min($from, $now->setTime(0, 0));
             $until = $now->setTime(0, 0)->modify('+1 day');
             $previousFrom = $previousUntil = null;
+        } elseif ($kind === 'last_3_months') {
+            // Include the selected day, with calendar months clamped at month ends.
+            $until = $anchor->modify('+1 day');
+            $from = self::shiftMonths($until, -3);
+            $previousUntil = $from;
+            $previousFrom = self::shiftMonths($from, -3);
         } else {
             $from = match ($kind) {
                 'week' => $anchor->modify('-'.((int) $anchor->format('N') - 1).' days'),
@@ -73,6 +79,13 @@ final readonly class StatisticsPeriod
         self::date($until->modify('-1 day')->format('Y-m-d'));
 
         return new self($kind, $granularity, $anchor, $from, $until, $now, $previousFrom, $previousUntil);
+    }
+
+    private static function shiftMonths(\DateTimeImmutable $date, int $months): \DateTimeImmutable
+    {
+        $month = $date->modify('first day of this month')->modify(sprintf('%+d months', $months));
+
+        return $month->setDate((int) $month->format('Y'), (int) $month->format('m'), min((int) $date->format('j'), (int) $month->format('t')));
     }
 
     public static function date(string $value): \DateTimeImmutable
@@ -120,6 +133,14 @@ final readonly class StatisticsPeriod
                 return null;
             }
             $query = ['period' => 'custom', 'from' => $nextFrom->format('Y-m-d'), 'to' => $nextTo->format('Y-m-d')];
+        } elseif ($this->kind === 'last_3_months') {
+            $nextAnchor = ($next ? self::shiftMonths($this->until, 3) : $this->from)->modify('-1 day');
+            $query = ['period' => $this->kind, 'anchor' => $nextAnchor->format('Y-m-d')];
+            try {
+                self::fromQuery($query, $this->now);
+            } catch (\InvalidArgumentException) {
+                return null;
+            }
         } else {
             $shift = $direction.'1 '.$this->kind;
             $nextAnchor = $this->from->modify($shift);

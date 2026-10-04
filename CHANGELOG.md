@@ -29,8 +29,9 @@ from URL intake to evidence, manual assessment, and export.
 - Retained screenshot and observation history, searchable case inventory,
   private notes, and explicit recheck, screenshot, archive, and deletion actions.
 - Activity statistics for reported intake, contacted cases, and manually fixed
-  cases on one shared chart, with weekly, monthly, yearly, all-time, and custom
-  periods, day/week/month grouping, a yearly activity calendar, and domain-suffix
+  cases on one shared chart, defaulting to the rolling last three months through
+  today, with weekly, monthly, yearly, all-time, and custom periods,
+  day/week/month grouping, a yearly activity calendar, and domain-suffix
   breakdowns.
 - Configurable exports: compact URL lists, current case-state JSON, and ZIP
   report packages with selected image evidence. Private notes are included only

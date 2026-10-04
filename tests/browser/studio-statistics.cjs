@@ -53,7 +53,7 @@ async function main() {
   };
   const payload = async (target = page) => JSON.parse(await target.locator('#statistics-data').textContent());
   const gotoStats = async (query = {}) => {
-    const response = await page.goto(base + '/statistics?' + new URLSearchParams({ anchor: '2026-10-03', ...query }));
+    const response = await page.goto(base + '/statistics?' + new URLSearchParams({ period: 'month', anchor: '2026-10-03', ...query }));
     assert.equal(response.status(), 200);
     assert.match(response.headers()['cache-control'], /(?:^|,\s*)no-store(?:,|$)/);
     await page.locator('[data-statistics]').waitFor();
@@ -77,7 +77,36 @@ async function main() {
     const initial = await fixture();
     const f = initial.fixtures;
     assert.equal(initial.snapshot.finding.length, f._expect.total);
-    let data = await gotoStats();
+    assert.equal((await page.goto(base + '/statistics')).status(), 200);
+    assert.equal((await payload()).period.kind, 'last_3_months');
+    await page.goto(base + '/statistics?anchor=2026-10-03');
+    let data = await payload();
+    assert.equal(data.period.kind, 'last_3_months');
+    assert.equal(data.period.from, '2026-07-04');
+    assert.equal(data.period.to, '2026-10-03');
+    assert.equal(data.kpis.reported.count, 508);
+    assert.equal(data.kpis.contacted.count, 3);
+    assert.equal(data.kpis.fixed.count, 2);
+    for (const metric of ['reported', 'contacted', 'fixed']) {
+      await assertList(data.kpis[metric].url, data.kpis[metric].count, 'Rolling range ' + metric);
+    }
+    for (const width of [1440, 640, 375]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const active = page.locator('[data-period="last_3_months"][aria-current="page"]');
+      assert.equal(await active.innerText(), 'Letzte 3 Monate');
+      await active.scrollIntoViewIfNeeded();
+      const box = await active.boundingBox();
+      assert.ok(box && box.x >= 0 && box.x + box.width <= width, `${width}: rolling period tab is clipped`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await snapshot(`studio-statistics-last-three-months-${width}.png`);
+    }
+    await context.addCookies([{ name: 'lbb_locale', value: 'en', url: base }]);
+    await gotoStats({ period: 'last_3_months' });
+    assert.equal(await page.locator('[data-period="last_3_months"][aria-current="page"]').innerText(), 'Last 3 months');
+    await context.addCookies([{ name: 'lbb_locale', value: 'de', url: base }]);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    mark('Default rolling three-month view includes previous-month activity, exact drilldowns and visible translated tabs at desktop and narrow widths');
+    data = await gotoStats();
     assert.equal(data.period.kind, 'month');
     assert.equal(data.kpis.reported.count, f._expect.octoberReported);
     assert.equal(data.kpis.contacted.count, f._expect.octoberContacted);
@@ -347,7 +376,7 @@ async function main() {
     const noJs = await browser.newContext({ viewport: { width: 640, height: 1000 }, javaScriptEnabled: false });
     await protect(noJs);
     const fallback = await noJs.newPage();
-    assert.equal((await fallback.goto(base + '/statistics?anchor=2026-10-03')).status(), 200);
+    assert.equal((await fallback.goto(base + '/statistics?period=month&anchor=2026-10-03')).status(), 200);
     assert.equal((await payload(fallback)).kpis.reported.count, f._expect.octoberReported);
     assert.equal(await fallback.locator('[data-activity-chart]').count(), 1);
     assert.ok(Number(await fallback.locator('[data-activity-chart]').getAttribute('data-chart-axis-max')) >= 500, 'SSR preserves the same shared scale');
@@ -357,6 +386,10 @@ async function main() {
     }
     assert.equal(await fallback.locator('[data-stat-kpi="sent"], [data-heatmap-metric="sent"]').count(), 0);
     assert.match(await fallback.locator('[data-tld-segment=".example"] .stat-tld-percent').textContent(), /<\s*1\s*%/, 'SSR must preserve a nonzero tiny TLD share');
+    await fallback.locator('[data-period="last_3_months"]').click();
+    assert.equal((await payload(fallback)).period.kind, 'last_3_months');
+    assert.equal((await payload(fallback)).kpis.reported.count, 508);
+    assert.equal(await fallback.locator('[data-period="last_3_months"][aria-current="page"]').count(), 1);
     await fallback.locator('.stat-custom > summary').click();
     await fallback.locator('#statistics-custom-period [name="from"]').fill('2026-10-02');
     await fallback.locator('#statistics-custom-period [name="to"]').fill('2026-10-03');

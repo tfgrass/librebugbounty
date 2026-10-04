@@ -131,11 +131,14 @@ information; they are not presented as newly recorded manual assessments.
 
 ## Statistics
 
-Choose a week, month, year, all-time view, or custom date range, and group the
-chart by day, week, or month. **Reported**, **Contacted**, and **Fixed** share one
-chart scale; each series can be hidden independently
-without changing that scale. Exact counts are available in the chart inspection
-and expandable table. The calendar and chart links open the matching cases.
+**Last 3 months** is the default: a rolling period of three calendar months
+through today (inclusive). For example, October 5 shows July 6 through October 5.
+Month-end boundaries are clamped to the last valid day of the destination month.
+You can also choose a week, month, year, all-time view, or custom date range,
+and group the chart by day, week, or month. **Reported**, **Contacted**, and
+**Fixed** share one chart scale; each series can be hidden independently without
+changing that scale. Exact counts are available in the chart inspection and
+expandable table. The calendar and chart links open the matching cases.
 
 - **Reported** counts intake, using the storage timestamp if intake time is
   unavailable.

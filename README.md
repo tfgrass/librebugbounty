@@ -74,9 +74,10 @@ images and judgments remain in the history.
 
 ### Follow activity
 
-**Statistics** shows **Reported**, **Contacted**, and **Fixed** across weekly,
-monthly, yearly, all-time, or custom periods. Group activity by day, week, or
-month, then open the matching cases from the chart or calendar.
+**Statistics** opens with the **last three months**, through today. Follow
+**Reported**, **Contacted**, and **Fixed**, or choose a week, month, year, all-time,
+or custom period. Group activity by day, week, or month, then open the matching
+cases from the chart or calendar.
 
 <p>
   <a href="docs/screenshots/statistics.png"><img src="docs/screenshots/statistics.png" alt="Statistics compares reported, contacted, and fixed cases over time" width="680"></a>
