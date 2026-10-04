@@ -103,34 +103,6 @@ class FindingRepository extends ServiceEntityRepository
     }
 
     /**
-     * Findings used by the live operator-priority export.
-     *
-     * The date is based on submitted_at and falls back to created_at, matching
-     * the reporting query used for the 14-day research list.
-     *
-     * @return list<Finding>
-     */
-    public function findForPriorityExport(\DateTimeImmutable $from, \DateTimeImmutable $until): array
-    {
-        $qb = $this->createQueryBuilder('f')
-            ->addSelect('d')
-            ->innerJoin('f.domain', 'd')
-            ->andWhere('COALESCE(f.submittedAt, f.createdAt) >= :from')
-            ->andWhere('COALESCE(f.submittedAt, f.createdAt) < :until')
-            ->andWhere('f.status <> :fixedStatus')
-            ->andWhere('f.contactedAt IS NULL')
-            ->setParameter('from', $from)
-            ->setParameter('until', $until)
-            ->setParameter('fixedStatus', FindingStatus::FIXED)
-            ->orderBy('f.severity', 'DESC')
-            ->addOrderBy('f.submittedAt', 'DESC')
-            ->addOrderBy('f.createdAt', 'DESC');
-        $this->excludeDiscarded($qb);
-
-        return $qb->getQuery()->getResult();
-    }
-
-    /**
      * @return list<Finding>
      */
     public function findPageByDomainAndStatus(?string $domainQuery = null, ?string $status = null, ?string $bucket = null, int $limit = 50, int $offset = 0): array

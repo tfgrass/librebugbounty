@@ -77,6 +77,13 @@
 .studio-note-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .studio-note-actions [data-dirty="true"] { color: var(--studio-amber); }
 .studio-discard { padding-top: 7px; border-top: 1px solid #353d49; }
+.studio-delete > summary { color: #e1a9ae; }
+.studio-delete > summary:hover { color: #ffc2c7; }
+.studio-inspector .studio-delete-confirmation { display: flex; align-items: flex-start; gap: 9px; margin: 13px 0; line-height: 1.6; }
+.studio-delete-confirmation input { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 2px; accent-color: #bc6770; }
+.studio-delete-confirmation span { min-width: 0; overflow-wrap: anywhere; }
+.studio-detail-button-danger { border-color: #824a52; background: #39252b; color: #f0b6be; }
+.studio-detail-button-danger:hover { border-color: #b56a76; background: #53313a; }
 .studio-detail-feedback { padding: 12px 30px; border-block: 1px solid #426151; background: #202b26; color: var(--studio-green); font-size: 12px; overflow-wrap: anywhere; }
 .studio-detail-feedback[data-tone="error"] { border-color: #6e4a52; background: #31242a; color: var(--studio-red); }
 .studio-technical-section { border-top: 1px solid var(--studio-line); background: #1b1e22; scroll-margin-top: 55px; }

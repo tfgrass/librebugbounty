@@ -37,7 +37,7 @@ final class StudioInventoryTest extends DatabaseTestCase
         $before = $this->snapshot();
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
-        foreach (['/', '/findings', '/findings/'.$finding->getId(), '/legacy', '/legacy/findings/'.$finding->getId(), '/legacy/settings', '/legacy/operator-priority'] as $path) {
+        foreach (['/', '/findings', '/findings/'.$finding->getId(), '/legacy', '/legacy/findings/'.$finding->getId(), '/legacy/settings'] as $path) {
             $response = $this->request($path);
             self::assertSame(200, $response->getStatusCode(), $path.' => '.$response->headers->get('Location'));
         }
@@ -49,11 +49,9 @@ final class StudioInventoryTest extends DatabaseTestCase
             '/studio/findings/'.$finding->getId() => '/findings/'.$finding->getId(),
             '/studio/findings/'.$finding->getId().'/' => '/findings/'.$finding->getId(),
             '/settings' => '/legacy/settings',
-            '/operator-priority' => '/legacy/operator-priority',
             '/legacy/' => '/legacy',
             '/legacy/findings/'.$finding->getId().'/' => '/legacy/findings/'.$finding->getId(),
             '/legacy/settings/' => '/legacy/settings',
-            '/legacy/operator-priority/' => '/legacy/operator-priority',
         ] as $old => $canonical) {
             $query = 'message=fixture%20message&error=fixture%26diagnostic';
             $response = $this->request($old.'?'.$query);
@@ -70,6 +68,9 @@ final class StudioInventoryTest extends DatabaseTestCase
             } while ($response->isRedirection());
             self::assertSame($canonical, parse_url($location, PHP_URL_PATH), $old);
             self::assertSame(200, $response->getStatusCode(), $old);
+        }
+        foreach (['/operator-priority', '/operator-priority/', '/legacy/operator-priority', '/legacy/operator-priority/'] as $removedPath) {
+            self::assertSame(404, $this->request($removedPath.'?days=14')->getStatusCode(), $removedPath);
         }
         self::assertSame($before, $this->snapshot());
         self::assertSame($paths, $storage->listPaths());

@@ -264,6 +264,22 @@ $jobTone = static fn (string $status): string => match ($status) {
               </form>
             <?php endif; ?>
           </section>
+          <section class="studio-inspector-section" aria-labelledby="studio-maintenance-title">
+            <h2 id="studio-maintenance-title">Fallverwaltung</h2>
+            <details class="studio-detail-fold studio-delete" data-studio-delete-section>
+              <summary>Fall endgültig löschen</summary>
+              <p class="studio-detail-hint">Dieser Fall, seine Bewertungen, technischen Beobachtungen, Screenshot-Aufträge und Belege werden dauerhaft entfernt.</p>
+              <form method="post" action="<?= $escape($findingPath) ?>/delete" data-studio-delete>
+                <input type="hidden" name="surface" value="studio">
+                <?= $returnField ?>
+                <label class="studio-delete-confirmation" for="studio-delete-confirmation">
+                  <input id="studio-delete-confirmation" type="checkbox" name="confirm_delete" value="1" required>
+                  <span>Diesen Fall und sämtliche Belege endgültig löschen.</span>
+                </label>
+                <button class="studio-detail-button studio-detail-button-danger" type="submit">Endgültig löschen</button>
+              </form>
+            </details>
+          </section>
         </aside>
       </div>
 

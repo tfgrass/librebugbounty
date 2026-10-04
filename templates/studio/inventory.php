@@ -16,6 +16,7 @@ $listQuery = $view->filterQuery + ['pageSize' => $pagination['pageSize'], 'page'
 $returnPath = $path.'?'.http_build_query($listQuery, '', '&', PHP_QUERY_RFC3986);
 $pageUrl = static fn (int $page): string => $path.'?'.http_build_query(array_replace($listQuery, ['page' => $page]), '', '&', PHP_QUERY_RFC3986);
 $scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($listQuery, ['scope' => $scope, 'page' => 1]), '', '&', PHP_QUERY_RFC3986);
+$exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $formatTime = static fn (?\DateTimeImmutable $at): string => $at === null
     ? 'Zeitpunkt unbekannt'
     : $at->setTimezone(new \DateTimeZone('Europe/Berlin'))->format('d.m.Y · H:i');
@@ -139,7 +140,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
       <?php endif; ?>
 
       <section class="studio-list-results" aria-labelledby="studio-list-results-title">
-        <div class="studio-list-results-heading"><h2 id="studio-list-results-title"><?= $escape($scopeLabels[$filter->scope]) ?></h2><span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>"><?= $escape($pagination['totalFiltered']) ?> Fälle <span class="studio-list-order">· Neueste zuerst</span></span></div>
+        <div class="studio-list-results-heading"><h2 id="studio-list-results-title"><?= $escape($scopeLabels[$filter->scope]) ?></h2><span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>"><?= $escape($pagination['totalFiltered']) ?> Fälle <span class="studio-list-order">· Neueste zuerst</span></span><a class="studio-list-button" data-export-selection href="<?= $escape($exportUrl) ?>">Auswahl exportieren <span aria-hidden="true">↗</span></a></div>
         <div class="studio-list-column-headings" aria-hidden="true"><span>Fall</span><span>Manuelle Bewertung</span><span>Technische Beobachtung</span><span>Kontakt</span><span>Eingang</span><span></span></div>
         <ol class="studio-findings">
           <?php foreach ($view->findings as $finding): ?>

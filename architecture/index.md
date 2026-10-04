@@ -343,6 +343,59 @@ Persistenz nach Neustart sind nachgewiesen. Prä- und Post-Migrationsbackups sin
 restore-validiert. [Review-Abnahme](studio-review.md#neue-hinweise-nach-einem-urteil),
 [N01-Abnahme](abnahme-betriebsabschluss.md), [Sicherung](backup.md).
 
+**Aktuelles MVP-Release-Sparring, vom Nutzer konkretisiert:** Betreiber-Priorität
+und bisheriger HTML-Prioritätsexport sollen entfernt werden. Screenshot-Einreihen,
+Recheck und endgültiges Löschen sollen ins Studio-Falldetail; Einstellungen und
+Credits/Info folgen als abschließender Polish vor dem Legacy-Abbau.
+Die Fallaktionen und eine schlichte JSON-Export-Seite wurden anschließend mit
+„1. 2. umsetzen“ beauftragt. Export, bestätigtes Löschen und der Abbau der
+Betreiber-Priorität sind implementiert; neue Recheck-/Screenshot-Ausführung
+gegen beliebige externe PoC-Ziele wurde in diesem Paket nicht angebunden.
+**Export-Erweiterung im Sparring:** Der Nutzer erwägt konfigurierbare URL-/Typ-Listen
+für OBB und Meldungspakete mit Bildern/Details. Vorschlag sind Zweckvorlagen plus
+Inhaltsgruppen; OBB-Zielformat, Berichtszuschnitt und Belegauswahl sind offen.
+Zusätzliche Profile sind noch nicht umgesetzt.
+[Befunde und Vorschlag](ui-workflow.md#export-nach-verwendungszweck-sparring-zur-erweiterung).
+Zum Polish aus Punkt 3 konkretisiert der Nutzer die Autorenzeile als
+**Tom Graßmann IT+Media** mit „Proudly vibe-coded“, `grassmann-it.de` und dem
+aktuellen OBB-Profil `grassmann-it`; Lizenzinfo und Einstellungen sind vorgeschlagen.
+Gemeinsame Studio-Seite hinter dem Zahnrad bleibt die Empfehlung; Seitenaufteilung,
+übrige Altlinks und Releaseversion sind noch offen. Der Settings-Abgleich belegt
+Standardkennzeichen und ein Zeitlimit für Screenshot-Aufnahmen; die alte
+Review-/Retest-Hilfe beschreibt die tatsächlichen Verbraucher ungenau.
+Diese Sparring-Runde hat keine Produktänderungen für Punkt 3 ausgeführt.
+**Zusätzliche Release-Richtung:** Der Nutzer wünscht DE-/EN-Mehrsprachigkeit und
+bevorzugt Deutsch. Anschließend konkretisiert er die Wahl per ENV für die ganze
+Installation. Empfohlener Vertrag: optionales `APP_LOCALE=de|en`, Deutsch als
+Standard/Fallback; die frühere Browser-/Settings-Umschaltung ist damit ersetzt.
+Alle Studio-Anzeigen,
+JS-Meldungen und Serverrückmeldungen gehören zum kleinen Umfang; Einstellungen
+und Credits sollen auf dieser Grundlage direkt zweisprachig entstehen.
+i18n ist noch nicht implementiert.
+[Befund und Vorschlag](ui-workflow.md#mehrsprachigkeit-vor-dem-release).
+**Öffentlicher Auftritt:** Die README soll auf Nutzerwunsch die attraktive lokale
+OpenBugBounty-Alternative und den Studio-Workflow vermitteln. Die aktuelle
+478-Zeilen-README, zwei Legacy-Bilder und widersprüchliche aktive Dokuclaims sind
+abzugleichen. Empfehlung: englische Haupt-README mit kompaktem Produkteinstieg,
+vier neutralen Studio-Demobildern und verlinkter Bedienungs-/Betriebsdoku; deutsche
+Einführung und vollständige Galerie bleiben Optionen. Isolierte Demo-Daten
+ersetzen den bisher am Live-Bestand arbeitenden Screenshotweg. Neue README/Bilder
+sind noch nicht umgesetzt.
+[Befunde und vorgeschlagener Umfang](ui-workflow.md#readme-und-öffentliche-release-darstellung).
+Die aktuelle isolierte Abnahme besteht mit **231 PHP-Tests / 3.567 Assertions**
+und **16 Browserprüfungen / 8 JSON-Downloads**, einschließlich schmaler/kurzer
+Fenster und Bedienung ohne JavaScript. Details stehen im
+[Umsetzungsstand](ui-workflow.md#umsetzungsstand-nach-dem-auftrag-für-punkt-1-und-2).
+Eine Upgrade-Anleitung ist ausdrücklich kein
+MVP-Ziel; Init/Start und Datenerhalt sollen am fertigen Kandidaten mit dem
+vorhandenen isolierten N01-Verfahren nachgewiesen werden, ohne die verwendete
+Installation oder Nutzdaten zu überschreiben. Der alte README-Screenshot-Befehl
+redigiert Studio nicht zuverlässig und muss für neue Bilder aktualisiert werden.
+**Ziellizenz für den MVP: `GPL-3.0-or-later`, ausdrücklich bestätigt.**
+Die Lizenzumstellung bleibt ein späterer Release-Schritt; aktuell liegt BSD vor.
+Gemeinsame POST-/Artefaktrouten und historische Daten bleiben erforderlich.
+[Befunde und vorgeschlagener Zuschnitt](ui-workflow.md#release-sparring-studio-vervollständigen-und-legacy-ablösen).
+
 ## Dokumente
 
 - [Lastenheft und Arbeitsabschnitte](lastenheft.md)

@@ -126,23 +126,6 @@ final class InMemoryFindingRepository extends FindingRepository
         }));
     }
 
-    public function findForPriorityExport(\DateTimeImmutable $from, \DateTimeImmutable $until): array
-    {
-        $results = array_values(array_filter($this->findings, static function (Finding $finding) use ($from, $until): bool {
-            $date = $finding->getSubmittedAt() ?? $finding->getCreatedAt();
-
-            return !$finding->isDiscarded()
-                && $finding->getStatus() !== FindingStatus::FIXED
-                && $finding->getContactedAt() === null
-                && $date >= $from && $date < $until;
-        }));
-        usort($results, static fn (Finding $a, Finding $b): int => strcmp($b->getSeverity(), $a->getSeverity())
-            ?: ($b->getSubmittedAt() <=> $a->getSubmittedAt())
-            ?: ($b->getCreatedAt() <=> $a->getCreatedAt()));
-
-        return $results;
-    }
-
     public function countByBucket(string $bucket): int
     {
         return $this->countByDomainAndStatus(null, null, $bucket);

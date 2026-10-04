@@ -62,9 +62,19 @@ notes/assessment/contact, and returning to the list. Global counters open the
 exact counted selection and reset other filters. At half width the rows become
 cards with independent assessment, observation, and contact fields.
 
+Open `/export` for a JSON download of the current case state. The inventory's
+export link carries its complete filter selection across all list pages.
+Preview case/domain counts, choose an archive scope explicitly when needed, and
+include private case notes only by opting in. The download keeps manual
+assessment, latest technical observation, contact, and first-send timestamps
+separate, and includes evidence metadata and local artifact links. Image files
+and complete histories are outside this export; consistent database/artifact
+backups remain available separately.
+
 The classic overview remains at `/legacy`, with classic details at
-`/legacy/findings/{id}`, settings at `/legacy/settings`, and the priority export
-at `/legacy/operator-priority`. Both surfaces share list/detail services and
+`/legacy/findings/{id}` and settings at `/legacy/settings`.
+The former operator-priority page and its HTML export have been removed.
+Both surfaces share list/detail services and
 business rules. Switching intake surfaces in the same tab retains the current
 draft and up to 50 entries. History, toast links, and overview rows open the
 Studio detail at `/findings/{id}`. Each detail links to the same finding in the
@@ -72,7 +82,7 @@ other surface.
 
 Former `/studio` and `/studio/findings...` bookmarks redirect to canonical Studio
 routes. Old filtered root links redirect to `/findings` with their parameters;
-old settings/export GET links redirect under `/legacy`. Symfony also normalizes
+old settings GET links redirect under `/legacy`. Symfony also normalizes
 trailing slashes. POST, JSON API, and artifact URLs remain unchanged.
 
 The Studio detail uses a large evidence area and a compact inspector for manual
@@ -83,6 +93,11 @@ Without JavaScript, all retained images and the native forms remain usable.
 Capture time and storage time are separate. Missing files and the latest queued,
 running, failed, or completed screenshot job remain visible alongside older
 images, including browser-protection metadata.
+
+The Studio inspector also offers permanent deletion under `Fallverwaltung`.
+Expand the section and explicitly confirm removal of the case and its evidence.
+The native form works without JavaScript and returns to the validated list
+context after deletion. Opening the confirmation leaves the case untouched.
 
 Classic and Studio read the same detail projection and use the same assessment
 and contact operations. The selected image is not automatically recorded as an
@@ -317,7 +332,7 @@ ddev exec php bin/console app:finding:list --observation=none
 Old `status`/`bucket` overview links remain diagnostic legacy filters; they do not
 imply a manual judgment. The CLI retains `--status`, `--domain`, `--type` and
 `--severity`. `app:domain:list` counts active cases with separate manual and
-contact columns. Domain exports and operator priority still use their existing
+contact columns. CLI domain exports still use their existing
 selection rules and explicitly describe their stored-status criterion.
 
 ## Technical review commands

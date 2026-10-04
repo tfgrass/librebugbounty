@@ -119,12 +119,6 @@ final class StudioController
         return $this->redirectWithQuery('/legacy/settings', $request);
     }
 
-    #[Route(path: '/operator-priority', name: 'operator_priority_alias', methods: ['GET'])]
-    public function canonicalPriority(Request $request): RedirectResponse
-    {
-        return $this->redirectWithQuery('/legacy/operator-priority', $request);
-    }
-
     #[Route(path: '/findings/{id}', name: 'studio_finding_show', methods: ['GET'])]
     public function finding(string $id, Request $request): Response
     {

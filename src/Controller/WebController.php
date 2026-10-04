@@ -348,14 +348,6 @@ final class WebController
             if (($parameters['surface'] ?? null) === 'studio') {
                 return $this->redirectMessage($message, $returnPath);
             }
-            $returnTo = trim($request->request->getString('return_to'));
-            if (str_starts_with($returnTo, '/operator-priority')) {
-                $returnTo = '/legacy'.$returnTo;
-            }
-            if (preg_match('~^/legacy/operator-priority(?:\?days=[0-9]{1,3})?$~D', $returnTo)) {
-                return new RedirectResponse($returnTo.(str_contains($returnTo, '?') ? '&' : '?').'message='.rawurlencode($message));
-            }
-
             return $this->redirectMessage($message, $returnPath);
         } catch (\Throwable $exception) {
             return $this->redirectError($exception->getMessage(), $returnPath);
@@ -405,20 +397,34 @@ final class WebController
     }
 
     #[Route(path: 'findings/{id}/delete', name: 'finding_delete', methods: ['POST'])]
-    public function deleteFinding(string $id): Response
+    public function deleteFinding(string $id, Request $request): Response
     {
+        $parameters = $request->request->all();
+        foreach (['surface', 'return_to'] as $field) {
+            if (array_key_exists($field, $parameters) && !is_string($parameters[$field])) {
+                return new Response('Ungültige Löschangaben.', Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $studio = ($parameters['surface'] ?? null) === 'studio';
+        $failurePath = $studio ? $this->findingReturnPath($id, $parameters) : '/legacy';
+        if ($studio && ($parameters['confirm_delete'] ?? null) !== '1') {
+            return $this->redirectError('Bitte bestätige das endgültige Löschen dieses Falls und seiner Belege.', $failurePath);
+        }
+        $successPath = $studio
+            ? ($this->navigation->listReturnPath($parameters['return_to'] ?? null) ?? '/findings')
+            : '/legacy';
         try {
             $finding = $this->findingService->getFindingOrFail($id);
             $hostname = $finding->getDomain()->getHostname();
             $this->findingService->deleteFinding($finding);
 
             return $this->redirectMessage(sprintf(
-                'Deleted finding %s from %s.',
+                $studio ? 'Fall %s von %s endgültig gelöscht.' : 'Deleted finding %s from %s.',
                 $this->shortId($finding),
                 $hostname,
-            ));
+            ), $successPath);
         } catch (\Throwable $exception) {
-            return $this->redirectError($exception->getMessage());
+            return $this->redirectError($exception->getMessage(), $failurePath);
         }
     }
 
@@ -507,7 +513,7 @@ final class WebController
             .'</style>'
             .'</head>'
             .'<body>'
-            .'<div class="utility-nav"><a href="/legacy">Overview</a><a href="/">Studio</a><a href="/findings">Bestand</a><a href="/legacy/operator-priority">Operator-Priorität</a><a href="/legacy/settings">Settings</a><a href="#about-modal">About</a></div>'
+            .'<div class="utility-nav"><a href="/legacy">Overview</a><a href="/">Studio</a><a href="/findings">Bestand</a><a href="/export">Export</a><a href="/legacy/settings">Settings</a><a href="#about-modal">About</a></div>'
             .'<main>'.$body.'</main>'
             .$this->renderAboutModal()
             .'</body>'

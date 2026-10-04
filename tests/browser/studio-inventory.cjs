@@ -175,9 +175,10 @@ async function main() {
     assert.ok(legacyOpen.startsWith('/findings/'), 'Legacy list opens the canonical Studio detail');
     await page.goto(base + '/settings');
     assert.equal(new URL(page.url()).pathname, '/legacy/settings');
-    await page.goto(base + '/operator-priority');
-    assert.equal(new URL(page.url()).pathname, '/legacy/operator-priority');
-    mark('Legacy inventory matches shared counts and opens Studio cases; settings and export GET bookmarks retain reachable legacy views');
+    for (const removedPath of ['/operator-priority', '/operator-priority/', '/legacy/operator-priority', '/legacy/operator-priority/']) {
+      assert.equal((await context.request.get(base + removedPath + '?days=14')).status(), 404, removedPath);
+    }
+    mark('Legacy inventory matches shared counts and opens Studio cases; settings remain reachable and removed priority URLs return 404');
 
     const noJs = await browser.newContext({ viewport: { width: 640, height: 900 }, javaScriptEnabled: false });
     await protect(noJs);

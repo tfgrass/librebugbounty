@@ -80,7 +80,6 @@ final class DiscardedFindingRepositoryTest extends DatabaseTestCase
         $this->assertFindingIds([$active], $repository->findOpenFindingsWithoutEvidence(1));
         $this->assertFindingIds([$active], $repository->findAllWithoutScreenshotEvidence(null, null, 1));
         $this->assertFindingIds([$active], $repository->findAllWithoutScreenshotEvidenceByStatuses(null, [FindingStatus::VERIFIED], 1));
-        $this->assertFindingIds([$active], $repository->findForPriorityExport(new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-10-04')));
         foreach ([FindingStatus::DUPLICATE, FindingStatus::DISCARDED] as $status) {
             self::assertSame([], $repository->findAllForBrowserRetest(null, $status));
             self::assertSame([], $repository->findDueForRetest(null, null, $status));

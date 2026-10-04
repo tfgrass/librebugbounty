@@ -857,6 +857,445 @@ Erweiterungen. Korrektur im Falldetail, Notizen, Suche, getrennte Bewertungen,
 Belegzustände und der manuelle Export sind bereits vorhanden. Ein neues
 Kontaktpaket braucht nicht sämtliche dieser Komforterweiterungen als Vorlauf.
 
+## Release-Sparring: Studio vervollständigen und Legacy ablösen
+
+Stand: 2026-10-03, lesender Codeabgleich auf `e46ea40` mit anschließender
+Nutzerpräzisierung. Der kommende Release soll den ersten vollständigen MVP
+darstellen; der bisherige Stand wird fachlich als wenig genutzter Prototyp
+eingeordnet. Die Anforderungen für diesen Release sind konkretisiert, die
+Produktumsetzung war zu diesem Zeitpunkt noch nicht beauftragt. Anschließend
+hat der Nutzer die Fallaktionen und den schlichten Export mit „1. 2. umsetzen“
+beauftragt; zum Polish aus Punkt 3 sollen danach Rückfragen folgen.
+
+**Bestätigte Richtung:**
+
+- Betreiber-Priorität und bisheriger HTML-Prioritätsexport sollen entfallen.
+  Das war eine nebenbei entstandene Hilfe zur Kontaktpriorisierung und gehört
+  nicht in den neuen Release. Die frühere Empfehlung, diese Seite in Studio zu
+  übernehmen, ist damit ersetzt. Der bestehende CLI-Domain-/JSON-Export ist
+  davon unabhängig; sein Entfernen wurde nicht festgelegt.
+- Manuelles Screenshot-Einreihen, erneute technische Prüfung und endgültiges
+  Löschen sollen in die moderne Fallansicht übernommen werden.
+- Einstellungen, Credits und ähnliche Details sollen ein abschließender
+  Polish-Schritt vor dem Release sein.
+- Eine Upgrade-Anleitung ist für diesen MVP ausdrücklich keine Anforderung.
+  Stattdessen soll Init/Start aus frischer Kopie einschließlich Datenerhalt
+  geprüft werden, ohne die tatsächlich verwendete Installation oder deren
+  Nutzerdaten zu überschreiben.
+- README-Bilder und die vorhandene Zensierung sollen für Studio aktualisiert
+  werden.
+- **Lizenz für den MVP-Release: `GPL-3.0-or-later`.** Der Nutzer hat diese
+  Variante nach Hinweis auf die bestehende BSD-Lizenz ausdrücklich ausgewählt.
+
+Die zunächst offene Export-Idee wurde durch den anschließenden Auftrag als
+schlichter JSON-Arbeitsbereich angenommen. Der Nutzer verwendet sie selbst
+zunächst nicht. Kontaktmanagement und Mailanbindung bleiben zurückgestellt.
+
+### Beobachtete Funktionsabdeckung
+
+Eingang, Bestand mit Suche/Filtern/Archiv, Bewertung, Belege und technische
+Historie sind in Studio vorhanden. Notizenbearbeitung, Versandmarkierung,
+Statistiken und der eigene Review-Vorrat gehen über die klassische Ansicht
+hinaus. Es bleiben diese konkreten Abhängigkeiten:
+
+| Funktion | Stand auf `e46ea40` | Aktuelle Richtung |
+| --- | --- | --- |
+| Einstellungen | Studio-Zahnrad öffnet `/legacy/settings`; `GET /settings` leitet dorthin. Zwei Werte sind editierbar: Standardkennzeichen und Prüfzeitlimit. | Im abschließenden Polish als kleine Studio-Seite übernehmen. |
+| Betreiber-Priorität / HTML-Export | Eigener Controller unter `/legacy/operator-priority`; `/operator-priority` ist nur Weiterleitung. | Auf Nutzerwunsch entfernen; keine Übernahme von Gruppierung, Research-Ledger oder Kontaktpriorisierung in den neuen Export. |
+| Manuelle Wartungsaktionen | Screenshot einreihen, Recheck mit Screenshot und endgültiges Löschen haben nur klassische Formulare. | Ausdrückliche Aktionen im Studio-Falldetail übernehmen; Löschung getrennt und klar beschriften. |
+| Info / Version | `/about` öffnet ein klassisches Modal; dessen Inhalt nennt noch `v1.0.1`. | Credits/Info und gemeinsame Versionsangabe im abschließenden Polish. |
+
+Belege: `templates/studio/navigation.php`, `templates/studio/finding.php`,
+`src/Controller/StudioController.php`, `src/Controller/WebController.php` und
+`src/Controller/PriorityExportController.php`.
+
+### Technische Grenzen beim Entfernen
+
+`WebController` enthält neben den klassischen Renderern auch den nativen Intake,
+Bewertungen, Notizen, Kontakt-/Versandmarkierungen und die Artefaktauslieferung.
+Diese gemeinsamen Endpunkte müssen erhalten oder in passende Controller
+verschoben werden. Die Klasse als Ganzes zu löschen würde auch Studio-Funktionen
+und Bilder im Review entfernen. Einstellungen koppeln klassischen GET und
+gemeinsamen POST sogar in derselben Methode.
+
+Rücksprünge von Aktionen und Fehlern sowie klassische Links in Studio sind
+umzustellen. Alte Detail- und Bestandsadressen können als kleine
+Kompatibilitätsbrücke weiterführen; das ist eine Empfehlung und kein neues
+Upgrade-Vorhaben. Bei Einstellungen ist die bestehende permanente
+308-Weiterleitung zu beachten: Ein sofortiger Gegenredirect von Legacy zur
+kanonischen Adresse kann mit einem Browsercache eine Schleife bilden. Der alte
+Settings-Pfad kann zunächst die neue Ansicht direkt mitbedienen. Die entfernte
+Prioritätsseite erhält keinen scheinbar gleichwertigen Ersatz unter `/export`.
+
+Historische Status-/Review-Werte, Diagnosefilter und Belegmetadaten sind
+Datenkompatibilität und bleiben erhalten. Die unabhängigen CLI-Exporte und der
+ältere CLI-Aufnahmepfad sind vom Entfernen der klassischen Weboberfläche zu
+unterscheiden.
+
+### Studio-Bereich Export v1
+
+Beauftragt und implementiert ist ein eigener Bereich `/export` in der unteren Navigation mit einem
+durchgängigen kleinen Ablauf: vorhandene Bestandsfilter übernehmen oder den
+aktiven Bestand wählen, Anzahl der Fälle zeigen und den aktuellen Fallstand als
+JSON herunterladen. Bewertungen, letzte technische Beobachtung und
+Kontakt-/Versandzeitpunkte bleiben getrennte Felder. Verweise auf Belege sind
+Metadaten; tatsächliche Bilddateien und vollständige Historien sind ein möglicher
+späterer Paketexport. Private Fallnotizen werden ausschließlich nach ausdrücklicher
+Auswahl mitgegeben.
+
+JSON wurde für den kleinen Start gewählt. Bereits `app:export:json` und
+`ExportService` liefern einen älteren separaten CLI-Weg. CSV bleibt eine Alternative, falls die erste
+Zielnutzung Tabellenarbeit ist. Ein ZIP mit Bildern würde eine größere
+Dateiauswahl und Behandlung fehlender Belege verlangen. Der Export ersetzt
+weder den bestehenden konsistenten Backup-/Restore-Ablauf noch einen
+leserorientierten Bericht oder eine Meldung.
+
+Der vorhandene JSON-Export ist nicht unverändert für diese Seite geeignet:
+Er enthält private Notizen und nur die 20 jüngsten technischen Läufe, aber
+keine getrennte manuelle Bewertung, Bewertungsgrundlage/-historie, Sichtungen
+oder Screenshot-Auftragshistorie. Eine unbekannte Domain wird derzeit außerdem
+zu einem ungefilterten Export; die Domainliste entspricht bei manchen Filtern
+nicht der gewählten Fallmenge. Auswahlregeln aus `FindingListService` und
+`FindingReadRepository` sollten daher für Vorschau und Download gemeinsam
+verwendet werden. Eine unbekannte Auswahl darf die Menge nicht still erweitern.
+Die Webseite soll über einen Anwendungsservice arbeiten und keine CLI-Prozesse
+starten. Der neue Webexport verwendet hierfür einen eigenen lesenden
+`StudioExportService`; der ältere CLI-Vertrag wurde nicht umgestellt.
+Belege für den Ausgangspunkt: `src/Service/ExportService.php`,
+`src/Command/ExportJsonCommand.php`, `src/Command/DomainExportCommand.php` und
+`src/Repository/FindingReadRepository.php`.
+
+### Export nach Verwendungszweck: Sparring zur Erweiterung
+
+Nutzeranregung vom 2026-10-04: Export granularer und konfigurierbar gestalten.
+Als Zwecke nennt er eine kompakte URL-/Schwachstellentyp-Liste für die weitere
+Verwendung bei OpenBugBounty und ein Paket mit Screenshots/Details zum manuellen
+Melden. Das ist ein Entwurfsauftrag; zusätzliche Exportprofile sind noch nicht
+beauftragt oder implementiert. Für die Häufigkeit der einzelnen Zwecke gibt es
+keine Nutzungsdaten; die folgende Priorisierung ist eine Produktempfehlung.
+
+**Vorschlag:** Drei verständliche Vorlagen, jeweils mit geeigneten Vorgaben:
+
+| Vorlage | Zweck | Vorgeschlagene Ausgabe |
+| --- | --- | --- |
+| URL-Liste | Manuelle Übernahme oder Weiterverarbeitung von URL und optionalem Schwachstellentyp | Kompaktes neutrales JSON; TXT mit einer URL je Zeile als einfacher zusätzlicher Ausgang |
+| Meldung mit Belegen | Ausgewählte Befunde mit gespeicherten Nachweisen weitergeben | ZIP mit lesbarem Markdown-Bericht, Fall-/Dateizuordnung und gewählten Screenshot-Dateien |
+| Aktueller Fallstand | Daten für eigene Werkzeuge und Auswertungen | Vorhandenes versioniertes JSON des gespeicherten Fallstands |
+
+Ein mit OBB kompatibler JSON-/Dateiimport ist bisher nicht belegt. Die neutrale
+URL-Liste soll erst nach Klärung des tatsächlichen Zielvertrags als konkreter
+OBB-Import bezeichnet werden. Rückfrage ist gestellt: generische JSON-Liste,
+manuelle Formularübernahme oder vorhandenes Importwerkzeug/festes Dateiformat?
+Die Antwort steht noch aus. CSV bleibt eine mögliche Ergänzung bei tatsächlichem
+Tabellen-/Importbedarf.
+
+Die UI kann mit einer Vorlage beginnen, danach die vorhandene Fallauswahl und
+„Inhalt anpassen“ zeigen. Anpassung zunächst nach verständlichen Gruppen:
+Basisdaten, gespeicherte Request-/Nachweisdaten, Bewertung/letzte Beobachtung,
+Kontakt-/Versandstand, Bilder sowie ausdrücklich gewählte private Fallnotizen.
+Vorlagen verändern Inhalt und Verpackung; eine bestehende Filterauswahl wird
+dabei nicht stillschweigend erweitert. Eine Vorschau zeigt ausgewählte Fälle,
+Domains, Bilder und fehlende Dateien sowie ein konkretes Ausgabebeispiel.
+
+**Belegauswahl ist eine fachliche Entscheidung:** dokumentierter Beleg der
+Bewertung, neuester gespeicherter Bildbeleg oder alle gewählten Bildbelege.
+Für eine Meldung wird die dokumentierte Bewertungsgrundlage bevorzugt. Fehlt
+eine solche Zuordnung, muss das sichtbar sein und die Bildauswahl ausdrücklich
+erfolgen; ein neuerer Screenshot darf nicht als früher beurteilte Grundlage
+ausgegeben werden. Aufnahme- und Ablagezeit sind zu unterscheiden. Urteil und
+neuere abweichende Beobachtung bleiben im Bericht getrennt. Private Fallnotizen
+und als Evidence gespeicherte Notizen benötigen bewusste Auswahl.
+
+**Technischer Befund:** Der aktuelle Webexport liefert lokale Artefaktlinks,
+keine Bilddateien, keine Existenzprüfung der Bilder und keine explizite
+Bewertungsgrundlage. Er liest die Auswahl seitenweise in einem SQLite-Snapshot.
+Für ein Paket sind Dateiinhalt und die zur Einordnung nötigen Aufnahmemetadaten
+zu ergänzen. `EvidenceStorageInterface`/`LocalEvidenceStorage` bieten lesende
+Dateizugriffe; `FindingDetailService` zeigt die vorhandene Zuordnung zu Jobs und
+Bewertungen. Die bisherige JSON-v1-Ausgabe soll einen stabilen Vertrag behalten;
+neue Profile erhalten klar bezeichnete eigene Ausgabeformen. Paketexport bleibt
+lesend, verwendet vorhandene lokale Belege und setzt keinen Kontakt-/Versandstand.
+
+Vor einem Umsetzungsplan noch zu klären: tatsächlicher OBB-Weiterverwendungsweg,
+Bericht pro Fall oder zusammengefasst pro Domain, Bildauswahl und erlaubte
+Inhaltsgruppen für die externe Meldung. Ein Paket zur manuellen Weitergabe passt
+zum zurückgestellten Kontaktmanagement; es setzt keine Mailanbindung voraus.
+Die vorhandene Backup-/Restore-Funktion bleibt der Weg zur konsistenten Sicherung.
+
+### Vorgeschlagene Arbeitsfolge bis zum MVP-Release
+
+1. **Fallaktionen vervollständigen und Nebenfunktion abbauen:** Die drei
+   vorhandenen Aktionen in Studio übernehmen und Legacy-Rückwege korrigieren.
+   Screenshot-Einreihen verändert keine Bewertung; Recheck startet ausdrücklich
+   technische Arbeit und kann separat vom Screenshot fehlschlagen. Endgültiges
+   Löschen entfernt den Fall mit Historien, Aufträgen und Belegen und führt
+   zurück zum Bestand. Betreiber-Priorität und HTML-Prioritätsexport entfernen.
+2. **Export als kleines eigenes Vorhaben:** Den obigen Vorschlag hinsichtlich
+   Zielnutzung und Datenumfang festlegen. **Anschließend beauftragt und umgesetzt:**
+   JSON des aktuellen Fallstands mit gemeinsamen Bestandsfiltern und optionalen
+   privaten Fallnotizen. Der Bereich bleibt unabhängig vom abschließenden Polish.
+3. **Polish vor Release:** Einstellungen, Credits/Info und konsistente
+   Versionsangabe in Studio integrieren; anschließend verbleibende klassische
+   Renderer, Assets und Verweise entfernen. Gemeinsame Aktionen und historische
+   Daten erhalten. Eine neue Release-Versionsnummer ist noch nicht festgelegt.
+4. **Lizenz und öffentliche Darstellung:** `LICENSE` und Composer-Metadaten auf
+   die bestätigte `GPL-3.0-or-later`-Richtung ausrichten und erforderliche
+   bestehende Lizenzhinweise erhalten. Aktuell gilt im Code noch BSD-3-Clause;
+   Composer nennt widersprüchlich `proprietary`. Bereits unter BSD veröffentlichte
+   Versionen bleiben unter dieser Lizenz nutzbar. Konkrete Research-Domainbezüge
+   in `plan-studio-ingest.md` (Zeile 81) und `abnahme-abschnitt-2.md` (Zeile 332)
+   neutralisieren; persönliche absolute Pfade in öffentlichen Unterlagen
+   verallgemeinern. README, Bilder und Release Notes aktualisieren.
+5. **Releasekandidaten isoliert abnehmen:** Vorhandene PHP-/Browserprüfungen
+   passend zum Umbau ausführen und den N01-Nachweis aus einer frischen Kopie
+   des neuen Commits wiederholen: eigener DDEV-Projektname und eigener
+   Datenbank-/Artefaktspeicher, keine übernommenen Nutzdaten, Start ohne
+   Handreparatur, wiederholte Initialisierung, Restart und erhaltene Datensätze
+   und Bildbytes. Aufnahmen bleiben auf neutralen lokalen Fixtures; technische
+   Recheck-Regressionen können den bestehenden Transportstub verwenden.
+   Die Live-Installation erhält keine Lifecycle-, Reset- oder Init-Aufrufe.
+   Eine kleine CI bleibt eine Empfehlung, kein neu festgelegter Releaseblocker.
+
+Der vorhandene Screenshot-Befehl ist `ddev readme-screenshots`, implementiert
+unter `.ddev/commands/host/readme-screenshots`. Er verwendet klassische
+Selektoren für Domain-/Metadatenfelder und Belegbilder, öffnet `/` statt des
+heutigen Bestands und wählt Fälle über alte Retest-Screenshotfelder. Die
+Studio-Felder werden dadurch nicht zuverlässig redigiert. Empfehlung:
+Ausgabeweg für Studio anpassen und neue Bilder mit kontrollierten Demo-Fällen
+in isolierter Umgebung erstellen; die aktuelle Nutzdatenbank bleibt dafür
+unberührt. Den alten Befehl unverändert auszuführen wäre kein verlässlicher
+Nachweis der Zensierung.
+
+Die frühere Empfehlung einer allgemeinen Upgrade-Anleitung ist auf Nutzerwunsch
+ersetzt. Der beobachtete Unterschied zwischen früheren `.env`-Speicherpfaden
+und den heutigen DDEV-Umgebungswerten bleibt ein technischer Befund, begründet
+aber keinen zusätzlichen Migrationsauftrag am Bestand.
+
+Die Release-Lesung des aktuellen Git-Baums fand keine versionierten lokalen
+`.env`-Dateien, Datenbanken oder Storage-/Runtime-Verzeichnisse. Composer- und
+Playwright-Lockfiles sind vorhanden; ein privater absoluter Importpfad in den
+Browserharnesses wurde nicht belegt. Die beiden vorhandenen README-Bilder zeigen
+Legacy und wurden visuell angesehen: Zielangaben sind verwischt; eine neue
+Studio-Darstellung mit neutralen Beispieldaten ist trotzdem vorzuziehen.
+Die gesamte Git-Historie und der aktuelle GitHub-Releasestand wurden nicht
+geprüft. Der einzige lokale Tag ist `v1.0.0`.
+
+Die vorhandene Abnahme zählt 220 PHP-Tests / 3.205 Assertions und 37
+Review-Browserprüfungen. Frischer DDEV-Aufbau, Neustart und tatsächliche lokale
+Bilder sind durch [N01](abnahme-betriebsabschluss.md) nachgewiesen;
+die jüngste Bestandsmigration und Restore-Prüfungen durch
+[Backup](backup.md) und [Review](studio-review.md).
+Die ursprüngliche Sparring-Lesung hat keine Tests, Builds, Migrationen oder
+Aufnahmen ausgeführt. Nach dem folgenden Umsetzungsauftrag wurden isolierte
+Prüfungen für die neuen Funktionen ergänzt; der neue vollständige N01-Lauf bleibt
+für den fertigen Releasekandidaten vorgesehen.
+
+### Umsetzungsstand nach dem Auftrag für Punkt 1 und 2
+
+`/export` und `/export/download` lesen gespeicherte Fälle, ohne technische
+Arbeit auszulösen. Auswahl und Archiv verwenden die normalisierten
+`FindingReadFilter`-Regeln des Bestands; Pagination begrenzt den Download nicht.
+Die JSON-Ausgabe enthält Schema-Version, Zeitpunkt, tatsächliche Fall-/Domainzahl,
+ausschließlich zugehörige Domains, getrennte manuelle/technische Felder sowie
+Belegmetadaten mit relativen Artefaktlinks. Private Fallnotizen fehlen standardmäßig.
+Die Ausgabe liest Fall- und Evidence-Seiten unter einer lesenden
+SQLite-Transaktion; Datensätze und Bilddateien bleiben erhalten.
+
+Im Studio-Inspector ist „Fall endgültig löschen“ in einem eigenen ausklappbaren
+Bereich erreichbar. Das native Formular verlangt ein bewusst gesetztes
+Bestätigungsfeld, das der Studio-POST auch serverseitig prüft. Erfolg kehrt zur
+validierten Ausgangsliste oder zum Bestand zurück; fehlende Bestätigung erhält
+den Fall. Die bestehende Löschfunktion entfernt seine Bewertungen, Sichtungen,
+technischen Läufe, Screenshot-Aufträge, Belege und Dateien und lässt andere
+Fälle und die Domain bestehen. Es wurde keine zusätzliche CSRF-Prüfung ergänzt.
+
+Die Betreiber-Prioritätsseite, ihr HTML-Export, Alias, Navigation, spezieller
+Kontakt-Rückweg und ungenutzte Repository-Auswahl wurden entfernt. Alte
+Prioritätsadressen liefern 404. CLI-Exporte bleiben vorhanden.
+
+**Begrenzung des umgesetzten Umfangs:** Eine neue UI-Anbindung der technischen
+Recheck-/Screenshot-Ausführung gegen beliebige externe gespeicherte PoC-URLs
+gehört nicht zum implementierten Ergebnis dieses Pakets. Diese beiden
+beauftragten Fallaktionen sind damit noch nicht als Studio-Formulare umgesetzt.
+Vorhandene technische Dienste und Endpunkte wurden dabei nicht erweitert.
+Einstellungen, Credits/Info und vollständiger Legacy-Abbau bleiben Punkt 3.
+
+**Abnahme des aktuellen Arbeitsbaums:** `ddev exec php vendor/bin/phpunit`
+besteht mit **231 Tests / 3.567 Assertions**. Die neuen Exportprüfungen umfassen
+7 Tests / 319 Assertions, die Studio-Löschprüfungen 5 / 66 und die geänderte
+Bestands-/Routenabnahme 8 / 439. Geprüft sind unter anderem Auswahl über mehr als
+100 Fälle und Belege, unbekannte Domains, Notizen nur nach ausdrücklicher Auswahl,
+lesende GET-Aufrufe, Aufräumen der Transaktion bei Schreibfehlern sowie erhaltene
+Daten bei fehlender Löschbestätigung und vollständige abhängige Löschung.
+
+`tests/browser/studio-export-delete.cjs` besteht mit **16 Browserprüfungen und
+8 tatsächlichen JSON-Downloads**. Die Abnahme umfasst fünf Fenstergrößen von
+375 × 844 bis 1440 × 900 einschließlich 960 × 600, übernommene Bestandsfilter,
+Downloads nach noch nicht angewendeten Formularänderungen und Bedienung ohne
+JavaScript. Ein beim kurzen Fenster gefundener Fehler der fest positionierten
+Exportvorschau ist behoben; der Download bleibt durch normales Scrollen erreichbar.
+Die sechs Arbeitsbereichslinks passen auch im Falldetail bei 375 Pixeln Breite.
+
+Die Browserabnahme verwendet den eigenen gesperrten Fixture-Router
+`tests/Support/studio_export_delete_browser_router.php`, eine frische temporäre
+Datenbank und gespeicherte synthetische Bildbytes. Nur zwei festgelegte Testfälle
+werden gelöscht; ihre abhängigen Datensätze und Artefakte verschwinden, während
+Domains und andere Fälle erhalten bleiben. Externe Aufrufe, JavaScript-Ausnahmen
+und interne Browserfehler wurden nicht beobachtet. Temporärer Server und
+Fixture-Speicher sind anschließend entfernt. PHP-Prüfungen verwenden ebenfalls
+isolierte Testdaten. Die Live-Installation erhielt keine Init-, Reset-,
+Migrations- oder Lifecycle-Aufrufe; der erneute N01-Aufbau bleibt Releasearbeit.
+
+**Polish-Sparring am 2026-10-04 nach den Rückfragen:** Der Nutzer konkretisiert
+die Autorenangabe als **Tom Graßmann IT+Media**, mit Link auf
+`https://grassmann-it.de/` und dem gewünschten „Proudly vibe-coded“-Hinweis.
+Hinzu kommt sein aktuelles OpenBugBounty-Profil. Die öffentliche Autorenwebsite
+verlinkt bei der lesenden Prüfung auf
+`https://www.openbugbounty.org/researchers/grassmann-it/`; dieses Linkziel ist damit
+belegt. Lizenzinformationen und eine Übernahme der Einstellungen werden als
+Polish vorgeschlagen. GPL-3.0-or-later ist bereits entschieden und wurde nicht
+erneut zur Wahl gestellt; Repository-Lizenz und Composer-Metadaten sind weiterhin
+noch nicht umgestellt.
+
+Empfehlung bleibt eine gemeinsame Studio-Seite hinter dem Zahnrad mit getrennten
+Bereichen für Einstellungen und Info/Credits. Kompakte Credits umfassen die
+gewünschte Autorenzeile, Website, aktuelles OBB-Profil, GitHub sowie Lizenz und
+später eine konsistente Versionsangabe. Seitenaufteilung, der Umgang mit den
+übrigen persönlichen Altlinks und die Releaseversion sind noch nicht ausdrücklich
+festgelegt. Der aktuelle Auftrag ist das Sparring; Produktcode für Punkt 3 wurde
+in dieser Runde nicht verändert.
+
+Der lesende Settings-Abgleich zeigt zwei sinnvolle bestehende Felder:
+Standardkennzeichen und Zeitlimit für Screenshot-Aufnahmen. Die alte Hilfe nennt
+pauschal Review/Retest, tatsächlich lesen die Screenshot-Queue und der CLI-Befehl
+`review:refresh` diesen Zeitlimitwert; andere Prüfpfade verwenden eigene Defaults.
+Vorschlag für die Studio-Übernahme: verständliche Beschriftung, sichtbare
+Validierungsfehler, vollständige Eingaben bei Fehlern erhalten und erst nach
+Gesamtvalidierung speichern. Die technische Worker-Grenze beträgt 1000–120000 ms.
+Eine Vereinheitlichung technischer Prüfpfade wird dadurch nicht vorgeschlagen.
+Das frühere `intake.auto_verify_mode` hat außerhalb von Tests keinen Verbraucher
+und begründet kein zusätzliches Einstellungsfeld. Gespeicherte Nutzerwerte sollen
+beim UI-Wechsel übernommen werden. Belege: `SettingsService`,
+`ScreenshotQueueService`, `ReviewRefreshCommand` und `playwright-worker/server.js`.
+
+### Mehrsprachigkeit vor dem Release
+
+Nutzerergänzung vom 2026-10-04: Deutsch wird persönlich bevorzugt; Englisch soll
+als zweite UI-Sprache vor dem Release hinzukommen. Das ist die gewünschte
+Release-Richtung, noch kein gesonderter Implementierungsauftrag.
+
+**Anschließende Nutzerpräzisierung:** Die UI-Sprache soll über eine
+ENV-Einstellung für die Installation wählbar sein, mit Deutsch als Standard.
+Empfohlener Konfigurationsvertrag: optionales `APP_LOCALE`, Werte `de` und `en`;
+ohne gesetzten Wert startet die Anwendung deutsch. Die frühere Empfehlung eines
+Sprachwechsels in Settings mit Browsercookie ist durch diese Richtung ersetzt.
+Eine gemeinsame Übersetzungsgrundlage soll vor der Settings-/Credits-Umsetzung
+entstehen, damit dieser Polish sofort beide Sprachen bedient.
+
+Der vollständige kleine Umfang umfasst die Studio-Seiten einschließlich der
+geplanten Einstellungen/Info, Navigation, zugängliche Beschriftungen, Hinweise,
+Validierung, Rückmeldungen, API-Anzeigelabels und interaktive JS-Texte. Auch
+Zahlen, Datumsanzeigen, Statistik-Tooltips und Kalenderbeschriftungen brauchen
+lokalisierte Darstellung. CLI, technische Workerdiagnosen und eine eigene
+Übersetzung der später entfallenden Legacy-Oberfläche sind zusätzlicher Umfang.
+
+**Lesender Befund:** Es gibt keine aktivierte Translation-/Locale-Konfiguration;
+`symfony/translation-contracts` liegt im Lockfile, `symfony/translation` nicht.
+Die PHP-Vorlagen setzen `lang="de"`, Datums- und Zahlenformate sind in PHP und
+JavaScript fest deutsch. UI-Texte liegen außerdem in Read-Labels, Diensten,
+Controllern und den vier Frontend-Skripten. Empfehlung ist der vorhandene
+Symfony-Übersetzungsweg mit stabilen Schlüsseln und DE-/EN-Katalogen; benötigte
+JS-Texte können je Seite als kleine sicher kodierte JSON-Auswahl aus derselben
+Quelle bereitgestellt werden. Ein Wechsel des Template-Systems ist dafür
+nicht nötig.
+
+Nach einem Wechsel der Installationssprache sind alte Statuslabels und Fehlersätze im
+Intake-`sessionStorage` zu beachten. Die Anzeige sollte aus Zustandswerten und
+Parametern neu entstehen, damit gespeicherte Entwürfe/Verläufe zur gewählten
+Sprache passen. Eigene Fallinhalte, Notizen, gespeicherte technische Befunde und
+JSON-Maschinenwerte sind Originaldaten. Fachliche Tagesgrenzen in Europe/Berlin,
+Filterwerte und die Review-Semantik (`fixed` links, `confirmed` rechts) werden
+von der Sprachwahl nicht verändert.
+Auch fertige `message`-/`error`-Sätze in Rücksprung-URLs bleiben sonst in ihrer
+alten Sprache; für App-Rückmeldungen sind Schlüssel plus Parameter vorzusehen.
+Die Status-API ist bereits `no-store`. Die vorgeschlagene Browserpräferenz
+ist ersetzt; die ENV-Konfiguration braucht keine neue Datenbankeinstellung oder
+Migration. UI- und API-Anzeigen verwenden die konfigurierte Sprache der
+Installation, normale GET-Aufrufe lesen sie nur.
+
+**DDEV-Konfigurationsweg für die spätere Anleitung:** Anwendungsseitig Deutsch
+als Default verwenden, keinen verbindlichen `APP_LOCALE=de`-Eintrag in die
+versionierte DDEV-Konfiguration setzen. Für Englisch kann der lokale
+`web_environment`-Abschnitt in `.ddev/config.local.yaml` um `APP_LOCALE=en`
+ergänzt werden; bestehende Einträge bleiben erhalten. Eine geänderte DDEV-ENV
+wird beim nächsten Start/Neustart wirksam. Die tatsächliche Installation erhält
+in dieser Sparring-Runde keine Konfigurations- oder Lifecycle-Änderung.
+Ein allgemeiner Verweis auf `.env.local` wäre derzeit unzuverlässig: Der
+Bootstrap lädt Dotenv nur bei vorhandener `.env`, und bereits gesetzte
+System-/DDEV-Variablen haben Vorrang. Die Umsetzung soll die Symfony-ENV-Auflösung
+verwenden. `APP_LOCALE` ist im Produktcode derzeit noch nicht angebunden.
+
+Die spätere Abnahme soll vollständige DE-/EN-Kataloge, deutschen Fallback,
+ENV-Auswahl beider Sprachen mit erhaltenem Arbeitskontext und die UI mit/ohne
+JavaScript sowie bei schmalen/kurzen Fenstern prüfen. Diese Runde hat nur
+Code gelesen und den Projektstand fortgeschrieben; i18n ist noch nicht umgesetzt.
+
+### README und öffentliche Release-Darstellung
+
+Weitere Nutzerpräzisierung vom 2026-10-04: DE/EN bleibt die gewünschte Richtung.
+Die README soll das Programm als attraktive lokale OpenBugBounty-Alternative
+vorstellen; öffentliche Dokumentation und Screenshots sollen den neuen Studio-
+Stand vermitteln.
+
+**Befund:** Die aktuelle README umfasst 478 Zeilen und mischt Produkteinstieg,
+Bedienung, technische Implementierungsdetails, Wartung und frühere Abnahmezahlen.
+Sie bindet genau zwei versionierte Bilder unter `docs/screenshots/` ein, beide
+zeigen Legacy. Die Beschreibung von Hinweis-Sichtungen als zukünftige Arbeit
+widerspricht der bereits vorhandenen Funktion; die jüngste PHP-Abnahme steht
+im Architekturindex. `playwright-worker/README.md` behauptet noch einen
+Headless-Retest beim neuen Intake, obwohl heute nur gespeichert und eine Aufnahme
+eingereiht wird. Die öffentlichen Einstiegstexte benötigen daher einen fachlichen
+Abgleich mit dem finalen Kandidaten. Auch die als vollständiger „wipe“ bezeichnete
+Reset-Beschreibung ist zu präzisieren: erhaltene Datensätze und manuelle
+Bewertungen gehören zum tatsächlichen Umfang der jeweiligen Wartungsaktion.
+
+**Vorschlag für den Auftritt:** Die bestehende englische Haupt-README für GitHub
+beibehalten, eine deutsche Fassung oder Kurzeinführung bei Bedarf verlinken.
+Das ist eine Empfehlung und unabhängig vom gewünschten deutschen UI-Standard.
+Vorgeschlagene Positionierung: „A local-first OpenBugBounty alternative for
+managing findings, evidence, and manual review.“ Der konkrete Nutzen sind lokaler
+Daten-/Belegbestand, schneller Eingang, nachvollziehbare Bewertungen, manuelles
+Review, Statistiken und Export. Die Release-README soll zuerst diesen Nutzen und
+einen kurzen Workflow zeigen, danach Voraussetzungen/Quickstart sowie Autor und
+Lizenz. Ausführliche Bedienung und Betrieb können in eigene verlinkte Dokumente
+wandern. Öffentliche Anleitungen, Worker-README, Lizenz-/Versionsmetadaten und
+aktueller Architekturindex werden abgeglichen; historische Abnahmeprotokolle
+behalten ihren zeitlichen Bezug.
+
+Für die README werden vier gut lesbare Studio-Bilder empfohlen: Review als
+Hauptbild, dazu Bestand, Falldetail und Statistiken. Eine zusätzliche Galerie
+aller Arbeitsbereiche einschließlich Eingang, Export und Settings bleibt optional.
+Für den internationalen GitHub-Einstieg sind englische Demo-Bilder nach der
+i18n-Umsetzung eine Empfehlung; doppelte DE-/EN-Bildserien sind noch nicht
+festgelegt. Die Aufnahmen sollen aus einem eigenen isolierten Demo-Bestand mit
+fiktiven Fällen, neutralen Domains, festen Zeitpunkten und lokalen Bildbelegen
+entstehen. Bestehende Browserharnesses liefern Isolationsmuster, ihre absichtlich
+fehlerhaften Regressionstestdaten sind keine fertige Werbe-Galerie.
+Die veröffentlichten Beispiele werden als Demo-Daten gekennzeichnet.
+
+Der aktuelle `ddev readme-screenshots`-Befehl liest den Live-Bestand und verwendet
+Legacy-Zensierungsselektoren; er ist unverändert ungeeignet. Der geplante
+Galerieweg verwendet ausschließlich kontrollierte Demo-Daten. Nutzdatenbank,
+vorhandene reale Aufnahmen und Runtime bleiben dabei erhalten. Neue öffentliche
+Bilder und finale Textaussagen folgen nach i18n, Settings-/Credits-Polish und dem
+Legacy-Abbau. Diese Runde hat keine Produkttexte oder Bilder ersetzt und keine
+Aufnahmen, Init-/Reset- oder sonstigen Lifecycle-Aktionen ausgeführt.
+
+Komfortfunktionen wie Bildvergleich, Rücknahme im Review, dauerhafte Wiedervorlage
+und Ähnlichkeitsgruppierung bleiben mögliche spätere Vorhaben. Die ausdrücklich
+zurückgestellten zusätzlichen CSRF-Prüfungen werden durch diesen Vorschlag
+nicht erneut beauftragt.
+
 ## Szenarien für die jeweiligen Funktionspakete
 
 Die früher für einen frühen UI-Prototyp vorgeschlagenen Szenarien bleiben als
