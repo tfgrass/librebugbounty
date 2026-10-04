@@ -150,6 +150,8 @@ $public = realpath(dirname(__DIR__, 2).'/public');
 $file = realpath($public.'/'.$path);
 if ($path !== '/' && $file !== false && str_starts_with($file, $public.'/') && is_file($file)) return false;
 $request = Symfony\Component\HttpFoundation\Request::createFromGlobals();
+// Preserve this acceptance fixture's historical German copy without deployment settings.
+if (!$request->cookies->has('lbb_locale')) $request->cookies->set('lbb_locale', 'de');
 $response = $kernel->handle($request);
 $response->send();
 $kernel->terminate($request, $response);

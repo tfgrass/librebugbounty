@@ -42,6 +42,7 @@ final class StudioController
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
         $defaultPayload = $this->settings->getDefaultPayload();
         $csrfToken = $this->csrf->getToken('finding_create')->getValue();
+        $languageReturnPath = $request->getRequestUri();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
 
@@ -74,6 +75,7 @@ final class StudioController
         $query = $request->query->all();
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
+        $languageReturnPath = $request->getRequestUri();
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/inventory.php';
         $html = ob_get_clean();
@@ -92,6 +94,7 @@ final class StudioController
             ]);
         }
         $isFirstStart = $this->findings->count([]) === 0;
+        $languageReturnPath = $request->getRequestUri();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
         ob_start();
@@ -135,6 +138,7 @@ final class StudioController
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
 
         $returnPath = $this->navigation->listReturnPath($query['return_to'] ?? null);
+        $languageReturnPath = $request->getRequestUri();
 
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/finding.php';

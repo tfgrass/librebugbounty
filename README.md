@@ -44,7 +44,7 @@ explore the project history in About:
 - Configurable JSON exports and self-contained ZIP report packages with selected
   evidence
 - Local backups that keep the database and artifact tree together
-- German and English UI selected through `APP_LOCALE`
+- English and German UI with a language switcher in the header
 
 LibreBugBounty currently concentrates on reflected XSS triage. It does not send
 disclosure emails or submit reports for you.
@@ -80,8 +80,8 @@ is ignored by Git.
 Opening a case never starts browser work. A screenshot is evidence; your manual
 assessment and a saved technical observation remain separate.
 
-The interface defaults to German. To use English, set `APP_LOCALE=en` in a local
-DDEV configuration as described in the [user guide](USAGE.md#language).
+The interface starts in English. Choose **DE** or **EN** in the header to switch
+languages; your browser remembers the choice across pages and visits.
 
 Read the [user guide](USAGE.md) for review controls, export choices, settings,
 and troubleshooting. The [changelog](CHANGELOG.md) covers the first Scriptor

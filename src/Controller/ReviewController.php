@@ -36,7 +36,7 @@ final class ReviewController
         $query = $request->query->all();
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
 
-        return $this->render($view, $message);
+        return $this->render($request, $view, $message);
     }
 
     #[Route(path: '/review/{id}/assessment', name: 'studio_review_assessment', methods: ['POST'])]
@@ -59,17 +59,17 @@ final class ReviewController
         try {
             $view = $this->queue->get($query, $id);
         } catch (\InvalidArgumentException $exception) {
-            return $this->render($this->queue->get([], $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($request, $this->queue->get([], $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
         }
         if ($malformed) {
-            return $this->render($view, null, $this->i18n->trans('Ungültige Bewertungsangaben.'), $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($request, $view, null, $this->i18n->trans('Ungültige Bewertungsangaben.'), $submitted, Response::HTTP_BAD_REQUEST);
         }
         if (!$this->csrf->isTokenValid(new CsrfToken('review_assessment_'.$id, $submitted['_token']))) {
-            return $this->render($view, null, $this->i18n->trans('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.'), $submitted, Response::HTTP_FORBIDDEN);
+            return $this->render($request, $view, null, $this->i18n->trans('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.'), $submitted, Response::HTTP_FORBIDDEN);
         }
         // Keep a complete, unmodified current card available even if a failed
         // ORM flush closes the entity manager. Never redirect on write failure.
-        $failureResponse = $this->render($view, null, $this->i18n->trans('Die Bewertung konnte nicht gespeichert werden. Bitte den Fall neu laden und erneut prüfen.'), $submitted, Response::HTTP_INTERNAL_SERVER_ERROR);
+        $failureResponse = $this->render($request, $view, null, $this->i18n->trans('Die Bewertung konnte nicht gespeichert werden. Bitte den Fall neu laden und erneut prüfen.'), $submitted, Response::HTTP_INTERNAL_SERVER_ERROR);
         try {
             $this->queue->assess(
                 $id,
@@ -80,9 +80,9 @@ final class ReviewController
                 $submitted['context_token'],
             );
         } catch (\UnexpectedValueException $exception) {
-            return $this->render($this->queue->get($query, $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_CONFLICT);
+            return $this->render($request, $this->queue->get($query, $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException $exception) {
-            return $this->render($view, null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($request, $view, null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
         } catch (\Throwable) {
             return $failureResponse;
         }
@@ -98,11 +98,12 @@ final class ReviewController
         return new RedirectResponse($nextPath.(str_contains($nextPath, '?') ? '&' : '?').'message='.rawurlencode($message).'&reviewed='.rawurlencode($id), Response::HTTP_SEE_OTHER, ['Cache-Control' => 'no-store']);
     }
 
-    private function render(ReviewQueueView $view, ?string $message = null, ?string $error = null, array $submitted = [], int $status = Response::HTTP_OK): Response
+    private function render(Request $request, ReviewQueueView $view, ?string $message = null, ?string $error = null, array $submitted = [], int $status = Response::HTTP_OK): Response
     {
         $isFirstStart = $view->detail === null && $this->findings->count([]) === 0;
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
+        $languageReturnPath = $request->isMethod('GET') ? $request->getRequestUri() : $view->currentPath;
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
         $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
         $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);

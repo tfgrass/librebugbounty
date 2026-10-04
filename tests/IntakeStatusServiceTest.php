@@ -12,6 +12,7 @@ use App\Service\BrowserRetestClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\IntakeStatusService;
+use App\Service\UiTranslator;
 use App\Value\FindingReadLabels;
 
 final class IntakeStatusServiceTest extends DatabaseTestCase
@@ -96,6 +97,7 @@ final class IntakeStatusServiceTest extends DatabaseTestCase
         $storage->expects(self::never())->method('exists');
         $service = new IntakeStatusService(
             $this->entityManager->getConnection(), self::getContainer()->get(RetestRunRepository::class), $storage,
+            self::getContainer()->get(UiTranslator::class),
         );
         foreach (['manual', 'duplicate', 'discarded'] as $kind) {
             $finding = $this->finding('ignored-'.$kind);
@@ -172,6 +174,7 @@ final class IntakeStatusServiceTest extends DatabaseTestCase
             $this->entityManager->getConnection(),
             self::getContainer()->get(RetestRunRepository::class),
             self::getContainer()->get(EvidenceStorageInterface::class),
+            self::getContainer()->get(UiTranslator::class),
         );
     }
 

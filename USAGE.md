@@ -3,7 +3,8 @@
 This guide describes LibreBugBounty 2.0.0 “Moneta”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
-Page and control names below use the English UI; German is the default.
+Page and control names below use the default English UI; German is available
+through the header's **DE** switch.
 
 ## First run
 
@@ -168,24 +169,17 @@ from Scriptor through Scriptor Quo to Moneta. The
 
 ### Language
 
-German is the default and fallback. Set `APP_LOCALE=en` for English or
-`APP_LOCALE=de` for German. With DDEV, add the entry to
-`.ddev/config.local.yaml` in your checkout:
+English is the default and fallback. Choose **DE** or **EN** at the top of any
+page. Switching returns to the same page with its applied filters.
 
-```yaml
-web_environment:
-  - APP_LOCALE=en
-```
-
-If that file already exists, merge the entry into its existing
-`web_environment` list and retain your other settings. Apply the change with:
-
-```bash
-ddev restart
-```
+Your browser remembers the choice across pages, new tabs, and later visits.
+Another browser starts in English until you select a language there. Clearing
+the site's cookies also restores the default. No environment setting or
+application restart is needed.
 
 Changing the interface language does not translate or rewrite stored case
-data. Language is a deployment setting rather than a per-case preference.
+data. Exported human-readable reports follow your selected language; technical
+identifiers in JSON remain unchanged.
 
 ## Troubleshooting
 

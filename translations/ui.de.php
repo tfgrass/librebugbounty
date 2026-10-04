@@ -1,7 +1,7 @@
 <?php
 
 /**
- * German is the source and fallback language of the Studio UI. Keeping the
+ * German phrases are the source keys of the UI; English is its default. Keeping the
  * source phrases as stable keys makes omissions visible instead of hiding them
  * behind generated identifiers.
  *

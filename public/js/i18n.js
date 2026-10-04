@@ -2,7 +2,7 @@
   'use strict';
 
   const node = document.getElementById('studio-i18n');
-  let config = { locale: 'de', messages: {} };
+  let config = { locale: 'en', messages: {} };
   try {
     const parsed = JSON.parse(node?.textContent || '{}');
     if (parsed && (parsed.locale === 'de' || parsed.locale === 'en') && parsed.messages && typeof parsed.messages === 'object') config = parsed;

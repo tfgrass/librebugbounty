@@ -79,7 +79,10 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
   <div class="studio-shell studio-review-shell<?= $finding !== null ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
-      <a class="studio-header-link" href="/findings"><?= $escape($t('Zum Bestand')) ?> <span aria-hidden="true">↗</span></a>
+      <div class="studio-header-tools">
+        <a class="studio-header-link" href="/findings"><?= $escape($t('Zum Bestand')) ?> <span aria-hidden="true">↗</span></a>
+        <?php require __DIR__.'/language.php'; ?>
+      </div>
     </header>
 
     <main class="review-workspace" id="review-main">

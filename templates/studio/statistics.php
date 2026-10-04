@@ -117,6 +117,7 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
   <div class="studio-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
+      <div class="studio-header-tools"><?php require __DIR__.'/language.php'; ?></div>
     </header>
 
     <main class="stat-main" id="statistics">

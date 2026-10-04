@@ -25,6 +25,7 @@ final class SettingsController
         $settings = $this->settings->all();
 
         return $this->render(
+            request: $request,
             defaultPayload: (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']),
             reviewTimeout: (string) $this->settings->getReviewScanTimeoutMs(),
             errors: [],
@@ -61,7 +62,7 @@ final class SettingsController
         }
 
         if ($errors !== []) {
-            return $this->render($defaultPayload, $reviewTimeout, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->render($request, $defaultPayload, $reviewTimeout, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $this->settings->save([
@@ -74,6 +75,7 @@ final class SettingsController
 
     /** @param array<string, string> $errors */
     private function render(
+        Request $request,
         string $defaultPayload,
         string $reviewTimeout,
         array $errors,
@@ -94,6 +96,7 @@ final class SettingsController
         ];
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
+        $languageReturnPath = $request->getRequestUri();
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
         $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
         $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);

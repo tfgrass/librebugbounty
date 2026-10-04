@@ -29,6 +29,7 @@ final class StudioExportController
             return $this->invalidFilter($exception);
         }
         $isFirstStart = $this->findings->count(new FindingReadFilter(scope: 'all')) === 0;
+        $languageReturnPath = $request->getRequestUri();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);

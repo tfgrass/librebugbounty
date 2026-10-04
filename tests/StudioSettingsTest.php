@@ -15,6 +15,11 @@ final class StudioSettingsTest extends DatabaseTestCase
 {
     private Session $session;
 
+    protected function usesGermanCopy(): bool
+    {
+        return false;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

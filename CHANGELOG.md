@@ -31,7 +31,7 @@ branch.
   when explicitly selected.
 - Settings for the intake marker and browser time limit, plus version,
   release history, author, and license information in About.
-- German UI by default and English through `APP_LOCALE=en`.
+- English UI by default with a persistent German/English switcher in the header.
 - First-use guidance for an empty database, an archived inventory, and filters
   without results.
 - Local backup and restoration tools, current English user documentation, and

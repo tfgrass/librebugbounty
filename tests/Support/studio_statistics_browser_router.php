@@ -112,6 +112,8 @@ if ($path !== '/' && $file !== false && str_starts_with($file, $public.'/') && i
     return false;
 }
 $request = Symfony\Component\HttpFoundation\Request::createFromGlobals();
+// Preserve this acceptance fixture's historical German copy without deployment settings.
+if (!$request->cookies->has('lbb_locale')) $request->cookies->set('lbb_locale', 'de');
 $response = $kernel->handle($request);
 $response->send();
 $kernel->terminate($request, $response);

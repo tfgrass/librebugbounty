@@ -54,7 +54,7 @@
   background: #17191c;
 }
 
-.studio-brand { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.studio-brand { display: inline-flex; flex-shrink: 0; align-items: center; gap: 10px; min-width: 0; }
 .studio-brand-mark { color: var(--studio-blue); }
 .studio-brand-copy { display: grid; grid-template-columns: minmax(0, auto) auto; align-items: center; column-gap: 8px; min-width: 0; }
 .studio-brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; letter-spacing: -.3px; }
@@ -62,6 +62,12 @@
 .studio-brand-tag { grid-column: 2; justify-self: center; color: #b9c2ce; font-size: 9px; font-weight: 500; letter-spacing: .6px; line-height: 11px; }
 .studio-header-link { display: inline-flex; align-items: center; gap: 7px; padding: 6px 0 6px 8px; color: var(--studio-muted) !important; font-size: 12px; white-space: nowrap; }
 .studio-header-link:hover { color: var(--studio-text) !important; }
+.studio-header-tools { display: flex; flex-shrink: 0; align-items: center; gap: 16px; }
+.studio-language { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #3e4650; border-radius: 5px; }
+.studio-language a { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; min-height: 26px; padding: 3px 6px; border-radius: 3px; color: var(--studio-muted) !important; font-size: 11px; font-weight: 650; line-height: 18px; }
+.studio-language a:hover { background: #252b33; color: var(--studio-text) !important; }
+.studio-language a[aria-current="page"] { background: #27364b; color: #c6dcff !important; }
+.studio-language a:focus-visible { outline: 2px solid var(--studio-blue); outline-offset: 2px; }
 
 .studio-workspace {
   width: 100%;
@@ -205,6 +211,8 @@
   .studio-brand-tag { font-size: 8px; letter-spacing: .5px; line-height: 10px; }
   .studio-brand-mark { width: 23px; height: 23px; }
   .studio-header-link { gap: 4px; font-size: 11px; }
+  .studio-header-tools { gap: 10px; }
+  .studio-language a { min-width: 27px; padding-right: 4px; padding-left: 4px; font-size: 10px; }
   .studio-composer { padding: 22px 18px 19px; }
   .studio-composer h1 { font-size: 23px; }
   .studio-key-hint { display: none; }
@@ -221,6 +229,11 @@
   .studio-session-hint { margin-top: auto; }
   .studio-toasts { position: fixed; right: 18px; bottom: 18px; width: calc(100% - 36px); }
   .studio-settings-link { right: 12px; }
+}
+
+@media (max-width: 399px) {
+  .studio-header-tools { flex-direction: column-reverse; align-items: flex-end; gap: 1px; }
+  .studio-header-tools .studio-header-link { padding: 0; font-size: 10px; line-height: 14px; }
 }
 
 @media (max-height: 650px) and (min-width: 480px) {

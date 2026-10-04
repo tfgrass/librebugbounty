@@ -22,6 +22,7 @@
   <div class="studio-shell studio-settings-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
+      <div class="studio-header-tools"><?php require __DIR__.'/language.php'; ?></div>
     </header>
 
     <main class="studio-settings-main">
@@ -88,7 +89,7 @@
                 <li><?= $escape($t('Bildbelege manuell bewerten und neue Widersprüche, Unklarheiten oder Fehler erneut sichten.')) ?></li>
                 <li><?= $escape($t('Gemeldete, kontaktierte und behobene Fälle gemeinsam im Rückblick auswerten.')) ?></li>
                 <li><?= $escape($t('URL-Listen, Fallstatus oder Berichtspakete mit ausgewählten Bildbelegen exportieren.')) ?></li>
-                <li><?= $escape($t('Deutsche Oberfläche als Standard, Englisch über APP_LOCALE.')) ?></li>
+                <li><?= $escape($t('Englische Oberfläche als Standard, Deutsch und Englisch direkt im Header wählen.')) ?></li>
               </ul>
             </section>
             <details class="studio-about-history" data-release-history>

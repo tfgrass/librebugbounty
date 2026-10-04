@@ -49,7 +49,10 @@ $downloadFormat = strtoupper($view->downloadFormat);
   <div class="studio-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
-      <a class="studio-header-link" href="<?= $escape($view->inventoryPath) ?>"><?= $escape($t('Bestand')) ?> <span aria-hidden="true">↗</span></a>
+      <div class="studio-header-tools">
+        <a class="studio-header-link" href="<?= $escape($view->inventoryPath) ?>"><?= $escape($t('Bestand')) ?> <span aria-hidden="true">↗</span></a>
+        <?php require __DIR__.'/language.php'; ?>
+      </div>
     </header>
 
     <main class="studio-export-main" id="export">

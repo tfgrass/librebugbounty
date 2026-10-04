@@ -1,6 +1,6 @@
 /*
  * Isolated first-start acceptance, using running DDEV containers only:
- *   ddev exec env STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-first-start-empty-de APP_LOCALE=de STUDIO_FIRST_START_SCENARIO=empty php tests/Support/studio_first_start_browser_router.php init
+ *   ddev exec env STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-first-start-empty-de STUDIO_FIRST_START_LOCALE=de STUDIO_FIRST_START_SCENARIO=empty php tests/Support/studio_first_start_browser_router.php init
  *   ddev exec env STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-first-start-empty-de php -S 0.0.0.0:8098 -t public tests/Support/studio_first_start_browser_router.php
  * In another terminal:
  *   docker exec --user "$(id -u):$(id -g)" -e STUDIO_BROWSER_BASE=http://web:8098 ddev-librebugbounty-playwright node /var/www/html/tests/browser/studio-first-start.cjs

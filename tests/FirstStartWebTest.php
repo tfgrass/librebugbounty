@@ -18,6 +18,11 @@ final class FirstStartWebTest extends DatabaseTestCase
 {
     private Session $session;
 
+    protected function usesGermanCopy(): bool
+    {
+        return false;
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

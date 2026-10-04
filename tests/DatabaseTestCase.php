@@ -13,6 +13,11 @@ abstract class DatabaseTestCase extends KernelTestCase
     protected function setUp(): void
     {
         self::bootKernel();
+        // Historical web assertions deliberately exercise German copy. Locale
+        // acceptance tests keep the browser default or choose their own translator.
+        if ($this->usesGermanCopy()) {
+            self::getContainer()->set(\App\Service\UiTranslator::class, new \App\Service\UiTranslator('de'));
+        }
 
         $this->entityManager = self::getContainer()->get(EntityManagerInterface::class);
         $path = $this->entityManager->getConnection()->getParams()['path'] ?? '';
@@ -32,6 +37,11 @@ abstract class DatabaseTestCase extends KernelTestCase
             $this->entityManager->close();
         }
         parent::tearDown();
+    }
+
+    protected function usesGermanCopy(): bool
+    {
+        return true;
     }
 
     private function resetSchema(): void

@@ -13,7 +13,7 @@ if ($initializing) {
         throw new RuntimeException('Use init once with a new isolated root.');
     }
     $scenario = (string) (getenv('STUDIO_FIRST_START_SCENARIO') ?: 'empty');
-    $locale = (string) (getenv('APP_LOCALE') ?: 'de');
+    $locale = (string) (getenv('STUDIO_FIRST_START_LOCALE') ?: 'en');
 } else {
     if (realpath($root) !== $root || !is_file($root.'/fixtures.json') || !is_file($root.'/database.sqlite')) {
         throw new RuntimeException('Initialize the isolated first-start fixtures before serving requests.');
@@ -28,7 +28,6 @@ if (!in_array($scenario, ['empty', 'queued', 'archived'], true) || !in_array($lo
 foreach ([
     'APP_ENV' => 'dev',
     'APP_DEBUG' => '0',
-    'APP_LOCALE' => $locale,
     'APP_SECRET' => 'isolated-studio-first-start-browser-acceptance',
     'DATABASE_URL' => 'sqlite:///'.$root.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => $root.'/artifacts',
@@ -93,6 +92,7 @@ $public = realpath(dirname(__DIR__, 2).'/public');
 $file = realpath($public.'/'.$path);
 if ($path !== '/' && $file !== false && str_starts_with($file, $public.'/') && is_file($file)) return false;
 $request = Symfony\Component\HttpFoundation\Request::createFromGlobals();
+if ($locale === 'de' && !$request->cookies->has('lbb_locale')) $request->cookies->set('lbb_locale', 'de');
 $response = $kernel->handle($request);
 $response->send();
 $kernel->terminate($request, $response);

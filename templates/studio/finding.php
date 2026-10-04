@@ -59,6 +59,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
   <div class="studio-shell studio-detail-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
+      <div class="studio-header-tools"><?php require __DIR__.'/language.php'; ?></div>
     </header>
 
     <main class="studio-detail-workspace" id="studio-detail-main">

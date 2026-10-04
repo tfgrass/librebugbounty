@@ -17,7 +17,6 @@ foreach ([
     'APP_ENV' => 'dev',
     'APP_DEBUG' => '0',
     'APP_SECRET' => 'isolated-readme-screenshot-demo',
-    'APP_LOCALE' => 'en',
     'DATABASE_URL' => 'sqlite:///'.$root.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => $root.'/artifacts',
     'PLAYWRIGHT_WORKER_URL' => 'http://127.0.0.1:1',

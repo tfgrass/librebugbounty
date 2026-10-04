@@ -39,6 +39,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
   <div class="studio-shell studio-list-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
+      <div class="studio-header-tools"><?php require __DIR__.'/language.php'; ?></div>
     </header>
 
     <main class="studio-list-main" id="findings">
