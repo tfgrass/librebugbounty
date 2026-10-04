@@ -1,4 +1,4 @@
-# LibreBugBounty
+# LibreBugBounty 2.0.0 “Moneta”
 
 **A local-first OpenBugBounty alternative for reflected XSS research.**
 

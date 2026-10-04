@@ -519,7 +519,6 @@ return [
     'Exportangaben müssen einzelne Textwerte sein.' => 'Export values must be single text values.',
     'Fall aktualisiert' => 'Case updated',
     'Fall gelöscht oder nicht auffindbar' => 'Case deleted or not found',
-    'Fall im Studio öffnen' => 'Open case in Studio',
     'Fall verworfen.' => 'Case discarded.',
     'Fall wieder verfügbar' => 'Case available again',
     'Fall {domain} öffnen' => 'Open case for {domain}',
@@ -762,4 +761,10 @@ return [
     'Neue Fälle im Eingang' => 'New cases from intake',
     'Manuell als behoben bewertet' => 'Manually assessed as fixed',
     'Verschiedene Hosts neuer Fälle' => 'Distinct hosts among new cases',
+    'Neu in {version}' => 'New in {version}',
+    'Ein gemeinsamer Arbeitsbereich für Eingang, Bestand, Review, Statistik und Export.' => 'One workspace for intake, inventory, review, statistics, and export.',
+    'Bildbelege manuell bewerten und neue Widersprüche, Unklarheiten oder Fehler erneut sichten.' => 'Assess image evidence manually and revisit new contradictions, inconclusive results, or errors.',
+    'Gemeldete, kontaktierte und behobene Fälle gemeinsam im Rückblick auswerten.' => 'Track reported, contacted, and fixed cases together over time.',
+    'URL-Listen, Fallstatus oder Berichtspakete mit ausgewählten Bildbelegen exportieren.' => 'Export URL lists, case states, or report packages with selected image evidence.',
+    'Deutsche Oberfläche als Standard, Englisch über APP_LOCALE.' => 'German interface by default, English via APP_LOCALE.',
 ];

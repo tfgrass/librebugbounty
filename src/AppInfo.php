@@ -6,6 +6,7 @@ final class AppInfo
 {
     public const NAME = 'LibreBugBounty';
     public const VERSION = '2.0.0';
+    public const RELEASE_NAME = 'Moneta';
     public const AUTHOR = 'Tom Graßmann IT+Media';
     public const HOMEPAGE = 'https://grassmann-it.de/';
     public const OPENBUGBOUNTY_PROFILE = 'grassmann-it';

@@ -40,8 +40,16 @@
 .studio-settings-actions a:hover { color: var(--studio-blue); }
 
 .studio-about-panel { scroll-margin-top: 18px; }
-.studio-about-version { padding: 3px 7px; border: 1px solid #464e59; border-radius: 4px; color: #c3ccd7; font-size: 10px; font-weight: 600; letter-spacing: .5px; }
-.studio-about-lead { margin: 19px 0; color: #c8d0da; line-height: 1.65; }
+.studio-about-hero { display: grid; justify-items: center; gap: 12px; padding: 4px 0 20px; border-bottom: 1px solid #30363e; text-align: center; }
+.studio-about-logo { color: var(--studio-blue); }
+.studio-about-hero h2 { margin: 0; font-size: clamp(21px, 3vw, 25px); font-weight: 580; letter-spacing: -.5px; }
+.studio-about-version { margin: 0; padding: 4px 10px; border: 1px solid #464e59; border-radius: 4px; color: #c3ccd7; font-size: 11px; font-weight: 600; letter-spacing: .5px; }
+.studio-about-version span { margin: 0 4px; color: var(--studio-muted); }
+.studio-about-lead { margin: 19px 0; color: #c8d0da; font-size: 12px; line-height: 1.65; }
+.studio-about-release-notes { margin-bottom: 21px; }
+.studio-about-release-notes h3 { margin: 0 0 10px; color: #e0e6ed; font-size: 12px; font-weight: 600; }
+.studio-about-release-notes ul { display: grid; gap: 9px; margin: 0; padding-left: 16px; color: #bfc9d5; font-size: 11px; line-height: 1.6; }
+.studio-about-release-notes li::marker { color: var(--studio-blue); }
 .studio-about-facts { display: grid; margin: 0; }
 .studio-about-facts > div { display: grid; gap: 4px; padding: 11px 0; border-top: 1px solid #30363e; }
 .studio-about-facts dt { color: var(--studio-muted); font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }

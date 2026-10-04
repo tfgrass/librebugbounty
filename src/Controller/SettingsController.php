@@ -83,6 +83,7 @@ final class SettingsController
         $app = [
             'name' => AppInfo::NAME,
             'version' => AppInfo::VERSION,
+            'releaseName' => AppInfo::RELEASE_NAME,
             'author' => AppInfo::AUTHOR,
             'homepage' => AppInfo::HOMEPAGE,
             'profile' => AppInfo::OPENBUGBOUNTY_PROFILE,

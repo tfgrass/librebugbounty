@@ -31,18 +31,14 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
-  <title><?= $escape($t('Bestand')) ?> · LibreBugBounty Studio</title>
+  <title><?= $escape($t('Bestand')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
   <link rel="stylesheet" href="/css/studio.css">
   <link rel="stylesheet" href="/css/studio-inventory.css">
 </head>
 <body data-studio data-studio-list>
   <div class="studio-shell studio-list-shell">
     <header class="studio-header">
-      <a class="studio-brand" href="/" aria-label="LibreBugBounty Studio, <?= $escape($t('Eingang')) ?>">
-        <svg class="studio-brand-mark" width="27" height="27" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 2.5 24 8.3v11.4l-10 5.8-10-5.8V8.3L14 2.5Z" stroke="currentColor" stroke-width="1.5"/><path d="M10 11h8v7a4 4 0 0 1-8 0v-7Zm2-3h4v3h-4V8Zm2 4v10M7 13h3m8 0h3M7 17h3m8 0h3m-10 5 2-2m5 0 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span class="studio-brand-name">LibreBugBounty</span>
-        <span class="studio-brand-tag">STUDIO</span>
-      </a>
+      <?php require __DIR__.'/brand.php'; ?>
     </header>
 
     <main class="studio-list-main" id="findings">

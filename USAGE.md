@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.0.0. Start with the
+This guide describes LibreBugBounty 2.0.0 “Moneta”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the English UI; German is the default.
@@ -161,8 +161,8 @@ Open the gear icon for **Settings & info**:
   browser check. The default is 45,000 ms; a larger value gives slow pages more
   time and keeps the worker occupied longer.
 
-The About section shows the application version, credits, project links, and
-license.
+The About section shows the version and release name, release highlights,
+credits, project links, and license.
 
 ### Language
 

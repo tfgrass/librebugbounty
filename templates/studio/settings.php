@@ -13,7 +13,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
-  <title><?= $escape($t('Einstellungen & Info')) ?> · <?= $escape($app['name']) ?> Studio</title>
+  <title><?= $escape($t('Einstellungen & Info')) ?> · <?= $escape($app['name'].' '.$app['releaseName']) ?></title>
   <link rel="stylesheet" href="/css/studio.css">
   <link rel="stylesheet" href="/css/studio-settings.css">
   <script src="/js/i18n.js" defer></script>
@@ -21,11 +21,7 @@
 <body data-studio data-studio-settings>
   <div class="studio-shell studio-settings-shell">
     <header class="studio-header">
-      <a class="studio-brand" href="/" aria-label="<?= $escape($app['name']) ?> Studio, <?= $escape($t('Eingang')) ?>">
-        <svg class="studio-brand-mark" width="27" height="27" viewBox="0 0 28 28" fill="none" aria-hidden="true"><path d="M14 2.5 24 8.3v11.4l-10 5.8-10-5.8V8.3L14 2.5Z" stroke="currentColor" stroke-width="1.5"/><path d="M10 11h8v7a4 4 0 0 1-8 0v-7Zm2-3h4v3h-4V8Zm2 4v10M7 13h3m8 0h3M7 17h3m8 0h3m-10 5 2-2m5 0 2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <span class="studio-brand-name"><?= $escape($app['name']) ?></span>
-        <span class="studio-brand-tag">STUDIO</span>
-      </a>
+      <?php require __DIR__.'/brand.php'; ?>
       <span class="studio-settings-version"><?= $escape($t('Version')) ?> <?= $escape($app['version']) ?></span>
     </header>
 
@@ -80,11 +76,22 @@
           </section>
 
           <section class="studio-settings-panel studio-about-panel" id="about" aria-labelledby="about-title">
-            <div class="studio-settings-panel-heading">
-              <div><p class="studio-eyebrow">OPEN SOURCE</p><h2 id="about-title"><?= $escape($t('Über {name}', ['name' => $app['name']])) ?></h2></div>
-              <span class="studio-about-version">v<?= $escape($app['version']) ?></span>
+            <div class="studio-about-hero" data-about-release>
+              <?php $logoSize = 72; $logoClass = 'studio-about-logo'; require __DIR__.'/logo.php'; unset($logoSize, $logoClass); ?>
+              <h2 id="about-title"><?= $escape($app['name']) ?></h2>
+              <p class="studio-about-version">v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></p>
             </div>
             <p class="studio-about-lead"><?= $escape($t('Eine lokale Arbeitsumgebung für Bug-Bounty-Ingest, technische Prüfung, Bildbelege und manuelle Entscheidungen.')) ?></p>
+            <section class="studio-about-release-notes" data-release-notes aria-labelledby="release-notes-title">
+              <h3 id="release-notes-title"><?= $escape($t('Neu in {version}', ['version' => $app['version']])) ?></h3>
+              <ul>
+                <li><?= $escape($t('Ein gemeinsamer Arbeitsbereich für Eingang, Bestand, Review, Statistik und Export.')) ?></li>
+                <li><?= $escape($t('Bildbelege manuell bewerten und neue Widersprüche, Unklarheiten oder Fehler erneut sichten.')) ?></li>
+                <li><?= $escape($t('Gemeldete, kontaktierte und behobene Fälle gemeinsam im Rückblick auswerten.')) ?></li>
+                <li><?= $escape($t('URL-Listen, Fallstatus oder Berichtspakete mit ausgewählten Bildbelegen exportieren.')) ?></li>
+                <li><?= $escape($t('Deutsche Oberfläche als Standard, Englisch über APP_LOCALE.')) ?></li>
+              </ul>
+            </section>
             <dl class="studio-about-facts">
               <div><dt><?= $escape($t('Autor')) ?></dt><dd><a href="<?= $escape($app['homepage']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['author']) ?> <span aria-hidden="true">↗</span></a></dd></div>
               <div><dt>OpenBugBounty</dt><dd><a href="<?= $escape($app['profileUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['profile']) ?> <span aria-hidden="true">↗</span></a></dd></div>

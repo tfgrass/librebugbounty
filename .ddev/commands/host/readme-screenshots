@@ -39,6 +39,7 @@ TEMP_OUTPUT="/var/www/html/var/readme-screenshots-${DEMO_ID}"
 FINAL_OUTPUT="/var/www/html/docs/screenshots"
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
+ABOUT_PREVIEW_OUTPUT=${README_ABOUT_PREVIEW_OUTPUT:-/tmp/librebugbounty-moneta-about.png}
 
 cleanup() {
   docker exec "$WEB_CONTAINER" sh -c '
@@ -82,7 +83,7 @@ if [ "$ready" -ne 1 ]; then
   exit 1
 fi
 
-printf 'Capturing four Studio views from isolated fixtures ...\n'
+printf 'Capturing product views from isolated fixtures ...\n'
 docker exec -w /var/www/html \
   -e README_DEMO_BASE="$BASE_URL" \
   -e README_SCREENSHOT_OUTPUT="$TEMP_OUTPUT" \
@@ -111,4 +112,6 @@ docker exec -u root "$WEB_CONTAINER" sh -c '
     "$target_dir/statistics.png"
 ' sh "$TEMP_OUTPUT" "$FINAL_OUTPUT" "$HOST_UID" "$HOST_GID"
 
+docker cp "$WEB_CONTAINER:$TEMP_OUTPUT/about.png" "$ABOUT_PREVIEW_OUTPUT"
 echo "Wrote docs/screenshots/{review,inventory,finding-detail,statistics}.png"
+printf 'Wrote About preview to %s\n' "$ABOUT_PREVIEW_OUTPUT"

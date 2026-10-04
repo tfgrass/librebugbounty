@@ -209,7 +209,7 @@
       if (entry.findingId && !entry.missing) {
         const link = element('a', t('Fall öffnen') + ' ↗', 'studio-entry-link');
         link.href = findingLink(entry.findingId);
-        link.title = t('Fall im Studio öffnen');
+        link.title = t('Fall öffnen');
         actions.append(link);
       }
       if (['failed', 'unconfirmed'].includes(entry.saveState)) actions.append(retryButton(entry, 'studio-entry-retry'));

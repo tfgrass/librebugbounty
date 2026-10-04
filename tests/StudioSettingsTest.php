@@ -4,6 +4,8 @@ namespace App\Tests;
 
 use App\AppInfo;
 use App\Service\SettingsService;
+use App\Service\UiTranslator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -39,6 +41,43 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame(0, $xpath->query('//a[starts-with(@href,"/legacy")]')->length);
             self::assertSame(1, $xpath->query('//a[@href="/settings" and @aria-current="page" and contains(concat(" ", normalize-space(@class), " "), " studio-settings-link-active ")]')->length);
         }
+        self::assertSame($before, $this->rows());
+    }
+
+    public static function aboutLocales(): iterable
+    {
+        yield 'German' => ['de'];
+        yield 'English' => ['en'];
+    }
+
+    #[DataProvider('aboutLocales')]
+    public function testNamedReleaseAndAboutHighlightsRenderInBothLanguagesWithoutChangingSettings(string $locale): void
+    {
+        self::getContainer()->set(UiTranslator::class, new UiTranslator($locale));
+        $before = $this->rows();
+        $response = $this->request('/settings');
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $xpath = $this->xpath($response->getContent());
+        self::assertSame($locale, $xpath->evaluate('string(/html/@lang)'));
+        self::assertSame(AppInfo::RELEASE_NAME, trim($xpath->evaluate('string(//*[contains(concat(" ", normalize-space(@class), " "), " studio-brand-tag ")])')));
+        self::assertStringContainsString(AppInfo::RELEASE_NAME, $xpath->evaluate('string(//title)'));
+        self::assertSame(1, $xpath->query('//*[@id="about"]//*[contains(concat(" ", normalize-space(@class), " "), " studio-about-logo ")]')->length);
+        self::assertSame(1, $xpath->query('//*[@id="about"]//*[@data-about-release]')->length);
+        $release = $xpath->evaluate('string(//*[@data-about-release])');
+        self::assertStringContainsString(AppInfo::NAME, $release);
+        self::assertStringContainsString('v'.AppInfo::VERSION, $release);
+        self::assertStringContainsString(AppInfo::RELEASE_NAME, $release);
+        self::assertSame(5, $xpath->query('//*[@id="about"]//*[@data-release-notes]//li')->length);
+        foreach ($xpath->query('//*[@data-release-notes]//li') as $highlight) {
+            self::assertNotSame('', trim($highlight->textContent));
+        }
+        foreach ([AppInfo::HOMEPAGE, AppInfo::OPENBUGBOUNTY_URL, AppInfo::REPOSITORY] as $href) {
+            self::assertSame(1, $xpath->query('//*[@id="about"]//a[@href="'.$href.'" and @target="_blank" and contains(@rel,"noopener")]')->length);
+        }
+        self::assertStringContainsString(AppInfo::LICENSE, $xpath->evaluate('string(//*[@id="about"])'));
+        self::assertStringContainsString('Proudly vibe-coded.', $xpath->evaluate('string(//*[@id="about"])'));
+        self::assertSame('/settings', $xpath->evaluate('string(//form[@method="post"]/@action)'));
+        self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $xpath->evaluate('string(//input[@name="default_payload"]/@value)'));
         self::assertSame($before, $this->rows());
     }
 

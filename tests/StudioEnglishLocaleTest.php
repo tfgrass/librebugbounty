@@ -2,6 +2,7 @@
 
 namespace App\Tests;
 
+use App\AppInfo;
 use App\Entity\Domain;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
@@ -66,6 +67,8 @@ final class StudioEnglishLocaleTest extends DatabaseTestCase
             self::assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'), $path);
             $xpath = $this->xpath($response->getContent());
             self::assertSame('en', $xpath->evaluate('string(/html/@lang)'), $path);
+            self::assertSame(AppInfo::RELEASE_NAME, trim($xpath->evaluate('string(//*[contains(concat(" ", normalize-space(@class), " "), " studio-brand-tag ")])')), $path);
+            self::assertStringContainsString(AppInfo::RELEASE_NAME, $xpath->evaluate('string(//title)'), $path);
             $visibleText = $this->visibleText($xpath);
             self::assertStringContainsString($english, $visibleText, $path);
             self::assertStringNotContainsString($german, $visibleText, $path);
