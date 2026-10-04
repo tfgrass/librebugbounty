@@ -6,7 +6,6 @@
 .studio-settings-shell { min-height: 560px; }
 .studio-settings-main { min-width: 0; min-height: 0; overflow-y: auto; }
 .studio-settings-content { width: min(100%, 1040px); margin: 0 auto; padding: 34px 34px 52px; }
-.studio-settings-version { color: var(--studio-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .studio-settings-heading { margin-bottom: 22px; }
 .studio-settings-heading h1 { margin: 0; font-size: clamp(24px, 4vw, 34px); font-weight: 560; letter-spacing: -.7px; }
 .studio-settings-heading > div > p:last-child { max-width: 620px; margin: 8px 0 0; color: var(--studio-muted); }
@@ -65,7 +64,6 @@
 }
 
 @media (max-width: 479px) {
-  .studio-settings-version { display: none; }
   .studio-settings-content { padding: 22px 16px 34px; }
   .studio-settings-panel { padding: 20px 17px; }
   .studio-settings-actions { align-items: stretch; flex-direction: column; }

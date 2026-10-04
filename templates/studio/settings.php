@@ -22,7 +22,6 @@
   <div class="studio-shell studio-settings-shell">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
-      <span class="studio-settings-version"><?= $escape($t('Version')) ?> <?= $escape($app['version']) ?></span>
     </header>
 
     <main class="studio-settings-main">
