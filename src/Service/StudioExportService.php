@@ -244,13 +244,13 @@ final class StudioExportService
                     'sha256' => $row['sha256'],
                     'createdAt' => $this->date($row['created_at']),
                     'updatedAt' => $this->date($row['updated_at']),
-                    'artifactUrl' => $this->artifactUrl($row['file_path']),
+                    'artifactUrl' => $this->artifactUrl($row['file_path'], $findingId),
                 ];
             }
         } while (count($rows) === self::PAGE_SIZE);
     }
 
-    private function artifactUrl(?string $path): ?string
+    private function artifactUrl(?string $path, string $findingId): ?string
     {
         if ($path === null) {
             return null;
@@ -259,7 +259,9 @@ final class StudioExportService
         if (str_starts_with($path, 'storage/artifacts/')) {
             $path = substr($path, strlen('storage/artifacts/'));
         }
-        if ($path === '' || str_starts_with($path, '/') || preg_match('~(^|/)\.\.(?:/|$)|[\x00-\x1f\x7f]|^[a-zA-Z]:~', $path)) {
+        if ($path === '' || str_starts_with($path, '/')
+            || preg_match('~(^|/)(?:\.{1,2})(?:/|$)|//|[\x00-\x1f\x7f]|^[a-zA-Z]:~', $path)
+            || !str_starts_with($path, $findingId.'/') || strlen($path) <= strlen($findingId) + 1) {
             return null;
         }
 

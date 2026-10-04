@@ -2,7 +2,8 @@
 
 namespace App\Controller;
 
-use App\Service\StudioExportService;
+use App\Service\StudioExportProfileService;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -10,15 +11,13 @@ use Symfony\Component\Routing\Attribute\Route;
 
 final class StudioExportController
 {
-    public function __construct(private readonly StudioExportService $export)
-    {
-    }
+    public function __construct(private readonly StudioExportProfileService $profiles) {}
 
     #[Route(path: '/export', name: 'studio_export', methods: ['GET'])]
     public function index(Request $request): Response
     {
         try {
-            $view = $this->export->get($request->query->all());
+            $view = $this->profiles->get($request->query->all());
         } catch (\InvalidArgumentException $exception) {
             return $this->invalidFilter($exception);
         }
@@ -34,17 +33,42 @@ final class StudioExportController
     public function download(Request $request): Response
     {
         try {
-            [$filter, $includeNotes] = $this->export->parse($request->query->all());
+            $options = $this->profiles->parse($request->query->all());
         } catch (\InvalidArgumentException $exception) {
             return $this->invalidFilter($exception);
         }
 
+        if ($options->profile === 'report') {
+            try {
+                $path = $this->profiles->buildReportArchive($options);
+            } catch (\InvalidArgumentException $exception) {
+                return $this->invalidFilter($exception);
+            }
+            try {
+                $response = new BinaryFileResponse($path, Response::HTTP_OK, [
+                    'Content-Type' => 'application/zip',
+                    'Content-Disposition' => 'attachment; filename="librebugbounty-report-'.(new \DateTimeImmutable())->format('Ymd-His').'.zip"',
+                    'Cache-Control' => 'no-store',
+                    'X-Content-Type-Options' => 'nosniff',
+                ]);
+                $response->deleteFileAfterSend(true);
+                register_shutdown_function(static function () use ($path): void { @unlink($path); });
+            } catch (\Throwable $exception) {
+                @unlink($path);
+                throw $exception;
+            }
+
+            return $response;
+        }
+
+        $filename = $options->profile === 'urls' ? 'librebugbounty-urls-' : 'librebugbounty-findings-';
+
         return new StreamedResponse(
-            fn () => $this->export->writeDownload($filter, $includeNotes, static function (string $part): void { echo $part; }),
+            fn () => $this->profiles->writeJson($options, static function (string $part): void { echo $part; }),
             Response::HTTP_OK,
             [
                 'Content-Type' => 'application/json; charset=UTF-8',
-                'Content-Disposition' => 'attachment; filename="librebugbounty-findings-'.(new \DateTimeImmutable())->format('Ymd-His').'.json"',
+                'Content-Disposition' => 'attachment; filename="'.$filename.(new \DateTimeImmutable())->format('Ymd-His').'.json"',
                 'Cache-Control' => 'no-store',
                 'X-Content-Type-Options' => 'nosniff',
             ],

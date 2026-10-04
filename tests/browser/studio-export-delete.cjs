@@ -73,7 +73,20 @@ async function main() {
     await Promise.all([target.waitForNavigation({ waitUntil: 'domcontentloaded' }), target.locator('[data-export-preview]').click()]);
     assert.equal(new URL(target.url()).pathname, '/export');
   };
-  const download = async (name, expectedIds, target = page) => {
+  const chooseProfile = async (profile, target = page) => {
+    await Promise.all([target.waitForNavigation({ waitUntil: 'domcontentloaded' }), target.locator(`[data-export-profile="${profile}"]`).click()]);
+    assert.equal(new URL(target.url()).pathname, '/export');
+    assert.equal(await target.locator('#export-filters input[name="profile"]').inputValue(), profile);
+    assert.equal(await target.locator('[data-export-profile][aria-current="page"]').count(), 1);
+    assert.equal(await target.locator(`[data-export-profile="${profile}"]`).getAttribute('aria-current'), 'page');
+  };
+  const option = (name, target = page) => target.locator(`#export-filters input[type="checkbox"][name="${name}"]`);
+  const imageCounts = async (available, missing, unknown, target = page) => {
+    for (const [name, value] of Object.entries({ 'screenshot-count': available, 'missing-screenshot-count': missing, 'unknown-basis-count': unknown })) {
+      assert.equal(Number(await target.locator(`[data-export-${name}]`).getAttribute(`data-export-${name}`)), value);
+    }
+  };
+  const saveDownload = async (name, format, filenamePattern, target = page) => {
     const [item, response] = await Promise.all([
       target.waitForEvent('download'),
       target.waitForResponse((response) => new URL(response.url()).pathname === '/export/download'),
@@ -81,12 +94,18 @@ async function main() {
     ]);
     assert.equal(response.status(), 200);
     assert.match(response.headers()['cache-control'], /(?:^|,\s*)no-store(?:,|$)/);
-    assert.match(response.headers()['content-type'], /application\/json/);
-    assert.match(item.suggestedFilename(), /^librebugbounty-findings-\d{8}-\d{6}\.json$/);
-    const filename = path.join(output, name + '.json');
+    assert.match(response.headers()['content-type'], format === 'zip' ? /application\/zip/ : /application\/json/);
+    assert.match(response.headers()['content-disposition'], /attachment/);
+    assert.match(item.suggestedFilename(), filenamePattern);
+    const filename = path.join(output, name + '.' + format);
     await item.saveAs(filename);
+    assert.equal(await item.failure(), null);
+    return { filename, suggestedFilename: item.suggestedFilename() };
+  };
+  const download = async (name, expectedIds, target = page, expectedSchemaVersion = 1) => {
+    const { filename, suggestedFilename } = await saveDownload(name, 'json', /^librebugbounty-findings-\d{8}-\d{6}\.json$/, target);
     const data = JSON.parse(await fs.readFile(filename, 'utf8'));
-    assert.equal(data.schemaVersion, 1);
+    assert.equal(data.schemaVersion, expectedSchemaVersion);
     assert.deepEqual(data.findings.map((finding) => finding.id).sort(), [...expectedIds].sort());
     assert.equal(data.findingCount, expectedIds.length);
     assert.equal(data.domainCount, data.domains.length);
@@ -95,8 +114,26 @@ async function main() {
     assert.equal(serialized.includes('filePath'), false);
     assert.equal(serialized.includes('screenshotPath'), false);
     assert.equal(serialized.includes('retestRuns'), false, 'Export carries current state rather than full technical history');
-    downloads.push({ name, suggestedFilename: item.suggestedFilename(), findings: data.findingCount, domains: data.domainCount });
+    downloads.push({ name, suggestedFilename, findings: data.findingCount, domains: data.domainCount });
     return data;
+  };
+  const downloadUrls = async (name, expectedFindings, target = page) => {
+    const { filename, suggestedFilename } = await saveDownload(name, 'json', /^librebugbounty-urls-\d{8}-\d{6}\.json$/, target);
+    const data = JSON.parse(await fs.readFile(filename, 'utf8'));
+    assert.ok(Array.isArray(data));
+    const byUrl = (first, second) => first.url.localeCompare(second.url);
+    assert.deepEqual([...data].sort(byUrl), expectedFindings.map((finding) => ({ url: finding.url, type: finding.type })).sort(byUrl));
+    for (const finding of data) assert.deepEqual(Object.keys(finding).sort(), ['type', 'url']);
+    downloads.push({ name, profile: 'urls', suggestedFilename, findings: data.length });
+  };
+  const downloadReport = async (name, target = page) => {
+    const { filename, suggestedFilename } = await saveDownload(name, 'zip', /^librebugbounty-report-\d{8}-\d{6}\.zip$/, target);
+    const bytes = await fs.readFile(filename);
+    assert.deepEqual([...bytes.subarray(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+    assert.ok(bytes.length > 100, 'The native report download contains a ZIP archive');
+    // PHP acceptance validates manifest/report/image content and disclosure
+    // options. This browser test verifies the real native download transport.
+    downloads.push({ name, profile: 'report', suggestedFilename, bytes: bytes.length });
   };
   const geometry = async (width, target = page) => {
     await target.waitForLoadState('load');
@@ -131,6 +168,16 @@ async function main() {
     }
     assert.deepEqual(after.files, Object.fromEntries(Object.entries(before.files).filter(([name]) => !name.startsWith(id + '/'))), 'Remove only the selected case artifact directory');
   };
+  const reachableDownload = async (width, height, target = page) => {
+    await target.locator('[data-export-download]').scrollIntoViewIfNeeded();
+    const dimensions = await target.locator('[data-export-download]').evaluate((node) => {
+      const button = node.getBoundingClientRect();
+      const main = document.querySelector('main').getBoundingClientRect();
+      const nav = document.querySelector('.studio-workspace-nav').getBoundingClientRect();
+      return { x: button.x, right: button.right, y: button.y, bottom: button.bottom, visibleTop: Math.max(0, main.top), visibleBottom: Math.min(innerHeight, main.bottom, nav.top) };
+    });
+    assert.ok(dimensions.x >= 0 && dimensions.right <= width + 1 && dimensions.y >= dimensions.visibleTop - 1 && dimensions.bottom <= dimensions.visibleBottom + 1, `${width}×${height}: download is outside the visible content area or behind the dock: ${JSON.stringify(dimensions)}`);
+  };
 
   try {
     const initial = await fixture();
@@ -159,9 +206,7 @@ async function main() {
       await page.locator('.studio-export-additional summary').click();
       await geometry(width);
       await snapshot(`export-${width}x${height}.png`);
-      await page.locator('[data-export-download]').scrollIntoViewIfNeeded();
-      const box = await page.locator('[data-export-download]').boundingBox();
-      assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1, `${width}×${height}: download is unreachable`);
+      await reachableDownload(width, height);
       await page.locator('.studio-export-additional summary').click();
       mark(`${width}×${height}: export filters, preview, download and workspace navigation remain reachable without horizontal overflow`);
     }
@@ -217,6 +262,78 @@ async function main() {
     assert.match(await page.locator('[role="status"]').innerText(), /Keine Fälle/);
     await download('empty-selection', []);
     mark('Archive selection is explicit and empty selections remain usable JSON downloads');
+
+    await getExport('q=Literal&domain=uncontacted.localhost&exact_domain=1&assessment=confirmed');
+    for (const name of ['include_request_data', 'include_assessment', 'include_contact']) {
+      assert.equal(await option(name).isChecked(), true);
+      await option(name).uncheck();
+    }
+    await submitPreview();
+    await counts(1, 1);
+    for (const name of ['include_request_data', 'include_assessment', 'include_contact']) {
+      assert.equal(new URL(page.url()).searchParams.get(name), '0');
+      assert.equal(await option(name).isChecked(), false);
+    }
+    const minimalState = await download('state-disabled-content', [f.keep.id], page, 2);
+    assert.equal(minimalState.exportProfile, 'state');
+    assert.deepEqual(minimalState.options, { includeRequestData: false, includeAssessment: false, includeContact: false, includePrivateNotes: false });
+    for (const name of ['method', 'requestParams', 'payload', 'expectedEvidence', 'lastRetestedAt', 'manualAssessment', 'latestObservation', 'contactedAt', 'sentAt', 'reportedAt', 'reportUrl', 'legacy', 'privateNotes']) {
+      assert.equal(Object.hasOwn(minimalState.findings[0], name), false, `Disabled content ${name} must stay absent`);
+    }
+    mark('Native zero/one content options can disable every default-on state group and remain disabled after preview');
+
+    await option('include_notes').check();
+    await submitPreview();
+    assert.equal(await option('include_notes').isChecked(), true);
+    await chooseProfile('urls');
+    await counts(1, 1);
+    const listUrl = new URL(page.url());
+    assert.equal(listUrl.searchParams.get('q'), 'Literal');
+    assert.equal(listUrl.searchParams.get('domain'), 'uncontacted.localhost');
+    assert.equal(listUrl.searchParams.get('exact_domain'), '1');
+    assert.equal(listUrl.searchParams.get('assessment'), 'confirmed');
+    assert.equal(listUrl.searchParams.get('include_notes'), null);
+    assert.equal(await page.locator('.studio-export-customize').count(), 0);
+    assert.equal(await page.locator('#export-screenshots').count(), 0);
+    await downloadUrls('urls-filtered-profile', initial.snapshot.finding.filter((finding) => finding.id === f.keep.id));
+    mark('URL profile retains all case filters, resets content disclosure and downloads exactly URL/type pairs');
+
+    await chooseProfile('report');
+    await counts(1, 1);
+    assert.equal(await option('include_request_data').isChecked(), true);
+    assert.equal(await option('include_assessment').isChecked(), true);
+    assert.equal(await option('include_contact').isChecked(), false);
+    assert.equal(await option('include_notes').isChecked(), false);
+    assert.equal(await page.locator('#export-screenshots').inputValue(), 'basis');
+    assert.equal(await page.locator('[data-export-format]').getAttribute('data-export-format'), 'zip');
+    await imageCounts(1, 0, 0);
+    await downloadReport('report-filtered-basis');
+    mark('Report profile uses explicit recorded basis by default and the native GET downloads a real ZIP');
+
+    await getExport('profile=report');
+    await counts(7, 4);
+    for (const [mode, available, missing, unknown] of [['basis', 3, 0, 4], ['latest', 2, 1, 4], ['all', 3, 1, 4], ['none', 0, 0, 4]]) {
+      await page.locator('#export-screenshots').selectOption(mode);
+      await submitPreview();
+      assert.equal(await page.locator('#export-screenshots').inputValue(), mode);
+      await imageCounts(available, missing, unknown);
+      assert.equal(await option('include_notes').isChecked(), false);
+    }
+    await downloadReport('report-no-images');
+    mark('Report preview distinguishes basis, newest, all and no images; a missing newest image never silently falls back to the older basis');
+
+    for (const [width, height] of [[960, 600], [375, 844]]) {
+      await page.setViewportSize({ width, height });
+      await getExport('profile=report');
+      await page.locator('.studio-export-additional summary').click();
+      await geometry(width);
+      await snapshot(`report-profile-${width}x${height}.png`);
+      await reachableDownload(width, height);
+      await page.locator('#export-screenshots').scrollIntoViewIfNeeded();
+      const selectBox = await page.locator('#export-screenshots').boundingBox();
+      assert.ok(selectBox && selectBox.x >= 0 && selectBox.x + selectBox.width <= width + 1);
+      mark(`${width}×${height}: profile cards, image counts, content choices and ZIP download fit and remain reachable`);
+    }
     assert.deepEqual((await fixture()).snapshot, initial.snapshot);
     assert.deepEqual((await fixture()).files, initial.files);
     assert.deepEqual(postRequests, []);
@@ -270,6 +387,29 @@ async function main() {
     await getExport('contact=yes', fallback);
     await counts(1, 1, fallback);
     await download('no-js-contacted', [f.contacted.id], fallback);
+    await getExport('q=Literal&domain=uncontacted.localhost&exact_domain=1', fallback);
+    for (const name of ['include_request_data', 'include_assessment', 'include_contact']) await option(name, fallback).uncheck();
+    await option('include_notes', fallback).check();
+    await submitPreview(fallback);
+    const noJsState = await download('no-js-custom-state', [f.keep.id], fallback, 2);
+    assert.equal(noJsState.exportProfile, 'state');
+    assert.deepEqual(noJsState.options, { includeRequestData: false, includeAssessment: false, includeContact: false, includePrivateNotes: true });
+    assert.equal(noJsState.findings[0].privateNotes, f.keep.notes);
+    assert.equal(Object.hasOwn(noJsState.findings[0], 'manualAssessment'), false);
+    await chooseProfile('urls', fallback);
+    await counts(1, 1, fallback);
+    await downloadUrls('no-js-urls', initial.snapshot.finding.filter((finding) => finding.id === f.keep.id), fallback);
+    await chooseProfile('report', fallback);
+    assert.equal(await option('include_notes', fallback).isChecked(), false);
+    await imageCounts(1, 0, 0, fallback);
+    await fallback.locator('#export-screenshots').selectOption('latest');
+    await submitPreview(fallback);
+    await imageCounts(0, 1, 0, fallback);
+    await reachableDownload(640, 900, fallback);
+    await downloadReport('no-js-report-latest-missing', fallback);
+    assert.deepEqual((await fixture()).snapshot, afterJs.snapshot);
+    assert.deepEqual((await fixture()).files, afterJs.files);
+    mark('With JavaScript disabled, profile navigation, checked/unchecked content, image selection and JSON/ZIP downloads all work without mutating fixtures');
     await fallback.goto(base + '/findings/' + f['delete-nojs'].id);
     await fallback.locator('[data-studio-delete-section] summary').click();
     await fallback.locator('[data-studio-delete] [name="confirm_delete"]').check();

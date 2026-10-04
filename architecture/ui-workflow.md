@@ -970,15 +970,15 @@ Belege für den Ausgangspunkt: `src/Service/ExportService.php`,
 Nutzeranregung vom 2026-10-04: Export granularer und konfigurierbar gestalten.
 Als Zwecke nennt er eine kompakte URL-/Schwachstellentyp-Liste für die weitere
 Verwendung bei OpenBugBounty und ein Paket mit Screenshots/Details zum manuellen
-Melden. Das ist ein Entwurfsauftrag; zusätzliche Exportprofile sind noch nicht
-beauftragt oder implementiert. Für die Häufigkeit der einzelnen Zwecke gibt es
-keine Nutzungsdaten; die folgende Priorisierung ist eine Produktempfehlung.
+Melden. Der Nutzer hat den daraus vorgeschlagenen Zuschnitt anschließend mit
+„bau es“ beauftragt. Für die Häufigkeit der einzelnen Zwecke gibt es keine
+Nutzungsdaten; die Priorisierung bleibt eine Produktempfehlung.
 
-**Vorschlag:** Drei verständliche Vorlagen, jeweils mit geeigneten Vorgaben:
+**Festgelegt und umgesetzt:** Drei verständliche Vorlagen mit geeigneten Vorgaben:
 
-| Vorlage | Zweck | Vorgeschlagene Ausgabe |
+| Vorlage | Zweck | Ausgabe |
 | --- | --- | --- |
-| URL-Liste | Manuelle Übernahme oder Weiterverarbeitung von URL und optionalem Schwachstellentyp | Kompaktes neutrales JSON; TXT mit einer URL je Zeile als einfacher zusätzlicher Ausgang |
+| URL-Liste | Manuelle Übernahme oder Weiterverarbeitung von URL und Schwachstellentyp | Kompaktes neutrales JSON mit `{url,type}` je Fall |
 | Meldung mit Belegen | Ausgewählte Befunde mit gespeicherten Nachweisen weitergeben | ZIP mit lesbarem Markdown-Bericht, Fall-/Dateizuordnung und gewählten Screenshot-Dateien |
 | Aktueller Fallstand | Daten für eigene Werkzeuge und Auswertungen | Vorhandenes versioniertes JSON des gespeicherten Fallstands |
 
@@ -989,15 +989,15 @@ manuelle Formularübernahme oder vorhandenes Importwerkzeug/festes Dateiformat?
 Die Antwort steht noch aus. CSV bleibt eine mögliche Ergänzung bei tatsächlichem
 Tabellen-/Importbedarf.
 
-Die UI kann mit einer Vorlage beginnen, danach die vorhandene Fallauswahl und
-„Inhalt anpassen“ zeigen. Anpassung zunächst nach verständlichen Gruppen:
+Die UI beginnt mit einer Vorlage und zeigt danach die vorhandene Fallauswahl und
+„Inhalt anpassen“. Die Anpassung erfolgt nach verständlichen Gruppen:
 Basisdaten, gespeicherte Request-/Nachweisdaten, Bewertung/letzte Beobachtung,
 Kontakt-/Versandstand, Bilder sowie ausdrücklich gewählte private Fallnotizen.
 Vorlagen verändern Inhalt und Verpackung; eine bestehende Filterauswahl wird
-dabei nicht stillschweigend erweitert. Eine Vorschau zeigt ausgewählte Fälle,
-Domains, Bilder und fehlende Dateien sowie ein konkretes Ausgabebeispiel.
+dabei nicht stillschweigend erweitert. Die Vorschau zeigt ausgewählte Fälle,
+Domains, Bilder, fehlende Dateien und unbekannte Bewertungsgrundlagen.
 
-**Belegauswahl ist eine fachliche Entscheidung:** dokumentierter Beleg der
+**Belegauswahl:** dokumentierter Beleg der
 Bewertung, neuester gespeicherter Bildbeleg oder alle gewählten Bildbelege.
 Für eine Meldung wird die dokumentierte Bewertungsgrundlage bevorzugt. Fehlt
 eine solche Zuordnung, muss das sichtbar sein und die Bildauswahl ausdrücklich
@@ -1006,21 +1006,53 @@ ausgegeben werden. Aufnahme- und Ablagezeit sind zu unterscheiden. Urteil und
 neuere abweichende Beobachtung bleiben im Bericht getrennt. Private Fallnotizen
 und als Evidence gespeicherte Notizen benötigen bewusste Auswahl.
 
-**Technischer Befund:** Der aktuelle Webexport liefert lokale Artefaktlinks,
+**Ausgangsbefund vor der Erweiterung:** Der damalige Webexport lieferte lokale Artefaktlinks,
 keine Bilddateien, keine Existenzprüfung der Bilder und keine explizite
 Bewertungsgrundlage. Er liest die Auswahl seitenweise in einem SQLite-Snapshot.
 Für ein Paket sind Dateiinhalt und die zur Einordnung nötigen Aufnahmemetadaten
 zu ergänzen. `EvidenceStorageInterface`/`LocalEvidenceStorage` bieten lesende
 Dateizugriffe; `FindingDetailService` zeigt die vorhandene Zuordnung zu Jobs und
-Bewertungen. Die bisherige JSON-v1-Ausgabe soll einen stabilen Vertrag behalten;
-neue Profile erhalten klar bezeichnete eigene Ausgabeformen. Paketexport bleibt
+Bewertungen. Die bisherige JSON-v1-Ausgabe sollte einen stabilen Vertrag behalten;
+neue Profile sollten klar bezeichnete eigene Ausgabeformen erhalten. Paketexport bleibt
 lesend, verwendet vorhandene lokale Belege und setzt keinen Kontakt-/Versandstand.
 
-Vor einem Umsetzungsplan noch zu klären: tatsächlicher OBB-Weiterverwendungsweg,
-Bericht pro Fall oder zusammengefasst pro Domain, Bildauswahl und erlaubte
-Inhaltsgruppen für die externe Meldung. Ein Paket zur manuellen Weitergabe passt
-zum zurückgestellten Kontaktmanagement; es setzt keine Mailanbindung voraus.
-Die vorhandene Backup-/Restore-Funktion bleibt der Weg zur konsistenten Sicherung.
+**Umgesetzter Vertrag:** Die drei Vorlagen verwenden weiterhin die vollständige
+Bestandsfilterung über alle Listenseiten. Die URL-Liste enthält ausschließlich
+`url` und `type`. Der aktuelle Fallstand behält mit allen Inhaltsgruppen den
+bisherigen JSON-v1-Vertrag; einzelne Gruppen können weggelassen werden. Das
+Meldungspaket enthält einen gemeinsamen Markdown-Bericht, ein strukturiertes
+Manifest und je nach Auswahl die dokumentierte Bewertungsgrundlage, das neueste,
+alle oder keine gespeicherten Screenshotdateien. Request-/PoC-Daten,
+Bewertung/Beobachtung, Kontakt/Versand und private Notizen sind getrennt wählbar;
+Notizen bleiben standardmäßig aus.
+
+Die dokumentierte Bildgrundlage stammt nur aus der aktuellen, zur gespeicherten
+Bewertung passenden Historie und ihrer neuesten Sichtungsbestätigung. Fehlt sie,
+wird kein neueres Bild als Ersatz ausgegeben. Die Vorschau zählt nach Pfad,
+Lesbarkeit und Größe voraussichtlich beifügbare sowie fehlende Dateien; das
+Paket prüft zusätzlich Hash und Bildformat. Manifest und Bericht benennen
+ausgelassene Dateien und Fälle ohne bekannte Grundlage. Ablage- und bekannte
+Aufnahmezeit bleiben getrennt. Das ZIP liest Artefakte ausschließlich über den
+konfigurierten Evidence-Speicher, verwendet bereinigte Archivnamen und gibt keine
+internen Dateipfade aus. Der Ablauf ist lesend und löst weder Recheck noch
+Screenshotauftrag, Kontakt oder Versandmarker aus.
+Dateipfade müssen zum ausgewählten Fall gehören. Vor dem Beifügen werden ein
+vorhandener gespeicherter SHA-256-Wert und das tatsächliche Bildformat geprüft;
+GIF, JPEG, PNG und WebP sind erlaubt. Ein Bild ist auf 25 MiB und die Summe der
+für ein Paket geprüften Bilddaten auf 512 MiB begrenzt. Ausgelassene Dateien bleiben mit einem
+konkreten Grund in Manifest und Bericht sichtbar. Reduzierte Fallstand-Exporte
+verwenden einen eigenen, selbstbeschreibenden JSON-v2-Vertrag; nur der
+vollständige Fallstand delegiert unverändert an JSON v1.
+Das externe Paket ersetzt lokale Finding-/Evidence-UUIDs durch paketlokale
+Fall-/Bildnummern und lässt allgemeine Fall-Lebenszykluszeiten sowie die Filterabfrage
+weg. Gewählte Bewertungs-, Beobachtungs-, Kontakt- und Versandangaben erscheinen
+sowohl im Manifest als auch im lesbaren Bericht.
+
+Offen bleibt allein der tatsächliche OBB-Weiterverwendungsweg. Bis ein belastbarer
+Importvertrag vorliegt, ist `{url,type}` bewusst eine neutrale JSON-Liste und
+kein behauptetes OBB-Format. Ein TXT-/CSV-Format kann bei einem konkreten Bedarf
+ergänzt werden. Die vorhandene Backup-/Restore-Funktion bleibt der Weg zur
+konsistenten Sicherung.
 
 ### Vorgeschlagene Arbeitsfolge bis zum MVP-Release
 
@@ -1100,6 +1132,12 @@ ausschließlich zugehörige Domains, getrennte manuelle/technische Felder sowie
 Belegmetadaten mit relativen Artefaktlinks. Private Fallnotizen fehlen standardmäßig.
 Die Ausgabe liest Fall- und Evidence-Seiten unter einer lesenden
 SQLite-Transaktion; Datensätze und Bilddateien bleiben erhalten.
+Darauf aufbauend sind jetzt drei Zweckvorlagen umgesetzt: neutrale URL-/Typ-
+Liste, vollständiger JSON-v1-Fallstand beziehungsweise reduzierter JSON-v2-
+Fallstand und ein ZIP-Meldungspaket. Das Paket enthält Markdown, Manifest und
+wahlweise gespeicherte Bilder; lokale Datenbankkennungen und allgemeine
+Fall-Lebenszykluszeiten werden nicht in den externen Bericht übernommen. Bildpfade bleiben an den Fall
+gebunden, und Hash-/Formatfehler werden ohne Dateiinhalt ausgewiesen.
 
 Im Studio-Inspector ist „Fall endgültig löschen“ in einem eigenen ausklappbaren
 Bereich erreichbar. Das native Formular verlangt ein bewusst gesetztes
@@ -1121,20 +1159,22 @@ Vorhandene technische Dienste und Endpunkte wurden dabei nicht erweitert.
 Einstellungen, Credits/Info und vollständiger Legacy-Abbau bleiben Punkt 3.
 
 **Abnahme des aktuellen Arbeitsbaums:** `ddev exec php vendor/bin/phpunit`
-besteht mit **231 Tests / 3.567 Assertions**. Die neuen Exportprüfungen umfassen
-7 Tests / 319 Assertions, die Studio-Löschprüfungen 5 / 66 und die geänderte
+besteht mit **247 Tests / 4.100 Assertions**. Die drei Exportprüfungen umfassen
+23 Tests / 852 Assertions, die Studio-Löschprüfungen 5 / 66 und die geänderte
 Bestands-/Routenabnahme 8 / 439. Geprüft sind unter anderem Auswahl über mehr als
 100 Fälle und Belege, unbekannte Domains, Notizen nur nach ausdrücklicher Auswahl,
-lesende GET-Aufrufe, Aufräumen der Transaktion bei Schreibfehlern sowie erhaltene
-Daten bei fehlender Löschbestätigung und vollständige abhängige Löschung.
+v1-/v2-Vertrag, ZIP-Inhalte, Bildgrundlage, Pfadbindung, Hash-/Formatprüfung,
+lesende GET-Aufrufe, Tempdatei-Cleanup sowie erhaltene Daten bei fehlender
+Löschbestätigung und vollständige abhängige Löschung.
 
-`tests/browser/studio-export-delete.cjs` besteht mit **16 Browserprüfungen und
-8 tatsächlichen JSON-Downloads**. Die Abnahme umfasst fünf Fenstergrößen von
+`tests/browser/studio-export-delete.cjs` besteht mit **23 Browserprüfungen und
+15 tatsächlichen JSON-/ZIP-Downloads**. Die Abnahme umfasst Fenstergrößen von
 375 × 844 bis 1440 × 900 einschließlich 960 × 600, übernommene Bestandsfilter,
-Downloads nach noch nicht angewendeten Formularänderungen und Bedienung ohne
-JavaScript. Ein beim kurzen Fenster gefundener Fehler der fest positionierten
-Exportvorschau ist behoben; der Download bleibt durch normales Scrollen erreichbar.
-Die sechs Arbeitsbereichslinks passen auch im Falldetail bei 375 Pixeln Breite.
+alle drei Profile und vier Bildmodi, Inhaltsgruppen, Downloads nach noch nicht
+angewendeten Formularänderungen und Bedienung ohne JavaScript. URL-JSON und drei
+Report-ZIPs wurden über den echten Browserdownload geprüft. Der Download bleibt
+durch normales Scrollen oberhalb der Navigation erreichbar; die sechs
+Arbeitsbereichslinks passen auch im Falldetail bei 375 Pixeln Breite.
 
 Die Browserabnahme verwendet den eigenen gesperrten Fixture-Router
 `tests/Support/studio_export_delete_browser_router.php`, eine frische temporäre

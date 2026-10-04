@@ -14,6 +14,26 @@ $hasAdditionalFilters = $filter->exactDomain || $filter->event !== '' || $filter
 $hasLegacyFilters = $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '';
 $formatNumber = static fn (int $value): string => number_format($value, 0, ',', '.');
 $returnPath = $view->inventoryPath;
+$profile = $view->profile;
+$profileOptions = [
+    'urls' => ['title' => 'URL-Liste', 'description' => 'URLs und Befundtypen kompakt zur weiteren Übernahme.', 'format' => 'JSON'],
+    'state' => ['title' => 'Aktueller Fallstand', 'description' => 'Falldaten und Belegverweise für deine Weiterverarbeitung.', 'format' => 'JSON'],
+    'report' => ['title' => 'Meldung mit Belegen', 'description' => 'Lesbarer Bericht mit ausgewählten lokalen Screenshots.', 'format' => 'ZIP'],
+];
+$profileUrl = static fn (string $value): string => '/export?'.http_build_query($view->filterQuery + ['profile' => $value], '', '&', PHP_QUERY_RFC3986);
+$contentGroups = [
+    'include_request_data' => ['label' => 'Request- und PoC-Daten', 'hint' => 'Methode, Parameter, Kennzeichen und erwarteter Befund.', 'enabled' => $view->includeRequestData],
+    'include_assessment' => ['label' => 'Bewertung und technische Beobachtung', 'hint' => 'Manuelles Urteil und gespeicherte technische Ergebnisse.', 'enabled' => $view->includeAssessment],
+    'include_contact' => ['label' => 'Kontakt und Versand', 'hint' => 'Gespeicherte Kontakt- und Versandzeitpunkte.', 'enabled' => $view->includeContact],
+];
+$screenshotLabels = ['basis' => 'Beleg meiner Bewertung', 'latest' => 'Neuester gespeicherter Bildbeleg', 'all' => 'Alle gespeicherten Bildbelege', 'none' => 'Keine Bilddateien'];
+$screenshotHints = [
+    'basis' => 'Nur ausdrücklich zur aktuellen Bewertung oder ihrer späteren Sichtung aufgezeichnete Bildbelege. Ohne bekannte Bildgrundlage wird kein anderes Bild eingesetzt.',
+    'latest' => 'Der neueste gespeicherte Screenshot jedes Falls nach Aufnahmezeit, bei unbekannter Aufnahmezeit nach Ablagezeit. Seine Auswahl bedeutet nicht, dass dieses Bild manuell beurteilt wurde.',
+    'all' => 'Alle gespeicherten Screenshotbelege der ausgewählten Fälle.',
+    'none' => 'Bericht und Metadaten ohne angehängte Bilddateien.',
+];
+$downloadFormat = strtoupper($view->downloadFormat);
 ?>
 <!doctype html>
 <html lang="de">
@@ -39,11 +59,22 @@ $returnPath = $view->inventoryPath;
     <main class="studio-export-main" id="export">
       <div class="studio-export-content">
         <div class="studio-export-heading">
-          <div><p class="studio-eyebrow">DATEN MITNEHMEN</p><h1>Export</h1><p>Wähle deine Fälle und lade ihren aktuellen Stand als JSON herunter.</p></div>
+          <div><p class="studio-eyebrow">DATEN MITNEHMEN</p><h1>Export</h1><p>Wähle den Zweck, deine Fälle und die Inhalte, die du mitnehmen möchtest.</p></div>
           <span class="studio-export-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg></span>
         </div>
 
+        <section class="studio-export-presets" aria-labelledby="export-presets-title">
+          <h2 id="export-presets-title">Wofür möchtest du exportieren?</h2>
+          <nav class="studio-export-profiles" aria-label="Exportvorlage">
+            <?php foreach ($profileOptions as $value => $option): ?>
+              <a class="studio-export-profile" href="<?= $escape($profileUrl($value)) ?>" data-export-profile="<?= $escape($value) ?>"<?= $profile === $value ? ' aria-current="page"' : '' ?>><span class="studio-export-profile-title"><?= $escape($option['title']) ?><span class="studio-export-profile-format"><?= $escape($option['format']) ?></span></span><span class="studio-export-profile-description"><?= $escape($option['description']) ?></span></a>
+            <?php endforeach; ?>
+          </nav>
+          <p class="studio-export-hint">Vorlagen übernehmen die angewendeten Fallfilter und setzen die Inhaltsoptionen neu. Private Fallnotizen sind dabei ausgeschaltet.</p>
+        </section>
+
         <form class="studio-export-layout" id="export-filters" method="get" action="/export">
+          <input type="hidden" name="profile" value="<?= $escape($profile) ?>">
           <section class="studio-export-panel studio-export-selection" aria-labelledby="export-selection-title">
             <div class="studio-export-panel-heading"><h2 id="export-selection-title">Auswahl</h2><a class="studio-export-text-link" href="/export">Zurücksetzen</a></div>
             <label class="studio-export-field studio-export-scope">Bereich
@@ -116,22 +147,56 @@ $returnPath = $view->inventoryPath;
           </section>
 
           <section class="studio-export-panel studio-export-preview" aria-labelledby="export-preview-title">
-            <div class="studio-export-panel-heading"><div><p class="studio-eyebrow">EXPORTVORSCHAU</p><h2 id="export-preview-title">Deine Auswahl</h2></div><span class="studio-export-format">JSON</span></div>
+            <div class="studio-export-panel-heading"><div><p class="studio-eyebrow">EXPORTVORSCHAU</p><h2 id="export-preview-title"><?= $escape($profileOptions[$profile]['title']) ?></h2></div><span class="studio-export-format" data-export-format="<?= $escape($view->downloadFormat) ?>"><?= $escape($downloadFormat) ?></span></div>
             <p class="studio-export-current-scope" data-export-scope="<?= $escape($filter->scope) ?>"><?= $escape($scopeLabels[$filter->scope]) ?></p>
             <dl class="studio-export-counts">
               <div><dt>Fälle</dt><dd data-export-finding-count="<?= $escape($view->findingCount) ?>"><?= $escape($formatNumber($view->findingCount)) ?></dd></div>
               <div><dt>Domains</dt><dd data-export-domain-count="<?= $escape($view->domainCount) ?>"><?= $escape($formatNumber($view->domainCount)) ?></dd></div>
             </dl>
-            <p class="studio-export-hint">Zähler für die angewendeten Filter. Aktualisiere die Vorschau nach Filteränderungen.</p>
+            <?php if ($profile === 'report'): ?>
+              <dl class="studio-export-image-counts" aria-label="Bildauswahl für die Meldung">
+                <div><dt>Voraussichtlich beifügbare Bilder</dt><dd data-export-screenshot-count="<?= $escape($view->screenshotCount) ?>"><?= $escape($formatNumber($view->screenshotCount)) ?></dd></div>
+                <div><dt>Nicht beigefügte Bilddateien</dt><dd data-export-missing-screenshot-count="<?= $escape($view->missingScreenshotCount) ?>"><?= $escape($formatNumber($view->missingScreenshotCount)) ?></dd></div>
+                <div><dt>Fälle ohne bekannte Bildgrundlage der Bewertung</dt><dd data-export-unknown-basis-count="<?= $escape($view->unknownBasisCount) ?>"><?= $escape($formatNumber($view->unknownBasisCount)) ?></dd></div>
+              </dl>
+            <?php endif; ?>
+            <p class="studio-export-hint">Zähler für die angewendete Auswahl.<?= $profile === 'report' ? ' Die Vorschau prüft Bildpfad, Lesbarkeit und Größe; Hash und tatsächliches Bildformat werden beim Download geprüft.' : '' ?> Aktualisiere die Vorschau nach Änderungen an Filtern oder Inhalten.</p>
             <?php if ($view->findingCount === 0): ?><p class="studio-export-empty" role="status">Keine Fälle für diese Auswahl. Passe den Bereich oder die Filter an.</p><?php endif; ?>
             <?php if ($hasLegacyFilters): ?><p class="studio-export-empty">Diagnosefilter aktiv. Die historische Herkunft der Altwerte bleibt unklar.</p><?php endif; ?>
             <a class="studio-export-text-link studio-export-inventory-link" href="<?= $escape($view->inventoryPath) ?>">Auswahl im Bestand ansehen <span aria-hidden="true">↗</span></a>
 
-            <div class="studio-export-contents"><h3>Das ist enthalten</h3><ul><li>Aktueller Fallstand und manuelle Bewertung</li><li>Letzte technische Beobachtung</li><li>Kontakt- und Versandstand</li><li>Belegverweise und Dateimetadaten</li></ul><p>Bilddateien und vollständige Verläufe sind separat im Projekt gespeichert.</p></div>
+            <?php if ($profile === 'urls'): ?>
+              <div class="studio-export-contents"><h3>Das ist enthalten</h3><p>Eine kompakte JSON-Liste mit URL und gespeichertem Befundtyp je Fall.</p></div>
+            <?php else: ?>
+              <fieldset class="studio-export-customize">
+                <legend>Inhalt anpassen</legend>
+                <p class="studio-export-hint">URL, Titel, Befundtyp und Schweregrad bilden die Fallübersicht.<?= $profile === 'report' ? ' Das Meldungspaket verwendet neutrale Fallnummern.' : '' ?> Wähle die zusätzlichen Angaben selbst.</p>
+                <div class="studio-export-content-options">
+                  <?php foreach ($contentGroups as $name => $group): ?>
+                    <input type="hidden" name="<?= $escape($name) ?>" value="0">
+                    <label class="studio-export-option" for="export-<?= $escape($name) ?>"><input type="checkbox" name="<?= $escape($name) ?>" value="1" id="export-<?= $escape($name) ?>"<?= $group['enabled'] ? ' checked' : '' ?>><span><?= $escape($group['label']) ?><small><?= $escape($group['hint']) ?></small></span></label>
+                  <?php endforeach; ?>
+                </div>
 
-            <label class="studio-export-notes" for="export-include-notes"><input type="checkbox" name="include_notes" value="1" id="export-include-notes"<?= $view->includePrivateNotes ? ' checked' : '' ?>><span>Private Fallnotizen einschließen<small>Nur nach deiner ausdrücklichen Auswahl.</small></span></label>
-            <button class="studio-export-button studio-export-button-primary" type="submit" formaction="/export/download" data-export-download><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg>JSON herunterladen</button>
-            <p class="studio-export-download-hint">Der Download verwendet die gewählten Filter.</p>
+                <?php if ($profile === 'report'): ?>
+                  <label class="studio-export-field studio-export-screenshots" for="export-screenshots">Screenshots
+                    <select name="screenshots" id="export-screenshots" aria-describedby="export-screenshot-hint"><?php foreach ($screenshotLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $view->screenshotMode === $value ? ' selected' : '' ?>><?= $escape($label) ?></option><?php endforeach; ?></select>
+                  </label>
+                  <p class="studio-export-hint" id="export-screenshot-hint"><?= $escape($screenshotHints[$view->screenshotMode]) ?></p>
+                <?php endif; ?>
+
+                <input type="hidden" name="include_notes" value="0">
+                <label class="studio-export-notes" for="export-include-notes"><input type="checkbox" name="include_notes" value="1" id="export-include-notes"<?= $view->includePrivateNotes ? ' checked' : '' ?>><span>Private Fallnotizen einschließen<small>Nur nach deiner ausdrücklichen Auswahl.</small></span></label>
+              </fieldset>
+
+              <div class="studio-export-contents studio-export-package-description"><h3>Dein Download</h3>
+                <?php if ($profile === 'report'): ?><p>ZIP mit lesbarem Bericht, strukturierten Falldaten und den verfügbaren ausgewählten Bildern. Fehlende, veränderte, ungültige oder zu große Dateien und unbekannte Bewertungsgrundlagen werden ausgewiesen.</p>
+                <?php else: ?><p>JSON mit dem aktuellen Fallstand, den gewählten Angaben und Belegverweisen. Bilddateien sind darin nicht enthalten.</p><?php endif; ?>
+                <p>Vollständige Verläufe bleiben separat im Projekt gespeichert.</p>
+              </div>
+            <?php endif; ?>
+            <button class="studio-export-button studio-export-button-primary" type="submit" formaction="/export/download" data-export-download><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg><?= $escape($downloadFormat) ?> herunterladen</button>
+            <p class="studio-export-download-hint">Der Download verwendet die gewählten Filter und Inhaltsoptionen.</p>
           </section>
         </form>
       </div>

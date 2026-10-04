@@ -351,11 +351,18 @@ Die Fallaktionen und eine schlichte JSON-Export-Seite wurden anschließend mit
 „1. 2. umsetzen“ beauftragt. Export, bestätigtes Löschen und der Abbau der
 Betreiber-Priorität sind implementiert; neue Recheck-/Screenshot-Ausführung
 gegen beliebige externe PoC-Ziele wurde in diesem Paket nicht angebunden.
-**Export-Erweiterung im Sparring:** Der Nutzer erwägt konfigurierbare URL-/Typ-Listen
-für OBB und Meldungspakete mit Bildern/Details. Vorschlag sind Zweckvorlagen plus
-Inhaltsgruppen; OBB-Zielformat, Berichtszuschnitt und Belegauswahl sind offen.
-Zusätzliche Profile sind noch nicht umgesetzt.
-[Befunde und Vorschlag](ui-workflow.md#export-nach-verwendungszweck-sparring-zur-erweiterung).
+**Export nach Verwendungszweck umgesetzt:** `/export` bietet eine neutrale
+URL-/Typ-Liste, einen konfigurierbaren aktuellen Fallstand und ein ZIP-
+Meldungspaket mit Markdown-Bericht, Manifest und gewählten lokalen Screenshots.
+Request-/PoC-, Bewertungs-/Beobachtungs-, Kontakt-/Versanddaten und private
+Notizen lassen sich getrennt wählen. Als Bilder stehen die dokumentierte
+Bewertungsgrundlage, das neueste Bild, alle Bilder oder keine zur Wahl; fehlende
+Dateien und unbekannte Grundlagen werden ausgewiesen. Fallfremde Pfade,
+Hashabweichungen und nicht unterstützte Bilddateien werden nicht beigefügt. Das
+bisherige vollständige JSON-v1-Profil bleibt kompatibel; reduzierte Fallstände
+verwenden den selbstbeschreibenden Vertrag v2. Ein konkretes OpenBugBounty-Importformat ist
+weiterhin nicht belegt und wird deshalb nicht behauptet.
+[Festlegung und Umsetzung](ui-workflow.md#export-nach-verwendungszweck-sparring-zur-erweiterung).
 Zum Polish aus Punkt 3 konkretisiert der Nutzer die Autorenzeile als
 **Tom Graßmann IT+Media** mit „Proudly vibe-coded“, `grassmann-it.de` und dem
 aktuellen OBB-Profil `grassmann-it`; Lizenzinfo und Einstellungen sind vorgeschlagen.
@@ -382,8 +389,8 @@ Einführung und vollständige Galerie bleiben Optionen. Isolierte Demo-Daten
 ersetzen den bisher am Live-Bestand arbeitenden Screenshotweg. Neue README/Bilder
 sind noch nicht umgesetzt.
 [Befunde und vorgeschlagener Umfang](ui-workflow.md#readme-und-öffentliche-release-darstellung).
-Die aktuelle isolierte Abnahme besteht mit **231 PHP-Tests / 3.567 Assertions**
-und **16 Browserprüfungen / 8 JSON-Downloads**, einschließlich schmaler/kurzer
+Die aktuelle isolierte Abnahme besteht mit **247 PHP-Tests / 4.100 Assertions**
+und **23 Browserprüfungen / 15 JSON-/ZIP-Downloads**, einschließlich schmaler/kurzer
 Fenster und Bedienung ohne JavaScript. Details stehen im
 [Umsetzungsstand](ui-workflow.md#umsetzungsstand-nach-dem-auftrag-für-punkt-1-und-2).
 Eine Upgrade-Anleitung ist ausdrücklich kein

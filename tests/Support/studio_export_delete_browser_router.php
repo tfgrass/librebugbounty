@@ -91,9 +91,20 @@ if (PHP_SAPI === 'cli') {
         $manager->persist($job);
         $assessment = new App\Entity\FindingAssessment($finding, 'confirmed', null, new DateTimeImmutable('2026-10-03T08:02:00+00:00'), $run->getId(), $evidence->getId(), ['fixture' => true]);
         $manager->persist($assessment);
-        $acknowledgement = new App\Entity\FindingReviewAcknowledgement($finding, $assessment->getId(), 'confirmed', [], [], $run->getId(), $evidence->getId(), ['fixture' => true]);
+        $acknowledgement = new App\Entity\FindingReviewAcknowledgement($finding, 'history:'.$assessment->getId(), 'confirmed', [], [], $run->getId(), $evidence->getId(), ['fixture' => true]);
         $manager->persist($acknowledgement);
     }
+    // A later stored screenshot reference deliberately has no file. The report
+    // must distinguish the recorded assessment image from the newest image,
+    // rather than choosing an older available image as an implicit fallback.
+    $missingPath = 'storage/artifacts/'.$keep->getId().'/missing image.png';
+    $missingImage = (new App\Entity\Evidence())->setFinding($keep)->setKind('screenshot')->setFilePath($missingPath);
+    $manager->persist($missingImage);
+    $manager->persist((new App\Entity\ScreenshotJob())->setFinding($keep)->setUrl($keep->getUrl())
+        ->setStatus('available')->setScreenshotPath($missingPath)
+        ->setRequestedAt(new DateTimeImmutable('2026-10-03T10:00:00+00:00'))
+        ->setFinishedAt(new DateTimeImmutable('2026-10-03T10:00:02+00:00'))
+        ->setCapturedAt(new DateTimeImmutable('2026-10-03T10:00:01+00:00')));
     $manager->flush();
     $fixtures['_expect'] = [
         'findings' => 8,

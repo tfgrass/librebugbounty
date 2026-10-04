@@ -62,14 +62,31 @@ notes/assessment/contact, and returning to the list. Global counters open the
 exact counted selection and reset other filters. At half width the rows become
 cards with independent assessment, observation, and contact fields.
 
-Open `/export` for a JSON download of the current case state. The inventory's
-export link carries its complete filter selection across all list pages.
-Preview case/domain counts, choose an archive scope explicitly when needed, and
-include private case notes only by opting in. The download keeps manual
-assessment, latest technical observation, contact, and first-send timestamps
-separate, and includes evidence metadata and local artifact links. Image files
-and complete histories are outside this export; consistent database/artifact
-backups remain available separately.
+Open `/export` for three purpose-based downloads. **URL list** produces compact
+JSON entries containing only `url` and `type` for manual transfer or another
+tool. **Current case state** keeps the versioned JSON export and lets you omit
+request/PoC data, assessment/observation data, or contact/send data. **Report
+with evidence** creates a ZIP containing `report.md`, `manifest.json`, and the
+selected local screenshots. You can choose the image recorded as the current
+assessment basis, the newest image, every image, or no images. Missing files and
+cases without a documented image basis are identified in the preview and
+package rather than silently replaced. Files are bound to their selected case,
+checked against a stored hash when present, and accepted only as GIF, JPEG, PNG,
+or WebP. Each image is capped at 25 MiB, and one package inspects at most
+512 MiB of image data; skipped files retain a precise reason in the report and
+manifest. The report uses package-local case and image numbers and omits local
+database IDs, general case-lifecycle timestamps, and the originating filter query. Selected
+assessment, observation, contact, and send details appear in both the readable
+report and the manifest.
+
+The inventory's export link carries its complete filter selection across all
+list pages. Preview case, domain, and image counts, and choose an archive scope
+explicitly when needed. Private case notes are included only after opting in.
+Exports read stored data and files; they do not run a retest, capture a new
+screenshot, contact anyone, or change case state. The URL list is a neutral
+format and does not claim compatibility with an undocumented OpenBugBounty
+import contract. Complete histories and consistent database/artifact backups
+remain separate.
 
 The classic overview remains at `/legacy`, with classic details at
 `/legacy/findings/{id}` and settings at `/legacy/settings`.

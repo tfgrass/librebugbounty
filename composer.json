@@ -4,6 +4,7 @@
   "type": "project",
   "license": "proprietary",
   "require": {
+    "ext-zip": "*",
     "php": "^8.3",
     "doctrine/doctrine-bundle": "^2.13",
     "doctrine/doctrine-migrations-bundle": "^3.4",

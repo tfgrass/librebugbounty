@@ -13,6 +13,9 @@ interface EvidenceStorageInterface
 
     public function exists(string $path): bool;
 
+    /** Returns the current byte size, or null when the path is invalid or unreadable. */
+    public function size(string $path): ?int;
+
     public function read(string $path): string;
 
     public function deleteFile(string $path): void;

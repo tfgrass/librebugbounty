@@ -61,6 +61,19 @@ final class LocalEvidenceStorage implements EvidenceStorageInterface
         }
     }
 
+    public function size(string $path): ?int
+    {
+        try {
+            $absolute = $this->resolve($path);
+            clearstatcache(true, $absolute);
+            $size = is_file($absolute) && is_readable($absolute) ? @filesize($absolute) : false;
+
+            return $size === false ? null : $size;
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
     public function read(string $path): string
     {
         $absolute = $this->resolve($path);
