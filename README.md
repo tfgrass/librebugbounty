@@ -11,43 +11,6 @@ The application runs on your own machine and is designed for a focused,
 single-user workflow. LibreBugBounty is independent of and not affiliated with
 OpenBugBounty.
 
-## Your local workspace
-
-<p align="center">
-  <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="LibreBugBounty manual screenshot review" width="100%"></a>
-</p>
-<p align="center">
-  <a href="docs/screenshots/inventory.png"><img src="docs/screenshots/inventory.png" alt="LibreBugBounty case inventory" width="32%"></a>
-  <a href="docs/screenshots/finding-detail.png"><img src="docs/screenshots/finding-detail.png" alt="LibreBugBounty finding detail" width="32%"></a>
-  <a href="docs/screenshots/statistics.png"><img src="docs/screenshots/statistics.png" alt="LibreBugBounty activity statistics" width="32%"></a>
-</p>
-
-Capture new URLs on Intake, choose the contents of a report on Export, and
-explore the project history in About:
-
-<p align="center">
-  <a href="docs/screenshots/intake.png"><img src="docs/screenshots/intake.png" alt="LibreBugBounty fast URL intake" width="32%"></a>
-  <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="LibreBugBounty configurable report export" width="32%"></a>
-  <a href="docs/screenshots/about.png"><img src="docs/screenshots/about.png" alt="LibreBugBounty About and release highlights" width="32%"></a>
-</p>
-
-## What it does
-
-- Fast URL intake with durable SQLite storage and duplicate detection
-- A persistent Chromium screenshot queue with retained evidence history
-- Image-first manual review with keyboard, touch, and native form controls
-- Separate manual assessments and technical observations, including later
-  contradictions, inconclusive results, and errors
-- Searchable case inventory, case notes, evidence, rechecks, and screenshot
-  actions
-- Weekly, monthly, yearly, all-time, and custom activity statistics, grouped by
-  day, week, or month
-- Configurable JSON exports and self-contained ZIP report packages with selected
-  evidence
-- Saved defaults for inventory page size, export profile, and report screenshots
-- Local backups that keep the database and artifact tree together
-- English and German UI with a language switcher in the header
-
 LibreBugBounty currently concentrates on reflected XSS triage. It does not send
 disclosure emails or submit reports for you.
 
@@ -68,6 +31,81 @@ ddev launch
 the SQLite schema, and starts the supervised screenshot worker. Repeated starts
 preserve existing data. The database and evidence live below `storage/`, which
 is ignored by Git.
+
+## First use
+
+Follow the workflow below. Each screenshot opens at full size.
+
+### Capture URLs
+
+**Intake** saves candidate URLs to SQLite, detects duplicates, and queues
+Chromium screenshots in the background. Cases are stored before browser work
+begins, and earlier evidence stays available.
+
+<p>
+  <a href="docs/screenshots/intake.png"><img src="docs/screenshots/intake.png" alt="Intake saves candidate URLs and queues their screenshots" width="680"></a>
+</p>
+
+### Review screenshots
+
+**Review** puts the evidence first: the image fits the window, details scroll
+separately, and the arrow-key controls stay visible. Choose **Vulnerable** or
+**Not vulnerable**, skip, open the stored PoC URL, or go back and reset a decision.
+An optional decision pause helps prevent accidental classifications.
+
+<p>
+  <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="Review shows the stored screenshot beside details and keyboard actions" width="680"></a>
+</p>
+
+### Manage cases
+
+**Inventory** searches domains, titles, and URLs. Filter cases, record private
+notes and completed contacts, and request rechecks or new screenshots.
+Opening a case never starts browser work.
+
+<p>
+  <a href="docs/screenshots/inventory.png"><img src="docs/screenshots/inventory.png" alt="Inventory lists cases with search, filters, and their current state" width="680"></a>
+</p>
+
+Case details keep your manual assessment separate from technical observations,
+including later contradictions, inconclusive results, and errors. Earlier
+images and judgments remain in the history.
+[View the case-detail screenshot](docs/screenshots/finding-detail.png).
+
+### Follow activity
+
+**Statistics** shows **Reported**, **Contacted**, and **Fixed** across weekly,
+monthly, yearly, all-time, or custom periods. Group activity by day, week, or
+month, then open the matching cases from the chart or calendar.
+
+<p>
+  <a href="docs/screenshots/statistics.png"><img src="docs/screenshots/statistics.png" alt="Statistics compares reported, contacted, and fixed cases over time" width="680"></a>
+</p>
+
+### Prepare reports
+
+**Export** creates a compact URL list, current case-state JSON, or a
+self-contained ZIP report. The default is **Report with evidence**: a readable
+report, structured domains and cases, and the latest stored screenshot per
+case. Choose the contents and image selection before downloading; private
+notes are included only when explicitly selected.
+
+<p>
+  <a href="docs/screenshots/export.png"><img src="docs/screenshots/export.png" alt="Export previews a ZIP report with selected case data and screenshots" width="680"></a>
+</p>
+
+### Choose defaults and find help
+
+**Settings & info** saves your preferred inventory page size, export profile,
+and report screenshot selection, alongside the intake marker, browser timeout,
+and review pause. Explicit choices on the workspace pages take precedence.
+[View the Settings & info screenshot](docs/screenshots/about.png).
+
+The interface starts in English. Choose **DE** or **EN** in the header; your
+browser remembers the language across pages and visits. The [user guide](USAGE.md)
+covers controls, settings, and troubleshooting. The guide, installation,
+backup instructions, [changelog](CHANGELOG.md), and [roadmap](ROADMAP.md) are
+also available offline under **Settings & info → Documentation**.
 
 ## Upgrade an existing workspace
 
@@ -96,37 +134,6 @@ reset. If you need to return to the earlier application version, use the
 matching pre-upgrade database and artifact snapshot in a separate recovery
 directory. Follow [the recovery instructions](BACKUP.md#restore-into-a-new-directory)
 instead of pointing older application code at an upgraded database.
-
-## First use
-
-1. Add a candidate URL on **Intake**. Its screenshot is queued in the background.
-2. Open **Review** to inspect the evidence and choose **Vulnerable** or
-   **Not vulnerable**.
-3. Use **Inventory** to find cases, record notes and completed contacts, and
-   inspect their history.
-4. Follow **Reported**, **Contacted**, and **Fixed** together in **Statistics**.
-5. Choose a URL list, case-state JSON, or a report package on **Export**.
-
-New installations open Export with **Report with evidence**: a ZIP containing
-the report, case data, and the latest stored screenshot for each case. Set your
-preferred page size, export profile, and screenshot selection in **Settings &
-info**; explicit choices on Inventory or Export take precedence. Private notes
-remain an explicit choice for each export.
-
-Opening a case never starts browser work. A screenshot is evidence; your manual
-assessment and a saved technical observation remain separate.
-
-The interface starts in English. Choose **DE** or **EN** in the header to switch
-languages; your browser remembers the choice across pages and visits.
-
-Read the [user guide](USAGE.md) for review controls, export choices, settings,
-and troubleshooting. The [changelog](CHANGELOG.md) covers the first Scriptor
-prototype, the Scriptor Quo refinements, and the new Moneta workspace.
-These English documents are also available inside the application under
-**Settings & info → Documentation**, including when you are offline.
-
-The [roadmap](ROADMAP.md) outlines future directions for database portability,
-email workflows, and optional AI assistance.
 
 ## Backup
 

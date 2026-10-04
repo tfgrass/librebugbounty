@@ -37,9 +37,9 @@ final class DocumentationServiceTest extends TestCase
         self::assertGreaterThan(0, $pages['usage']->query('//table//th')->length);
         self::assertStringContainsString('Moneta', $pages['readme']->evaluate('string(//h1)'));
         self::assertStringContainsString('Tom Graßmann', $pages['readme']->evaluate('string(//body)'));
-        self::assertSame(7, $pages['readme']->query('//img[starts-with(@src,"/docs/images/")]')->length);
+        self::assertSame(5, $pages['readme']->query('//img[starts-with(@src,"/docs/images/")]')->length);
         self::assertSame(7, $pages['readme']->query('//a[starts-with(@href,"/docs/images/")]')->length);
-        self::assertSame(6, $pages['readme']->query('//img[@class="studio-doc-image-thumbnail"]')->length);
+        self::assertSame(0, $pages['readme']->query('//img[@class="studio-doc-image-thumbnail"]')->length);
         foreach ($pages['readme']->query('//img') as $image) {
             $path = $documentation->imagePath(substr($image->getAttribute('src'), strlen('/docs/images/')));
             $size = getimagesize($path);
