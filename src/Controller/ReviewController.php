@@ -100,6 +100,7 @@ final class ReviewController
 
     private function render(ReviewQueueView $view, ?string $message = null, ?string $error = null, array $submitted = [], int $status = Response::HTTP_OK): Response
     {
+        $isFirstStart = $view->detail === null && $this->findings->count([]) === 0;
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);

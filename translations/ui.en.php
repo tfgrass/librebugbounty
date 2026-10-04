@@ -1,6 +1,15 @@
 <?php
 
 return [
+    'Noch keine Fälle' => 'No cases yet',
+    'Erfasse eine URL. Der Screenshot entsteht im Hintergrund; danach kannst du den Fall prüfen, bewerten und exportieren.' => 'Add a URL. Its screenshot is captured in the background; then you can review, assess, and export the case.',
+    'Keine aktiven Fälle' => 'No active cases',
+    'Deine gespeicherten Fälle liegen im Archiv. Du kannst sie dort ansehen oder eine neue URL erfassen.' => 'Your stored cases are in the archive. You can view them there or add a new URL.',
+    'Archiv ansehen' => 'View archive',
+    'Deine Statistik beginnt mit der ersten URL' => 'Your statistics start with the first URL',
+    'Erfasse Fälle, halte Kontakte fest und bewerte Ergebnisse. Deine Aktivität erscheint hier, sobald sie gespeichert ist.' => 'Add cases, record contacts, and assess results. Your activity appears here as soon as it is saved.',
+    'Noch keine Fälle zum Exportieren' => 'No cases to export yet',
+    'Erfasse zuerst eine URL. Später kannst du hier Falldaten und ausgewählte Bildbelege mitnehmen.' => 'Start by adding a URL. Later, you can export case data and selected image evidence here.',
     ' · aktiv' => ' · active',
     ' · mit dem gewählten TLD-Filter' => ' · with the selected TLD filter',
     ' · Neueste zuerst' => ' · Newest first',

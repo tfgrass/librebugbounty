@@ -129,6 +129,13 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
           <span class="stat-heading-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 19h16M6 15V9m6 6V4m6 11v-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
         </div>
 
+        <?php if ($isFirstStart): ?>
+          <section class="studio-first-start" data-first-start aria-labelledby="statistics-first-start-title">
+            <div><h2 id="statistics-first-start-title"><?= $escape($t('Deine Statistik beginnt mit der ersten URL')) ?></h2><p><?= $escape($t('Erfasse Fälle, halte Kontakte fest und bewerte Ergebnisse. Deine Aktivität erscheint hier, sobald sie gespeichert ist.')) ?></p></div>
+            <a data-first-start-cta href="/"><?= $escape($t('URL erfassen')) ?> <span aria-hidden="true">↗</span></a>
+          </section>
+        <?php endif; ?>
+
         <section class="stat-controls" aria-label="<?= $escape($t('Zeitraum und Filter')) ?>">
           <div class="stat-period-bar">
             <nav class="stat-segmented" aria-label="<?= $escape($t('Statistikzeitraum')) ?>">

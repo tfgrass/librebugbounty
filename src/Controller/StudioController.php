@@ -91,6 +91,7 @@ final class StudioController
                 'Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store',
             ]);
         }
+        $isFirstStart = $this->findings->count([]) === 0;
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
         ob_start();

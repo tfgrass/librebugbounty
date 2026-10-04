@@ -19,6 +19,9 @@ $scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(arra
 $exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
 $hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '';
+$hasSelectionFilters = $hasAdditionalFilters || $filter->q !== '' || $filter->assessment !== '' || $filter->observation !== '' || $filter->contact !== '';
+$isFirstStart = $view->stats['active']['count'] + $view->stats['discarded']['count'] === 0;
+$isArchivedOnly = !$isFirstStart && $view->stats['active']['count'] === 0 && $filter->scope === 'active' && !$hasSelectionFilters;
 $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet', 'contacted' => 'Als kontaktiert markiert', 'confirmed' => 'Erstmals manuell bestätigt', 'fixed' => 'Erstmals manuell behoben'];
 ?>
 <!doctype html>
@@ -169,7 +172,24 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
             </li>
           <?php endforeach; ?>
         </ol>
-        <?php if ($view->findings === []): ?><div class="studio-list-empty"><h3><?= $escape($t('Keine Fälle für diese Filter')) ?></h3><p><?= $escape($t('Ändere den Suchtext oder die Filter. Verworfene Fälle findest du im Archiv.')) ?></p><a class="studio-list-button" href="<?= $escape($path) ?>"><?= $escape($t('Filter zurücksetzen')) ?></a></div><?php endif; ?>
+        <?php if ($view->findings === []): ?>
+          <div class="studio-list-empty" data-list-empty-state="<?= $isFirstStart ? 'first-start' : ($isArchivedOnly ? 'archived' : 'filtered') ?>"<?= $isFirstStart ? ' data-first-start' : '' ?>>
+            <?php if ($isFirstStart): ?>
+              <h3><?= $escape($t('Noch keine Fälle')) ?></h3>
+              <p><?= $escape($t('Erfasse eine URL. Der Screenshot entsteht im Hintergrund; danach kannst du den Fall prüfen, bewerten und exportieren.')) ?></p>
+              <a class="studio-list-button studio-list-button-primary" data-first-start-cta href="/"><?= $escape($t('URL erfassen')) ?></a>
+            <?php elseif ($isArchivedOnly): ?>
+              <h3><?= $escape($t('Keine aktiven Fälle')) ?></h3>
+              <p><?= $escape($t('Deine gespeicherten Fälle liegen im Archiv. Du kannst sie dort ansehen oder eine neue URL erfassen.')) ?></p>
+              <a class="studio-list-button" href="/findings?scope=discarded"><?= $escape($t('Archiv ansehen')) ?></a>
+              <a class="studio-list-button studio-list-button-primary" href="/"><?= $escape($t('URL erfassen')) ?></a>
+            <?php else: ?>
+              <h3><?= $escape($t('Keine Fälle für diese Filter')) ?></h3>
+              <p><?= $escape($t('Ändere den Suchtext oder die Filter. Verworfene Fälle findest du im Archiv.')) ?></p>
+              <a class="studio-list-button" href="<?= $escape($path) ?>"><?= $escape($t('Filter zurücksetzen')) ?></a>
+            <?php endif; ?>
+          </div>
+        <?php endif; ?>
 
         <div class="studio-list-pagination">
           <form method="get" action="<?= $escape($path) ?>" id="page-size-form" class="studio-list-page-size">

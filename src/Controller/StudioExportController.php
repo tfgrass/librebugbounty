@@ -2,6 +2,8 @@
 
 namespace App\Controller;
 
+use App\Dto\FindingReadFilter;
+use App\Repository\FindingReadRepository;
 use App\Service\StudioExportProfileService;
 use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -15,6 +17,7 @@ final class StudioExportController
     public function __construct(
         private readonly StudioExportProfileService $profiles,
         private readonly UiTranslator $i18n,
+        private readonly FindingReadRepository $findings,
     ) {}
 
     #[Route(path: '/export', name: 'studio_export', methods: ['GET'])]
@@ -25,6 +28,7 @@ final class StudioExportController
         } catch (\InvalidArgumentException $exception) {
             return $this->invalidFilter($exception);
         }
+        $isFirstStart = $this->findings->count(new FindingReadFilter(scope: 'all')) === 0;
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);

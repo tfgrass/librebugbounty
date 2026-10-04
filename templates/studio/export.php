@@ -62,6 +62,13 @@ $downloadFormat = strtoupper($view->downloadFormat);
           <span class="studio-export-mark" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg></span>
         </div>
 
+        <?php if ($isFirstStart): ?>
+          <section class="studio-first-start" data-first-start aria-labelledby="export-first-start-title">
+            <div><h2 id="export-first-start-title"><?= $escape($t('Noch keine Fälle zum Exportieren')) ?></h2><p><?= $escape($t('Erfasse zuerst eine URL. Später kannst du hier Falldaten und ausgewählte Bildbelege mitnehmen.')) ?></p></div>
+            <a data-first-start-cta href="/"><?= $escape($t('URL erfassen')) ?> <span aria-hidden="true">↗</span></a>
+          </section>
+        <?php endif; ?>
+
         <section class="studio-export-presets" aria-labelledby="export-presets-title">
           <h2 id="export-presets-title"><?= $escape($t('Wofür möchtest du exportieren?')) ?></h2>
           <nav class="studio-export-profiles" aria-label="<?= $escape($t('Exportvorlage')) ?>">
@@ -160,7 +167,7 @@ $downloadFormat = strtoupper($view->downloadFormat);
               </dl>
             <?php endif; ?>
             <p class="studio-export-hint"><?= $escape($t('Zähler für die angewendete Auswahl.')) ?><?= $profile === 'report' ? ' '.$escape($t('Die Vorschau prüft Bildpfad, Lesbarkeit und Größe; Hash und tatsächliches Bildformat werden beim Download geprüft.')) : '' ?> <?= $escape($t('Aktualisiere die Vorschau nach Änderungen an Filtern oder Inhalten.')) ?></p>
-            <?php if ($view->findingCount === 0): ?><p class="studio-export-empty" role="status"><?= $escape($t('Keine Fälle für diese Auswahl. Passe den Bereich oder die Filter an.')) ?></p><?php endif; ?>
+            <?php if ($view->findingCount === 0 && !$isFirstStart): ?><p class="studio-export-empty" role="status"><?= $escape($t('Keine Fälle für diese Auswahl. Passe den Bereich oder die Filter an.')) ?></p><?php endif; ?>
             <?php if ($hasLegacyFilters): ?><p class="studio-export-empty"><?= $escape($t('Diagnosefilter aktiv. Die Herkunft der historischen Werte bleibt unklar.')) ?></p><?php endif; ?>
             <a class="studio-export-text-link studio-export-inventory-link" href="<?= $escape($view->inventoryPath) ?>"><?= $escape($t('Auswahl im Bestand ansehen')) ?> <span aria-hidden="true">↗</span></a>
 

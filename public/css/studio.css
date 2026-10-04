@@ -129,6 +129,12 @@
 .studio-empty p { margin: 0 0 5px; color: #bdc6d2; font-size: 14px; }
 .studio-empty span { font-size: 12px; }
 .studio-empty > :first-child:not(svg) { margin-top: 0; }
+.studio-first-start { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; margin: 0 0 24px; padding: 22px 24px; border: 1px solid #3c516d; border-radius: 9px; background: linear-gradient(135deg, #202d3e, #1a222c); }
+.studio-first-start > div { flex: 1 1 260px; min-width: 0; }
+.studio-first-start h2 { margin: 0 0 7px; color: #e0e9f6; font-size: 17px; font-weight: 550; }
+.studio-first-start p { margin: 0; color: #aebed3; font-size: 12px; line-height: 1.6; }
+.studio-first-start > a { display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid #536d91; border-radius: 5px; background: #2c405c; color: #e0ebfb; font-size: 12px; white-space: nowrap; }
+.studio-first-start > a:hover { background: #375273; border-color: #7a9ac2; }
 
 .studio-entry { display: flex; align-items: flex-start; gap: 12px; padding: 9px 0 8px; border-top: 1px solid #30363e; }
 .studio-entry-main { flex: 1; min-width: 0; }
