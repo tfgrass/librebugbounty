@@ -44,6 +44,7 @@ explore the project history in About:
   day, week, or month
 - Configurable JSON exports and self-contained ZIP report packages with selected
   evidence
+- Saved defaults for inventory page size, export profile, and report screenshots
 - Local backups that keep the database and artifact tree together
 - English and German UI with a language switcher in the header
 
@@ -105,6 +106,12 @@ instead of pointing older application code at an upgraded database.
    inspect their history.
 4. Follow **Reported**, **Contacted**, and **Fixed** together in **Statistics**.
 5. Choose a URL list, case-state JSON, or a report package on **Export**.
+
+New installations open Export with **Report with evidence**: a ZIP containing
+the report, case data, and the latest stored screenshot for each case. Set your
+preferred page size, export profile, and screenshot selection in **Settings &
+info**; explicit choices on Inventory or Export take precedence. Private notes
+remain an explicit choice for each export.
 
 Opening a case never starts browser work. A screenshot is evidence; your manual
 assessment and a saved technical observation remain separate.

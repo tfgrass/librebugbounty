@@ -21,6 +21,9 @@
 .studio-settings-panel-heading > svg { color: var(--studio-blue); }
 
 .studio-settings-form { display: grid; gap: 8px; padding-top: 20px; }
+.studio-settings-group { display: grid; gap: 8px; min-width: 0; margin: 10px 0 0; padding: 0 0 18px; border: 0; border-bottom: 1px solid #30363e; }
+.studio-settings-group:last-of-type { padding-bottom: 0; border-bottom: 0; }
+.studio-settings-group legend { margin-bottom: 4px; padding: 0; color: var(--studio-muted); font-size: 11px; font-weight: 600; letter-spacing: .8px; text-transform: uppercase; }
 .studio-settings-form label { display: grid; gap: 3px; margin-top: 8px; color: #e0e6ed; font-size: 13px; font-weight: 600; }
 .studio-settings-form label span { color: var(--studio-muted); font-size: 11px; font-weight: 400; }
 .studio-settings-form input,

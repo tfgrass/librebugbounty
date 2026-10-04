@@ -77,8 +77,10 @@ final class FirstStartWebTest extends DatabaseTestCase
         self::assertSame(0, $xpath->query('//*[@data-first-start]')->length);
         self::assertSame(1, $xpath->query('//*[@data-list-empty-state="archived"]')->length);
         self::assertStringContainsString($locale === 'de' ? 'Keine aktiven Fälle' : 'No active cases', $xpath->evaluate('string(//*[@data-list-empty-state="archived"])'));
-        self::assertSame(1, $xpath->query('//*[@data-list-empty-state="archived"]//a[@href="/findings?scope=discarded"]')->length);
-        $archive = $this->xpath($this->request('/findings?scope=discarded')->getContent());
+        $archivePath = $xpath->evaluate('string(//*[@data-list-empty-state="archived"]//a[starts-with(@href,"/findings?")]/@href)');
+        parse_str((string) parse_url($archivePath, PHP_URL_QUERY), $archiveQuery);
+        self::assertSame(['scope' => 'discarded', 'pageSize' => '10', 'page' => '1'], $archiveQuery);
+        $archive = $this->xpath($this->request($archivePath)->getContent());
         self::assertSame(1, $archive->query('//*[@data-finding-id="'.$finding->getId().'"]')->length);
         foreach (['/statistics', '/export', '/review'] as $path) {
             self::assertSame(0, $this->xpath($this->request($path)->getContent())->query('//*[@data-first-start]')->length, $path);
@@ -96,10 +98,10 @@ final class FirstStartWebTest extends DatabaseTestCase
             $xpath = $this->xpath($this->request($path)->getContent());
             self::assertSame(0, $xpath->query('//*[@data-first-start]')->length, $path);
             self::assertSame(1, $xpath->query('//*[@data-list-empty-state="filtered"]')->length, $path);
-            self::assertSame(1, $xpath->query('//*[@data-list-empty-state="filtered"]//a[@href="/findings"]')->length, $path);
+            self::assertSame(1, $xpath->query('//*[@data-list-empty-state="filtered"]//a[@href="/findings?pageSize=10"]')->length, $path);
             self::assertStringContainsString($locale === 'de' ? 'Keine Fälle für diese Filter' : 'No cases match these filters', $xpath->evaluate('string(//*[@data-list-empty-state="filtered"])'), $path);
         }
-        $reset = $this->xpath($this->request('/findings')->getContent());
+        $reset = $this->xpath($this->request('/findings?pageSize=10')->getContent());
         self::assertSame(1, $reset->query('//*[@data-finding-id="'.$finding->getId().'"]')->length);
         self::assertSame($before, $this->snapshot());
     }

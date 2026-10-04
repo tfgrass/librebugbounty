@@ -20,12 +20,18 @@ final class FindingListService
     public function __construct(
         private readonly FindingReadRepository $findings,
         private readonly ScreenshotJobRepository $screenshotJobs,
+        private readonly SettingsService $settings,
     ) {
     }
 
     /** @param array<string, mixed> $query */
     public function get(array $query, string $path): FindingListView
     {
+        // The saved page size affects the inventory view only. Shared parsing
+        // stays independent of presentation preferences for exports and links.
+        if (!array_key_exists('pageSize', $query)) {
+            $query['pageSize'] = $this->settings->getInventoryPageSize();
+        }
         [$filter, $page, $pageSizeSelection] = $this->parse($query);
         $totalFiltered = $this->findings->count($filter);
         $pageSize = $pageSizeSelection === 'all' ? max(1, $totalFiltered) : (int) $pageSizeSelection;
@@ -49,7 +55,7 @@ final class FindingListService
             $statViews[$name] = [
                 'label' => $stat['label'],
                 'count' => $statCounts[$name],
-                'url' => $path.'?'.http_build_query($this->filterQuery($stat['filter'])),
+                'url' => $path.'?'.http_build_query($this->filterQuery($stat['filter']) + ['pageSize' => $pageSizeSelection]),
             ];
         }
 

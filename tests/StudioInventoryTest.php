@@ -9,6 +9,9 @@ use App\Service\BrowserRetestClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
+use App\Service\FindingListService;
+use App\Service\SettingsService;
+use App\Service\StudioExportService;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -213,6 +216,100 @@ final class StudioInventoryTest extends DatabaseTestCase
             $detailLinks[] = $anchor->getAttribute('href');
         }
         self::assertContains($detailQuery['return_to'], $detailLinks);
+    }
+
+    public function testSavedPageSizeAppliesOnlyWhenAbsentAndSurvivesInventoryNavigation(): void
+    {
+        for ($index = 0; $index < 27; ++$index) {
+            $this->finding('preference-group-'.$index);
+        }
+        $before = $this->snapshot();
+        self::assertCount(10, $this->ids($this->request('/findings')->getContent()));
+        self::assertSame($before, $this->snapshot(), 'Reading an unset preference must not persist a default');
+
+        $settings = self::getContainer()->get(SettingsService::class);
+        $settings->save(['inventory.page_size' => '25']);
+        $before = $this->snapshot();
+        $response = $this->request('/findings?q=preference-group');
+        self::assertSame(200, $response->getStatusCode());
+        $html = $response->getContent();
+        self::assertCount(25, $this->ids($html));
+        self::assertSame(27, $this->resultCount($html));
+        foreach (['finding-filters', 'page-size-form'] as $formId) {
+            self::assertSame('25', $this->formQuery($html, $formId)['pageSize']);
+        }
+        $xpath = $this->xpath($html);
+        foreach ($xpath->query('//a[@data-scope or @data-stat or @data-page]') as $link) {
+            parse_str((string) parse_url($link->getAttribute('href'), PHP_URL_QUERY), $query);
+            self::assertSame('25', $query['pageSize'], $link->getAttribute('href'));
+        }
+        $resetPath = $xpath->evaluate('string(//a[@class="studio-list-reset"]/@href)');
+        self::assertSame('/findings?pageSize=25', $resetPath, 'Reset clears filters while retaining the effective page size');
+        $empty = $this->xpath($this->request('/findings?q=absent-fixture')->getContent());
+        self::assertSame($resetPath, $empty->evaluate('string(//*[@data-list-empty-state="filtered"]//a/@href)'));
+        $nextPath = $xpath->evaluate('string(//a[@data-page="next"]/@href)');
+        $second = $this->request($nextPath)->getContent();
+        self::assertCount(2, $this->ids($second));
+        self::assertSame([], array_intersect($this->ids($html), $this->ids($second)));
+        $detailPath = $this->xpath($second)->evaluate('string((//a[starts-with(@href,"/findings/")])[1]/@href)');
+        parse_str((string) parse_url($detailPath, PHP_URL_QUERY), $detailQuery);
+        self::assertSame($nextPath, $detailQuery['return_to']);
+        $detail = $this->xpath($this->request($detailPath)->getContent());
+        self::assertSame($nextPath, $detail->evaluate('string(//a[contains(@class,"studio-detail-back")]/@href)'));
+        parse_str((string) parse_url($xpath->evaluate('string(//a[@data-export-selection]/@href)'), PHP_URL_QUERY), $exportQuery);
+        self::assertSame(['scope' => 'active', 'q' => 'preference-group'], $exportQuery, 'Export carries filters, never the inventory page size');
+        self::assertSame($before, $this->snapshot());
+
+        $settings->save(['inventory.page_size' => '100']);
+        $before = $this->snapshot();
+        self::assertCount(27, $this->ids($this->request('/findings')->getContent()));
+        self::assertCount(2, $this->ids($this->request($nextPath)->getContent()), 'An existing link must retain its explicit size after the preference changes');
+        foreach (['10' => 10, '25' => 25, '50' => 27, 'all' => 27] as $size => $expectedCount) {
+            $explicit = $this->request('/findings?'.http_build_query(['pageSize' => $size]))->getContent();
+            self::assertCount($expectedCount, $this->ids($explicit));
+            self::assertSame((string) $size, $this->formQuery($explicit, 'page-size-form')['pageSize']);
+        }
+        foreach (['pageSize=', 'pageSize=13', 'pageSize=25e0', 'pageSize%5B%5D=25'] as $query) {
+            self::assertSame(400, $this->request('/findings?'.$query)->getStatusCode(), 'An invalid explicit page size must not fall back to the preference');
+        }
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testInventoryPageSizePreferenceDoesNotChangeSharedParsingOrCompleteExports(): void
+    {
+        for ($index = 0; $index < 27; ++$index) {
+            $this->finding('export-page-size-'.$index);
+        }
+        $settings = self::getContainer()->get(SettingsService::class);
+        $list = self::getContainer()->get(FindingListService::class);
+        $export = self::getContainer()->get(StudioExportService::class);
+        $baseline = null;
+        foreach (['25', '100'] as $size) {
+            $settings->save(['inventory.page_size' => $size]);
+            $before = $this->snapshot();
+            self::assertSame($size, $list->get([], '/findings')->pagination['pageSize']);
+            self::assertSame('10', $list->parse([])[2], 'Shared parse remains independent of display preferences');
+            $view = $export->get(['pageSize' => '10', 'page' => '2']);
+            self::assertSame(27, $view->findingCount);
+            parse_str((string) parse_url($view->downloadPath, PHP_URL_QUERY), $downloadQuery);
+            self::assertArrayNotHasKey('pageSize', $downloadQuery);
+            self::assertArrayNotHasKey('page', $downloadQuery);
+            [$filter, $notes] = $export->parse(['pageSize' => '10', 'page' => '2']);
+            $json = '';
+            $export->writeDownload($filter, $notes, static function (string $chunk) use (&$json): void { $json .= $chunk; });
+            $data = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame(27, $data['findingCount']);
+            self::assertCount(27, $data['findings'], 'Export must contain the entire selection beyond the visible page');
+            self::assertArrayNotHasKey('pageSize', $data['filters']);
+            self::assertArrayNotHasKey('page', $data['filters']);
+            unset($data['generatedAt']);
+            if ($baseline === null) {
+                $baseline = $data;
+            } else {
+                self::assertSame($baseline, $data, 'Changing the inventory preference must leave the export contract and selected records unchanged');
+            }
+            self::assertSame($before, $this->snapshot());
+        }
     }
 
     public function testAssessmentContactAndNoteWritesPreserveOnlyValidatedStudioListContext(): void

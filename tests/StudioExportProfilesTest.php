@@ -98,7 +98,7 @@ final class StudioExportProfilesTest extends DatabaseTestCase
         $this->assessment($finding, $basis);
         $this->entityManager->flush();
         $before = $this->snapshot();
-        $view = self::getContainer()->get(StudioExportProfileService::class)->get(['profile' => 'report']);
+        $view = self::getContainer()->get(StudioExportProfileService::class)->get(['profile' => 'report', 'screenshots' => 'basis']);
         self::assertSame('basis', $view->screenshotMode);
         self::assertSame(1, $view->screenshotCount);
         self::assertSame(0, $view->missingScreenshotCount);
@@ -165,7 +165,7 @@ final class StudioExportProfilesTest extends DatabaseTestCase
         $this->assessment($finding, $basis);
         $this->entityManager->flush();
         self::getContainer()->get(EvidenceStorageInterface::class)->deleteFile($basis->getFilePath());
-        $view = self::getContainer()->get(StudioExportProfileService::class)->get(['profile' => 'report']);
+        $view = self::getContainer()->get(StudioExportProfileService::class)->get(['profile' => 'report', 'screenshots' => 'basis']);
         self::assertSame(0, $view->screenshotCount);
         self::assertSame(1, $view->missingScreenshotCount);
         self::assertSame(0, $view->unknownBasisCount);

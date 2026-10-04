@@ -1,7 +1,7 @@
 /*
  * Local-fixture acceptance using the existing DDEV web and Playwright containers:
- *   ddev exec env STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-export-delete-check php tests/Support/studio_export_delete_browser_router.php init
- *   ddev exec env STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-export-delete-check php -S 0.0.0.0:8094 -t public tests/Support/studio_export_delete_browser_router.php
+ *   docker exec -w /var/www/html -e STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-export-delete-check ddev-librebugbounty-web php tests/Support/studio_export_delete_browser_router.php init
+ *   docker exec -w /var/www/html -e STUDIO_BROWSER_ROOT=/tmp/librebugbounty-studio-export-delete-check ddev-librebugbounty-web php -S 0.0.0.0:8094 -t public tests/Support/studio_export_delete_browser_router.php
  * In another terminal:
  *   docker exec --user "$(id -u):$(id -g)" ddev-librebugbounty-playwright node /var/www/html/tests/browser/studio-export-delete.cjs
  * Use a fresh fixture root each time. Stop only this temporary PHP server afterward.
@@ -190,7 +190,15 @@ async function main() {
     assert.equal(await page.locator('#export-scope').inputValue(), 'active');
     assert.equal(await page.locator('#export-include-notes').isChecked(), false);
     assert.equal(await page.locator('#export-filters').getAttribute('method'), 'get');
-    const active = await download('active-default', f._expect.activeIds);
+    assert.equal(await page.locator('#export-filters input[name="profile"]').inputValue(), 'report');
+    assert.equal(await page.locator('[data-export-profile="report"]').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('#export-screenshots').inputValue(), 'latest');
+    assert.equal(await page.locator('[data-export-format]').getAttribute('data-export-format'), 'zip');
+    await imageCounts(2, 1, 4);
+    await downloadReport('factory-report-latest');
+    mark('First export starts with a report ZIP and latest screenshots, keeps private notes off and reports missing newest images');
+    await chooseProfile('state');
+    const active = await download('active-state', f._expect.activeIds);
     assert.deepEqual(active.domains.map((domain) => domain.hostname).sort(), f._expect.activeDomains);
     assert.equal(active.includePrivateNotes, false);
     assert.ok(active.findings.every((finding) => !Object.hasOwn(finding, 'privateNotes')));
@@ -199,7 +207,7 @@ async function main() {
     assert.equal(retained.latestObservation.result, 'inconclusive');
     assert.equal(retained.title, f.keep.title);
     assert.ok(retained.evidence[0].artifactUrl.startsWith('/artifacts/'));
-    mark('Default JSON downloads all active cases with separate assessment/observation, scoped domains and metadata; private notes are absent');
+    mark('Explicit state JSON downloads all active cases with separate assessment/observation, scoped domains and metadata; private notes are absent');
 
     for (const [width, height] of [[1440, 900], [960, 900], [960, 600], [640, 900], [375, 844]]) {
       await page.setViewportSize({ width, height });
@@ -211,14 +219,14 @@ async function main() {
       mark(`${width}×${height}: export filters, preview, download and workspace navigation remain reachable without horizontal overflow`);
     }
     await page.setViewportSize({ width: 960, height: 900 });
-    await getExport();
+    await getExport('profile=state');
     await page.locator('#export-filters [name="contact"]').selectOption('yes');
     await counts(7, 4);
     const contacted = await download('contacted-current-form', [f.contacted.id]);
     assert.equal(contacted.filters.contact, 'yes');
     mark('Download uses current form filters even before refreshing the preview');
 
-    await getExport('page=3&pageSize=10&assessment=confirmed&domain=uncontacted.localhost&exact_domain=1');
+    await getExport('profile=state&page=3&pageSize=10&assessment=confirmed&domain=uncontacted.localhost&exact_domain=1');
     await counts(3, 1);
     const confirmedIds = ['delete-js', 'delete-nojs', 'keep'].map((key) => f[key].id);
     await download('confirmed-all-pages', confirmedIds);
@@ -237,7 +245,7 @@ async function main() {
     await counts(3, 1);
     mark('Inventory selection and footer carry all selected filters to export without pagination');
 
-    await getExport();
+    await getExport('profile=state');
     await page.locator('#export-filters [name="q"]').fill('Literal');
     await page.locator('#export-include-notes').check();
     const withNotes = await download('explicit-private-notes', [f.keep.id]);
@@ -246,7 +254,7 @@ async function main() {
     assert.equal(await page.evaluate(() => window.__exportFixtureExecuted), undefined);
     mark('Private multiline notes enter JSON only through the explicit checkbox');
 
-    await getExport();
+    await getExport('profile=state');
     await page.locator('#export-scope').selectOption('all');
     await submitPreview();
     await counts(8, 5);
@@ -263,7 +271,7 @@ async function main() {
     await download('empty-selection', []);
     mark('Archive selection is explicit and empty selections remain usable JSON downloads');
 
-    await getExport('q=Literal&domain=uncontacted.localhost&exact_domain=1&assessment=confirmed');
+    await getExport('profile=state&q=Literal&domain=uncontacted.localhost&exact_domain=1&assessment=confirmed');
     for (const name of ['include_request_data', 'include_assessment', 'include_contact']) {
       assert.equal(await option(name).isChecked(), true);
       await option(name).uncheck();
@@ -304,11 +312,17 @@ async function main() {
     assert.equal(await option('include_assessment').isChecked(), true);
     assert.equal(await option('include_contact').isChecked(), false);
     assert.equal(await option('include_notes').isChecked(), false);
-    assert.equal(await page.locator('#export-screenshots').inputValue(), 'basis');
+    assert.equal(await page.locator('#export-screenshots').inputValue(), 'latest');
     assert.equal(await page.locator('[data-export-format]').getAttribute('data-export-format'), 'zip');
+    await imageCounts(0, 1, 0);
+    await downloadReport('report-filtered-latest-missing');
+    mark('Switching to report initializes latest images and exposes a missing newest image without substituting the assessment basis');
+    await page.locator('#export-screenshots').selectOption('basis');
+    await submitPreview();
+    assert.equal(await page.locator('#export-screenshots').inputValue(), 'basis');
     await imageCounts(1, 0, 0);
     await downloadReport('report-filtered-basis');
-    mark('Report profile uses explicit recorded basis by default and the native GET downloads a real ZIP');
+    mark('An explicitly selected assessment basis overrides latest and the native GET downloads a real ZIP');
 
     await getExport('profile=report');
     await counts(7, 4);
@@ -384,10 +398,10 @@ async function main() {
     const noJs = await browser.newContext({ viewport: { width: 640, height: 900 }, javaScriptEnabled: false, acceptDownloads: true });
     await protect(noJs);
     const fallback = await noJs.newPage();
-    await getExport('contact=yes', fallback);
+    await getExport('profile=state&contact=yes', fallback);
     await counts(1, 1, fallback);
     await download('no-js-contacted', [f.contacted.id], fallback);
-    await getExport('q=Literal&domain=uncontacted.localhost&exact_domain=1', fallback);
+    await getExport('profile=state&q=Literal&domain=uncontacted.localhost&exact_domain=1', fallback);
     for (const name of ['include_request_data', 'include_assessment', 'include_contact']) await option(name, fallback).uncheck();
     await option('include_notes', fallback).check();
     await submitPreview(fallback);
@@ -401,6 +415,10 @@ async function main() {
     await downloadUrls('no-js-urls', initial.snapshot.finding.filter((finding) => finding.id === f.keep.id), fallback);
     await chooseProfile('report', fallback);
     assert.equal(await option('include_notes', fallback).isChecked(), false);
+    assert.equal(await fallback.locator('#export-screenshots').inputValue(), 'latest');
+    await imageCounts(0, 1, 0, fallback);
+    await fallback.locator('#export-screenshots').selectOption('basis');
+    await submitPreview(fallback);
     await imageCounts(1, 0, 0, fallback);
     await fallback.locator('#export-screenshots').selectOption('latest');
     await submitPreview(fallback);

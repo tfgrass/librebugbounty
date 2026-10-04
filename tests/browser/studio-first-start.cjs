@@ -133,8 +133,9 @@ async function main() {
         assert.equal(await block.count(), 1);
         assert.ok((await block.innerText()).includes(locale === 'de' ? 'Keine aktiven Fälle' : 'No active cases'));
         await screenshot(`${locale}-archived-only.png`);
-        const archive = block.locator('a[href="/findings?scope=discarded"]');
+        const archive = block.locator('a[href^="/findings?scope=discarded&"]');
         assert.equal(await archive.count(), 1);
+        assert.match(await archive.getAttribute('href'), /[?&]pageSize=10(?:&|$)/);
         await navigate(archive);
         assert.equal(await page.locator(`[data-finding-id="${finding.id}"]`).count(), 1);
         mark(`archived/${locale}: empty active inventory links to the retained archive and never claims the workspace is new`);
@@ -159,10 +160,10 @@ async function main() {
         const filtered = page.locator('[data-list-empty-state="filtered"]');
         assert.equal(await filtered.count(), 1, route);
         assert.ok((await filtered.innerText()).includes(locale === 'de' ? 'Keine Fälle für diese Filter' : 'No cases match these filters'));
-        assert.equal(await filtered.locator('a[href="/findings"]').count(), 1);
+        assert.equal(await filtered.locator('a[href="/findings?pageSize=10"]').count(), 1);
       }
       if (scenario === 'queued') {
-        await navigate(page.locator('[data-list-empty-state="filtered"] a[href="/findings"]'));
+        await navigate(page.locator('[data-list-empty-state="filtered"] a[href="/findings?pageSize=10"]'));
         assert.equal(await page.locator(`[data-finding-id="${finding.id}"]`).count(), 1);
       }
       mark(`${scenario}/${locale}: filters with no matches offer a reset without misleading first-use guidance`);

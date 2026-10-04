@@ -29,6 +29,9 @@ final class SettingsController
             defaultPayload: (string) ($settings['intake.default_payload'] ?? SettingsService::DEFAULTS['intake.default_payload']),
             reviewTimeout: (string) $this->settings->getReviewScanTimeoutMs(),
             reviewDecisionDelay: (string) $this->settings->getReviewDecisionDelaySeconds(),
+            inventoryPageSize: $this->settings->getInventoryPageSize(),
+            exportProfile: $this->settings->getExportProfile(),
+            exportScreenshotMode: $this->settings->getExportScreenshotMode(),
             errors: [],
             message: $request->query->getString('message') ?: null,
         );
@@ -38,22 +41,38 @@ final class SettingsController
     public function save(Request $request): Response
     {
         $parameters = $request->request->all();
-        $hasReviewDecisionDelay = array_key_exists('review_decision_delay_seconds', $parameters);
+        $optional = [
+            'review_decision_delay_seconds' => (string) $this->settings->getReviewDecisionDelaySeconds(),
+            'inventory_page_size' => $this->settings->getInventoryPageSize(),
+            'export_profile' => $this->settings->getExportProfile(),
+            'export_screenshot_mode' => $this->settings->getExportScreenshotMode(),
+        ];
         if (!is_string($parameters['default_payload'] ?? null)
             || !is_string($parameters['review_timeout_ms'] ?? null)
-            || ($hasReviewDecisionDelay && !is_string($parameters['review_decision_delay_seconds']))
         ) {
             return new Response($this->i18n->trans('Ungültige Einstellungsangaben.'), Response::HTTP_BAD_REQUEST, [
                 'Content-Type' => 'text/plain; charset=UTF-8',
                 'Cache-Control' => 'no-store',
             ]);
         }
+        foreach (array_keys($optional) as $field) {
+            if (array_key_exists($field, $parameters)) {
+                if (!is_string($parameters[$field])) {
+                    return new Response($this->i18n->trans('Ungültige Einstellungsangaben.'), Response::HTTP_BAD_REQUEST, [
+                        'Content-Type' => 'text/plain; charset=UTF-8',
+                        'Cache-Control' => 'no-store',
+                    ]);
+                }
+                $optional[$field] = trim($parameters[$field]);
+            }
+        }
 
         $defaultPayload = trim($parameters['default_payload']);
         $reviewTimeout = trim($parameters['review_timeout_ms']);
-        $reviewDecisionDelay = $hasReviewDecisionDelay
-            ? trim($parameters['review_decision_delay_seconds'])
-            : (string) $this->settings->getReviewDecisionDelaySeconds();
+        $reviewDecisionDelay = $optional['review_decision_delay_seconds'];
+        $inventoryPageSize = $optional['inventory_page_size'];
+        $exportProfile = $optional['export_profile'];
+        $exportScreenshotMode = $optional['export_screenshot_mode'];
         $errors = [];
         if ($defaultPayload === '') {
             $errors['default_payload'] = $this->i18n->trans('Das Standardkennzeichen darf nicht leer sein.');
@@ -69,17 +88,33 @@ final class SettingsController
         if (!in_array($reviewDecisionDelay, ['0', '3', '5'], true)) {
             $errors['review_decision_delay_seconds'] = $this->i18n->trans('Wähle für die Entscheidungspause Aus, 3 oder 5 Sekunden.');
         }
+        if (!in_array($inventoryPageSize, ['10', '25', '50', '100'], true)) {
+            $errors['inventory_page_size'] = $this->i18n->trans('Wähle 10, 25, 50 oder 100 Fälle pro Seite.');
+        }
+        if (!in_array($exportProfile, ['urls', 'state', 'report'], true)) {
+            $errors['export_profile'] = $this->i18n->trans('Wähle eine verfügbare Exportvorlage.');
+        }
+        if (!in_array($exportScreenshotMode, ['basis', 'latest', 'all', 'none'], true)) {
+            $errors['export_screenshot_mode'] = $this->i18n->trans('Wähle eine verfügbare Screenshot-Auswahl.');
+        }
 
         if ($errors !== []) {
-            return $this->render($request, $defaultPayload, $reviewTimeout, $reviewDecisionDelay, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+            return $this->render($request, $defaultPayload, $reviewTimeout, $reviewDecisionDelay, $inventoryPageSize, $exportProfile, $exportScreenshotMode, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         $values = [
             'intake.default_payload' => $defaultPayload,
             'review.scan_timeout_ms' => (string) (int) $reviewTimeout,
         ];
-        if ($hasReviewDecisionDelay) {
-            $values['review.decision_delay_seconds'] = $reviewDecisionDelay;
+        foreach ([
+            'review_decision_delay_seconds' => 'review.decision_delay_seconds',
+            'inventory_page_size' => 'inventory.page_size',
+            'export_profile' => 'export.default_profile',
+            'export_screenshot_mode' => 'export.screenshot_mode',
+        ] as $field => $key) {
+            if (array_key_exists($field, $parameters)) {
+                $values[$key] = $optional[$field];
+            }
         }
         $this->settings->save($values);
 
@@ -92,6 +127,9 @@ final class SettingsController
         string $defaultPayload,
         string $reviewTimeout,
         string $reviewDecisionDelay,
+        string $inventoryPageSize,
+        string $exportProfile,
+        string $exportScreenshotMode,
         array $errors,
         ?string $message,
         int $status = Response::HTTP_OK,

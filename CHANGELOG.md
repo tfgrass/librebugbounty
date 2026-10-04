@@ -35,9 +35,12 @@ from URL intake to evidence, manual assessment, and export.
 - Configurable exports: compact URL lists, current case-state JSON, and ZIP
   report packages with selected image evidence. Private notes are included only
   when explicitly selected.
-- Settings for the intake marker, browser time limit, and an optional three- or
-  five-second review decision pause. About includes the version, release
-  history, author, and license information.
+- Six settings for the intake marker, browser time limit, optional three- or
+  five-second review decision pause, inventory page size, export profile, and
+  report screenshot selection. Inventory starts with 10 cases per page; Export
+  starts with a ZIP report and the latest stored image per case. Explicit page
+  or URL selections override the saved defaults. About includes the version,
+  release history, author, and license information.
 - English UI by default with a persistent German/English switcher in the header.
 - English documentation available inside the application, including offline
   access to the user guide, installation, backup, changelog, and roadmap.
@@ -48,6 +51,10 @@ from URL intake to evidence, manual assessment, and export.
 
 ### Changed
 
+- Export-page download links carry the effective profile and screenshot choice.
+  Existing direct download links retain their previous defaults: current-state
+  JSON without a profile, and assessment-basis images for a report without an
+  explicit screenshot choice. Private notes remain an explicit per-export choice.
 - Faster SQLite inventory reads through combined counters and indexed ordering,
   with fewer repeated reads and calculations for statistics and review notices.
 - DDEV startup installs locked dependencies, initializes or migrates the schema,

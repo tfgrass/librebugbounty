@@ -35,6 +35,7 @@ final class StudioExportProfileService
         private readonly StudioExportService $stateExport,
         private readonly ReviewSchema $reviewSchema,
         private readonly UiTranslator $i18n,
+        private readonly SettingsService $settings,
     ) {
         $this->findings = new FindingReadRepository($connection);
     }
@@ -42,6 +43,14 @@ final class StudioExportProfileService
     /** @param array<string, mixed> $query */
     public function get(array $query): StudioExportView
     {
+        // Preferences initialize the editor only. The download parser keeps its
+        // established defaults, and the editor's download path pins its choices.
+        if (!array_key_exists('profile', $query)) {
+            $query['profile'] = $this->settings->getExportProfile();
+        }
+        if (is_string($query['profile']) && trim($query['profile']) === 'report' && !array_key_exists('screenshots', $query)) {
+            $query['screenshots'] = $this->settings->getExportScreenshotMode();
+        }
         $options = $this->parse($query);
         [$selection, $images] = $this->connection->transactional(function () use ($options): array {
             return [

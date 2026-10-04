@@ -43,6 +43,11 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame(3, $xpath->query('//select[@name="review_decision_delay_seconds"]/option')->length);
             self::assertSame(1, $xpath->query('//label[@for="settings-review-decision-delay"]')->length);
             self::assertSame('settings-review-decision-delay-hint', $xpath->evaluate('string(//select[@name="review_decision_delay_seconds"]/@aria-describedby)'));
+            self::assertSame('10', $xpath->evaluate('string(//select[@name="inventory_page_size"]/option[@selected]/@value)'));
+            self::assertSame('report', $xpath->evaluate('string(//select[@name="export_profile"]/option[@selected]/@value)'));
+            self::assertSame('latest', $xpath->evaluate('string(//select[@name="export_screenshot_mode"]/option[@selected]/@value)'));
+            self::assertSame(0, $xpath->query('//select[@name="inventory_page_size"]/option[@value="all"]')->length);
+            self::assertSame(4, $xpath->query('//fieldset/legend')->length);
             self::assertSame(AppInfo::HOMEPAGE, $xpath->evaluate('string(//a[normalize-space(.)="'.AppInfo::AUTHOR.' ↗"]/@href)'));
             self::assertSame(AppInfo::OPENBUGBOUNTY_URL, $xpath->evaluate('string(//a[contains(normalize-space(.),"'.AppInfo::OPENBUGBOUNTY_PROFILE.'")]/@href)'));
             self::assertStringContainsString(AppInfo::VERSION, $xpath->evaluate('string(//body)'));
@@ -145,7 +150,12 @@ final class StudioSettingsTest extends DatabaseTestCase
     public function testValidSubmissionSavesBothValuesTogetherAndUsesPostRedirectGet(): void
     {
         $settings = self::getContainer()->get(SettingsService::class);
-        $settings->save(['review.decision_delay_seconds' => '3']);
+        $settings->save([
+            'review.decision_delay_seconds' => '3',
+            'inventory.page_size' => '25',
+            'export.default_profile' => 'urls',
+            'export.screenshot_mode' => 'none',
+        ]);
         $response = $this->request('/settings', 'POST', [
             'default_payload' => '  RELEASE-MARKER  ',
             'review_timeout_ms' => '120000',
@@ -158,6 +168,9 @@ final class StudioSettingsTest extends DatabaseTestCase
         self::assertSame('RELEASE-MARKER', $settings->getDefaultPayload());
         self::assertSame(120000, $settings->getReviewScanTimeoutMs());
         self::assertSame(3, $settings->getReviewDecisionDelaySeconds());
+        self::assertSame('25', $settings->getInventoryPageSize());
+        self::assertSame('urls', $settings->getExportProfile());
+        self::assertSame('none', $settings->getExportScreenshotMode());
         self::assertSame(200, $this->request($response->headers->get('Location'))->getStatusCode());
     }
 
@@ -212,6 +225,79 @@ final class StudioSettingsTest extends DatabaseTestCase
             ]);
             self::assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
             self::assertSame($before, $this->rows());
+        }
+    }
+
+    #[DataProvider('aboutLocales')]
+    public function testAllPreferencesSaveTogetherAndRenderAfterReloadInBothLanguages(string $locale): void
+    {
+        self::getContainer()->set(UiTranslator::class, new UiTranslator($locale));
+        foreach ([['10', 'report', 'latest'], ['25', 'state', 'basis'], ['50', 'urls', 'all'], ['100', 'report', 'none']] as [$size, $profile, $screenshots]) {
+            $response = $this->request('/settings', 'POST', [
+                'default_payload' => 'SAVED',
+                'review_timeout_ms' => '60000',
+                'review_decision_delay_seconds' => '5',
+                'inventory_page_size' => $size,
+                'export_profile' => $profile,
+                'export_screenshot_mode' => $screenshots,
+            ]);
+            self::assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+            $saved = array_column($this->rows(), 'value', 'id');
+            self::assertSame([
+                'export.default_profile' => $profile,
+                'export.screenshot_mode' => $screenshots,
+                'intake.default_payload' => 'SAVED',
+                'inventory.page_size' => $size,
+                'review.decision_delay_seconds' => '5',
+                'review.scan_timeout_ms' => '60000',
+            ], $saved);
+            $xpath = $this->xpath($this->request('/settings')->getContent());
+            foreach (['inventory_page_size' => $size, 'export_profile' => $profile, 'export_screenshot_mode' => $screenshots] as $field => $value) {
+                self::assertSame($value, $xpath->evaluate('string(//select[@name="'.$field.'"]/option[@selected]/@value)'));
+                self::assertSame(1, $xpath->query('//select[@name="'.$field.'"]/option[@selected]')->length);
+            }
+            self::assertSame($locale === 'de' ? 'Fälle pro Seite' : 'Cases per page', trim($xpath->evaluate('string(//label[@for="settings-inventory-page-size"])')));
+            self::assertSame($locale === 'de' ? 'Bevorzugte Exportvorlage' : 'Preferred export preset', trim($xpath->evaluate('string(//label[@for="settings-export-profile"])')));
+        }
+    }
+
+    public function testInvalidPreferencesRetainAllInputsAndNeverPartiallySave(): void
+    {
+        self::getContainer()->get(SettingsService::class)->save(SettingsService::DEFAULTS);
+        $before = $this->rows();
+        $valid = [
+            'default_payload' => 'CHANGED',
+            'review_timeout_ms' => '60000',
+            'review_decision_delay_seconds' => '3',
+            'inventory_page_size' => '25',
+            'export_profile' => 'state',
+            'export_screenshot_mode' => 'none',
+        ];
+        foreach ([
+            'inventory_page_size' => ['', 'all', '0', '13', '025', '25.0'],
+            'export_profile' => ['', 'zip', 'REPORT'],
+            'export_screenshot_mode' => ['', 'assessment', 'LATEST'],
+        ] as $field => $invalidValues) {
+            foreach ($invalidValues as $invalid) {
+                $submitted = array_replace($valid, [$field => $invalid]);
+                $response = $this->request('/settings', 'POST', $submitted);
+                self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode());
+                $xpath = $this->xpath($response->getContent());
+                foreach (['inventory_page_size', 'export_profile', 'export_screenshot_mode'] as $input) {
+                    self::assertSame($submitted[$input], $xpath->evaluate('string(//select[@name="'.$input.'"]/option[@selected]/@value)'));
+                }
+                self::assertSame('CHANGED', $xpath->evaluate('string(//input[@name="default_payload"]/@value)'));
+                self::assertSame(1, $xpath->query('//select[@name="'.$field.'" and @aria-invalid="true"]')->length);
+                $describedBy = $xpath->evaluate('string(//select[@name="'.$field.'"]/@aria-describedby)');
+                foreach (explode(' ', $describedBy) as $id) {
+                    self::assertSame(1, $xpath->query('//*[@id="'.$id.'"]')->length);
+                }
+                self::assertSame($before, $this->rows());
+            }
+            foreach ([null, ['25']] as $invalid) {
+                self::assertSame(Response::HTTP_BAD_REQUEST, $this->request('/settings', 'POST', array_replace($valid, [$field => $invalid]))->getStatusCode());
+                self::assertSame($before, $this->rows());
+            }
         }
     }
 

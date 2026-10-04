@@ -109,6 +109,8 @@ final class FindingReadWebTest extends DatabaseTestCase
             parse_str(parse_url($link, PHP_URL_QUERY), $query);
             self::assertArrayNotHasKey('domain', $query);
             self::assertArrayNotHasKey('legacy_status', $query);
+            self::assertSame('10', $query['pageSize']);
+            unset($query['pageSize']);
             self::assertLessThanOrEqual(2, count($query));
             $linked = $this->get($link)->getContent();
             self::assertSame($expectedCounts[$key], $this->resultCount($linked));
