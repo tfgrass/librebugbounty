@@ -896,9 +896,12 @@ nicht mehr das Produkt. Der abschließende Stand ersetzt diese Momentaufnahmen:
 
 Der vollständige Arbeitsbaum bestand 262 PHP-Tests mit 10.254 Assertions, 12
 Node-Worker-Tests, 10 Backup-Tests, Composer-/npm-Audits und alle sieben
-isolierten Browser-Suiten. Der frische N01-Aufbau wird nach dem finalen Commit
-separat protokolliert. Diese Liste ist der aktuelle Umsetzungsstand; die folgenden
-Abschnitte erklären Anforderungen, frühere Befunde und Entscheidungsgründe.
+isolierten Browser-Suiten. Der frische N01-Aufbau auf Releasekandidat `9b0bfa2`
+bestand mit 76 Harness- und neun Browserprüfungen. Erststart, genau ein Worker,
+vier echte lokale Screenshots, Restart, Daten-/Artefakterhalt und der lesende
+Artefaktaudit waren erfolgreich; der verwendete Bestand blieb unberührt. Diese
+Liste ist der aktuelle Umsetzungsstand; die folgenden Abschnitte erklären
+Anforderungen, frühere Befunde und Entscheidungsgründe.
 
 **Bestätigte Richtung:**
 

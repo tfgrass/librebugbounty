@@ -391,8 +391,11 @@ Der aktuelle Arbeitsbaum bestand 262 PHP-Tests mit 10.254 Assertions, 12
 Node-Worker-Tests, 10 Backup-Tests, Composer-/npm-Audits und alle sieben
 isolierten Studio-Browsersuiten einschließlich NoJS, schmalen Ansichten,
 DE-/EN-Sitzungsmigration, Exportdownloads und Löschung. Der abschließende N01-
-Nachweis muss nach dem finalen Commit aus einer separaten frischen DDEV-Kopie
-erfolgen; er darf die verwendete Installation und ihre Daten nicht berühren.
+Nachweis auf dem Releasekandidaten `9b0bfa2` bestand in einer separaten frischen
+DDEV-Kopie mit 76 Harness- und neun Browserprüfungen: kalter Erststart ohne
+Worker-Spawnfehler, vier echte lokale Bilder, Restart sowie unveränderte
+Datenbankzeilen und Artefaktbytes. Die verwendete Installation und ihre Daten
+wurden nicht berührt.
 [Festlegungen und Umsetzungsdetails](ui-workflow.md#release-sparring-studio-vervollständigen-und-legacy-ablösen).
 
 ## Dokumente

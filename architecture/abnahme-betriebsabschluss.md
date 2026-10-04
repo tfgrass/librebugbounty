@@ -1,5 +1,30 @@
 # Abnahme Betriebsabschluss: frischer DDEV-Betrieb
 
+Stand: 2026-10-04 · 2.0.0-Releasekandidat:
+`9b0bfa252aad3b62cfbbe316ede494b0de8db9c7`
+
+**N01 für 2.0.0 bestanden:** Ein vollständig frischer, separat benannter Clone
+ohne `.env`, Abhängigkeiten, Storage oder Nutzdaten bestand 76 Harness-Prüfungen
+und neun Browserprüfungen. `ddev start` installierte Composer- und npm-
+Abhängigkeiten, führte alle neun Migrationen aus und startete genau einen
+Screenshot-Worker. Das Warten auf `vendor/autoload.php` verhinderte dabei den
+früheren Supervisor-Spawnfehler.
+
+Vor und nach einem echten `ddev restart` verarbeitete der Worker je eine lokale
+Seite und eine lokale Seite mit offenem Chromium-Dialog in FIFO-Reihenfolge.
+Alle vier PNGs waren über Falldetail, Review und Artefaktroute lesbar. Restart und
+Anzeige erhielten sämtliche Datenbankzeilen und jedes Artefaktbyte; Evidence-
+Hashes, Lockfiles, Git-Arbeitsbaum und `app:artifacts:audit` blieben konsistent.
+Das isolierte DDEV-Projekt wurde danach erfolgreich entfernt. Die laufende
+Arbeitsinstallation erhielt keine Lifecycle-, Init-, Reset- oder Schreibaktion.
+
+Der reproduzierbare Harness und seine Grenzen sind unten beschrieben. Der dort
+folgende Nachweis vom 2026-10-03 bleibt als früherer Prüfstand erhalten; seine
+damalige Beobachtung eines vorübergehenden Supervisor-Spawnfehlers ist durch die
+2.0.0-Startlogik behoben.
+
+## Früherer vollständiger Nachweis
+
 Stand: 2026-10-03 · getesteter Commit:
 `5f28d2efdaa82f4e4de96343f9ef39ef23b3d043`
 
