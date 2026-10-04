@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const t = window.LibreBugBountyI18n?.t || ((key) => key);
+
   const root = document.querySelector('[data-studio-detail]');
   if (!root) return;
 
@@ -52,9 +54,9 @@
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(text.textContent);
-        if (copyStatus) copyStatus.textContent = 'URL kopiert.';
+        if (copyStatus) copyStatus.textContent = t('URL kopiert.');
       } catch {
-        if (copyStatus) copyStatus.textContent = 'Kopieren nicht verfügbar. Markiere die URL und kopiere sie manuell.';
+        if (copyStatus) copyStatus.textContent = t('Kopieren nicht verfügbar. Markiere die URL und kopiere sie manuell.');
       }
     });
   });
@@ -67,7 +69,7 @@
     const updateState = () => {
       const dirty = notes.value !== initial;
       noteState.dataset.dirty = String(dirty);
-      noteState.textContent = dirty ? 'Ungespeichert' : 'Explizit speichern';
+      noteState.textContent = t(dirty ? 'Ungespeichert' : 'Explizit speichern');
     };
     notes.addEventListener('input', updateState);
     // Back/forward form restoration can occur after the initial script run.

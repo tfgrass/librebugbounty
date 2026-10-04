@@ -7,6 +7,7 @@ use App\Dto\FindingReadView;
 use App\Dto\StudioExportOptions;
 use App\Dto\StudioExportView;
 use App\Repository\FindingReadRepository;
+use App\Value\FindingReadLabels;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
@@ -33,6 +34,7 @@ final class StudioExportProfileService
         private readonly EvidenceStorageInterface $storage,
         private readonly StudioExportService $stateExport,
         private readonly ReviewSchema $reviewSchema,
+        private readonly UiTranslator $i18n,
     ) {
         $this->findings = new FindingReadRepository($connection);
     }
@@ -630,7 +632,7 @@ final class StudioExportProfileService
     {
         $value = $query[$name] ?? ($default ? '1' : '0');
         if (!is_string($value) || !in_array($value, ['0', '1'], true)) {
-            throw new \InvalidArgumentException($name.' muss ausdrücklich mit 0 oder 1 gewählt werden.');
+            throw new \InvalidArgumentException('Ungültige Exportoption.');
         }
 
         return $value === '1';
@@ -638,80 +640,94 @@ final class StudioExportProfileService
 
     private function reportMarkdown(array $manifest): string
     {
-        $lines = ['# LibreBugBounty – Meldungspaket', '', 'Erstellt: '.$manifest['generatedAt'], ''];
+        $t = fn (string $key): string => $this->i18n->trans($key);
+        $lines = ['# '.$t('LibreBugBounty – Meldungspaket'), '', $t('Erstellt').': '.$manifest['generatedAt'], ''];
         foreach ($manifest['findings'] as $index => $finding) {
             $lines[] = '## '.($index + 1).'. '.$this->markdown((string) ($finding['title'] ?: $finding['type']));
             $lines[] = '';
-            $lines[] = '- Typ: '.$this->markdown((string) $finding['type']);
-            $lines[] = '- Schweregrad: '.$this->markdown((string) $finding['severity']);
+            $lines[] = '- '.$t('Typ').': '.$this->markdown((string) $finding['type']);
+            $lines[] = '- '.$t('Schweregrad').': '.$this->markdown((string) $finding['severity']);
             $lines[] = '- URL:';
             $lines[] = $this->indentedCode((string) $finding['url']);
             if (array_key_exists('method', $finding)) {
-                $lines[] = '- Methode: '.$this->markdown((string) ($finding['method'] ?? ''));
-                $lines[] = '- Request-Parameter:';
+                $lines[] = '- '.$t('Methode').': '.$this->markdown((string) ($finding['method'] ?? ''));
+                $lines[] = '- '.$t('Request-Parameter').':';
                 $lines[] = $this->indentedCode(json_encode($finding['requestParams'], self::JSON_FLAGS | JSON_PRETTY_PRINT));
-                $lines[] = '- Kennzeichen / Payload:';
+                $lines[] = '- '.$t('Kennzeichen / Payload').':';
                 $lines[] = $this->indentedCode((string) ($finding['payload'] ?? ''));
-                $lines[] = '- Erwarteter Nachweis:';
+                $lines[] = '- '.$t('Erwarteter Nachweis').':';
                 $lines[] = $this->indentedCode((string) ($finding['expectedEvidence'] ?? ''));
             }
             if (isset($finding['manualAssessment'])) {
-                $lines[] = '- Manuelle Bewertung: '.$this->markdown((string) ($finding['manualAssessment']['value'] ?? 'unbekannt'));
+                $assessment = FindingReadLabels::assessment(
+                    $finding['manualAssessment']['value'] ?? null,
+                    $finding['manualAssessment']['discardReason'] ?? null,
+                );
+                $lines[] = '- '.$t('Manuelle Bewertung').': '.$this->markdown($t($assessment));
                 if (($finding['manualAssessment']['assessedAt'] ?? null) !== null) {
-                    $lines[] = '- Bewertet am: '.$this->markdown((string) $finding['manualAssessment']['assessedAt']);
+                    $lines[] = '- '.$t('Bewertet am').': '.$this->markdown((string) $finding['manualAssessment']['assessedAt']);
                 }
                 if (($finding['manualAssessment']['discardReason'] ?? null) !== null) {
-                    $lines[] = '- Verwerfungsgrund: '.$this->markdown((string) $finding['manualAssessment']['discardReason']);
+                    $reason = $finding['manualAssessment']['discardReason'] === 'duplicate'
+                        ? $t('Duplikat')
+                        : (string) $finding['manualAssessment']['discardReason'];
+                    $lines[] = '- '.$t('Verwerfungsgrund').': '.$this->markdown($reason);
                 }
                 if (($finding['latestObservation'] ?? null) !== null) {
                     $observation = $finding['latestObservation'];
-                    $lines[] = '- Letzte technische Beobachtung: '.$this->markdown((string) ($observation['result'] ?? 'unbekannt'));
+                    $observationLabel = FindingReadLabels::observation($observation['result'] ?? null);
+                    $lines[] = '- '.$t('Letzte technische Beobachtung').': '.$this->markdown($t($observationLabel));
                     if (($observation['observedAt'] ?? null) !== null) {
-                        $lines[] = '- Beobachtet am: '.$this->markdown((string) $observation['observedAt']);
+                        $lines[] = '- '.$t('Beobachtet am').': '.$this->markdown((string) $observation['observedAt']);
                     }
                     if (($observation['httpStatus'] ?? null) !== null) {
-                        $lines[] = '- HTTP-Status: '.$this->markdown((string) $observation['httpStatus']);
+                        $lines[] = '- '.$t('HTTP-Status').': '.$this->markdown((string) $observation['httpStatus']);
                     }
                     if (($observation['finalUrl'] ?? null) !== null) {
-                        $lines[] = '- Endgültige URL:';
+                        $lines[] = '- '.$t('Endgültige URL').':';
                         $lines[] = $this->indentedCode((string) $observation['finalUrl']);
                     }
                     if (($observation['observedEvidence'] ?? null) !== null) {
-                        $lines[] = '- Beobachteter Nachweis:';
+                        $lines[] = '- '.$t('Beobachteter Nachweis').':';
                         $lines[] = $this->indentedCode((string) $observation['observedEvidence']);
                     }
                     if (($observation['errorMessage'] ?? null) !== null) {
-                        $lines[] = '- Technischer Fehler:';
+                        $lines[] = '- '.$t('Technischer Fehler').':';
                         $lines[] = $this->indentedCode((string) $observation['errorMessage']);
                     }
                 }
             }
             if (array_key_exists('reportUrl', $finding)) {
                 if ($finding['reportUrl'] !== null) {
-                    $lines[] = '- Gespeicherte Meldungs-URL:';
+                    $lines[] = '- '.$t('Gespeicherte Meldungs-URL').':';
                     $lines[] = $this->indentedCode((string) $finding['reportUrl']);
                 }
                 foreach (['reportedAt' => 'Als gemeldet erfasst', 'contactedAt' => 'Als kontaktiert erfasst', 'sentAt' => 'Als versendet erfasst'] as $field => $label) {
                     if (($finding[$field] ?? null) !== null) {
-                        $lines[] = '- '.$label.': '.$this->markdown((string) $finding[$field]);
+                        $lines[] = '- '.$t($label).': '.$this->markdown((string) $finding[$field]);
                     }
                 }
             }
             if (array_key_exists('privateNotes', $finding)) {
-                $lines[] = '- Private Fallnotizen:';
+                $lines[] = '- '.$t('Private Fallnotizen').':';
                 $lines[] = $this->indentedCode((string) ($finding['privateNotes'] ?? ''));
             }
-            $lines[] = '- Bildbelege:';
+            $lines[] = '- '.$t('Bildbelege').':';
             if ($finding['screenshots'] === []) {
-                $lines[] = '  - Keine Bilddatei für die gewählte Bildauswahl.';
+                $lines[] = '  - '.$t('Keine Bilddatei für die gewählte Bildauswahl.');
             }
             foreach ($finding['screenshots'] as $image) {
+                $basisSource = match ($image['basisSource'] ?? null) {
+                    'assessment' => $t('Bewertung'),
+                    'acknowledgement' => $t('Spätere Sichtung'),
+                    default => $image['basisSource'] ?? null,
+                };
                 $lines[] = isset($image['archivePath'])
-                    ? '  - `'.$image['archivePath'].'`'.(($image['basisSource'] ?? null) === null ? '' : ' (dokumentierte Grundlage: '.$image['basisSource'].')')
-                    : '  - Beleg '.$this->markdown((string) $image['id']).': '.$this->missingImageDescription((string) ($image['missingReason'] ?? 'missing_or_unreadable'));
+                    ? '  - `'.$image['archivePath'].'`'.($basisSource === null ? '' : ' ('.$t('dokumentierte Grundlage').': '.$basisSource.')')
+                    : '  - '.$t('Beleg').' '.$this->markdown((string) $image['id']).': '.$this->missingImageDescription((string) ($image['missingReason'] ?? 'missing_or_unreadable'));
             }
             if (array_key_exists('hasKnownAssessmentImageBasis', $finding) && !$finding['hasKnownAssessmentImageBasis']) {
-                $lines[] = '  - Für die aktuelle Bewertung ist keine konkrete Bildgrundlage dokumentiert.';
+                $lines[] = '  - '.$t('Für die aktuelle Bewertung ist keine konkrete Bildgrundlage dokumentiert.');
             }
             $lines[] = '';
         }
@@ -812,7 +828,7 @@ final class StudioExportProfileService
 
     private function missingImageDescription(string $reason): string
     {
-        return match ($reason) {
+        return $this->i18n->trans(match ($reason) {
             'archive_size_limit' => 'nicht beigefügt, weil das Größenlimit des Pakets erreicht ist.',
             'basis_evidence_missing' => 'die gespeicherte Bewertungsgrundlage existiert nicht mehr.',
             'basis_not_image' => 'die gespeicherte Bewertungsgrundlage ist kein Screenshot.',
@@ -821,7 +837,7 @@ final class StudioExportProfileService
             'invalid_stored_path' => 'nicht beigefügt, weil der Speicherpfad nicht zu diesem Fall gehört.',
             'not_supported_image' => 'nicht beigefügt, weil die Datei kein unterstütztes Bild ist.',
             default => 'die Bilddatei fehlt oder ist nicht lesbar.',
-        };
+        });
     }
 
     private function markdown(string $value): string

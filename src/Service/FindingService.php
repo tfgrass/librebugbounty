@@ -112,12 +112,12 @@ final class FindingService
             : (isset($parsedUrl['host']) ? $this->validation->normalizeHostname((string) $parsedUrl['host']) : null);
 
         if ($resolvedHostname === null) {
-            throw new \InvalidArgumentException('Unable to determine the domain hostname from the URL.');
+            throw new \InvalidArgumentException('Der Domain-Hostname konnte nicht aus der URL ermittelt werden.');
         }
 
         $scheme = isset($parsedUrl['scheme']) && is_string($parsedUrl['scheme']) ? strtolower($parsedUrl['scheme']) : 'https';
         if ($scheme !== '' && $scheme !== 'http' && $scheme !== 'https') {
-            throw new \InvalidArgumentException(sprintf('Unsupported URL scheme "%s".', $scheme));
+            throw new \InvalidArgumentException('Nicht unterstütztes URL-Schema.');
         }
 
         $createOrFind = function () use (
@@ -229,9 +229,13 @@ final class FindingService
                     $this->entityManager->remove($related);
                 }
             }
-            $this->storage->deleteForFinding($finding);
             $this->entityManager->remove($finding);
             $this->entityManager->flush();
+            try {
+                $this->storage->deleteForFinding($finding);
+            } catch (\Throwable $exception) {
+                throw new FindingArtifactCleanupException($finding->getId(), $exception);
+            }
         };
         if ($this->screenshotOperationLock === null) {
             $delete();

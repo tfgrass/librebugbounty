@@ -49,7 +49,7 @@ a.stat-kpi:hover { border-color: #5c7291; background: linear-gradient(150deg, #2
 .stat-card-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
 .stat-card-heading h2 { margin: 0; color: #e3ebf8; font-size: 15px; font-weight: 550; letter-spacing: -.2px; }
 .stat-card-heading p { margin: 4px 0 0; color: #9eafc6; font-size: 11px; }
-.stat-card-eyebrow { margin: 0 0 5px !important; color: #8396af !important; font-size: 9px !important; font-weight: 650; letter-spacing: 1.5px; }
+.stat-card-eyebrow { margin: 0 0 5px !important; color: #8396af !important; font-size: 9px !important; font-weight: 650; letter-spacing: 1.5px; text-transform: uppercase; }
 .stat-chart-card { margin-bottom: 18px; }
 .stat-scale-explanation { color: #b0c3dc !important; }
 .stat-chart-rows { display: grid; gap: 18px; }

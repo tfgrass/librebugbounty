@@ -71,7 +71,7 @@ final readonly class FindingReadFilter
     private static function validate(string $dimension, string $value, array $allowed): void
     {
         if (!in_array($value, $allowed, true)) {
-            throw new \InvalidArgumentException(sprintf('Unsupported %s filter "%s".', $dimension, $value));
+            throw new \InvalidArgumentException('Ungültiger Filterwert.');
         }
     }
 }

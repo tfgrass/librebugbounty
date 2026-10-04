@@ -36,14 +36,15 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         $before = $this->snapshot();
         $paths = $storage->listPaths();
         for ($i = 0; $i < 2; $i++) {
-            $response = $this->get('/legacy/findings/'.$finding->getId());
+            $response = $this->get('/findings/'.$finding->getId());
             self::assertSame(200, $response->getStatusCode());
-            self::assertStringContainsString('Screenshot file is missing or unavailable', $response->getContent());
-            self::assertStringContainsString('record has been retained', $response->getContent());
-            self::assertStringContainsString('fixture note', $response->getContent());
-            self::assertStringContainsString('2026-01-02', $response->getContent());
+            $xpath = $this->xpath($response->getContent());
+            self::assertSame(1, $xpath->query('//body[@data-studio-detail]')->length);
+            self::assertStringContainsString('Bilddatei nicht verfügbar', $xpath->evaluate('string(//body)'));
+            self::assertStringContainsString('Der Beleg ist aufgezeichnet', $xpath->evaluate('string(//body)'));
+            self::assertSame('fixture note', $xpath->evaluate('string(//textarea[@name="notes"])'));
             self::assertStringContainsString('<img ', $response->getContent());
-            self::assertStringContainsString('No screenshots yet.', $this->get('/legacy/findings/'.$empty->getId())->getContent());
+            self::assertStringContainsString('Noch kein Bildbeleg', $this->get('/findings/'.$empty->getId())->getContent());
             $url = '/artifacts/'.substr($evidence->getFilePath(), strlen('storage/artifacts/'));
             $image = $this->get($url);
             self::assertSame(200, $image->getStatusCode());
@@ -85,19 +86,19 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         }
         $this->entityManager->flush();
         $this->entityManager->clear();
-        $response = $this->get('/legacy?pageSize=10&page=1&status=new&domain=localhost');
+        $response = $this->get('/findings?pageSize=10&page=1&status=new&domain=localhost');
         self::assertSame(200, $response->getStatusCode());
-        preg_match_all('#href="/findings/([a-f0-9-]+)(?:\?[^"]*)?"#', $response->getContent(), $links);
-        self::assertCount(10, array_unique($links[1]));
-        self::assertStringContainsString('data-total-filtered="5500"', $response->getContent());
-        $next = $this->get('/legacy?pageSize=10&page=2&status=new&domain=localhost');
-        preg_match_all('#href="/findings/([a-f0-9-]+)(?:\?[^"]*)?"#', $next->getContent(), $nextLinks);
-        self::assertCount(10, array_unique($nextLinks[1]));
-        self::assertSame([], array_intersect($links[1], $nextLinks[1]));
+        $links = $this->ids($response->getContent());
+        self::assertCount(10, $links);
+        self::assertSame(5500, $this->resultCount($response->getContent()));
+        $next = $this->get('/findings?pageSize=10&page=2&status=new&domain=localhost');
+        $nextLinks = $this->ids($next->getContent());
+        self::assertCount(10, $nextLinks);
+        self::assertSame([], array_intersect($links, $nextLinks));
         self::assertStringNotContainsString('<img ', $response->getContent());
-        $filtered = $this->get('/legacy?status=fixed&domain=localhost');
+        $filtered = $this->get('/findings?status=fixed&domain=localhost');
         self::assertSame(200, $filtered->getStatusCode());
-        self::assertSame(0, preg_match_all('/class="row-link"/', $filtered->getContent()));
+        self::assertSame([], $this->ids($filtered->getContent()));
     }
 
     private function finding(string $label): Finding
@@ -122,6 +123,33 @@ final class WebReadAcceptanceTest extends DatabaseTestCase
         $response = self::$kernel->handle($request);
         self::$kernel->terminate($request, $response);
         return $response;
+    }
+
+    private function xpath(string $html): \DOMXPath
+    {
+        $document = new \DOMDocument();
+        @$document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+        return new \DOMXPath($document);
+    }
+
+    /** @return list<string> */
+    private function ids(string $html): array
+    {
+        $ids = [];
+        foreach ($this->xpath($html)->query('//*[@data-finding-id]') as $row) {
+            $ids[] = $row->getAttribute('data-finding-id');
+        }
+
+        return $ids;
+    }
+
+    private function resultCount(string $html): int
+    {
+        $counter = $this->xpath($html)->query('//*[@data-total-filtered]')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $counter);
+
+        return (int) $counter->getAttribute('data-total-filtered');
     }
 
     private function snapshot(): array

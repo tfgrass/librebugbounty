@@ -37,7 +37,7 @@ final class StudioInventoryTest extends DatabaseTestCase
         $before = $this->snapshot();
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
-        foreach (['/', '/findings', '/findings/'.$finding->getId(), '/legacy', '/legacy/findings/'.$finding->getId(), '/legacy/settings'] as $path) {
+        foreach (['/', '/findings', '/findings/'.$finding->getId(), '/settings', '/legacy/settings'] as $path) {
             $response = $this->request($path);
             self::assertSame(200, $response->getStatusCode(), $path.' => '.$response->headers->get('Location'));
         }
@@ -48,9 +48,10 @@ final class StudioInventoryTest extends DatabaseTestCase
             '/studio/findings/' => '/findings',
             '/studio/findings/'.$finding->getId() => '/findings/'.$finding->getId(),
             '/studio/findings/'.$finding->getId().'/' => '/findings/'.$finding->getId(),
-            '/settings' => '/legacy/settings',
-            '/legacy/' => '/legacy',
-            '/legacy/findings/'.$finding->getId().'/' => '/legacy/findings/'.$finding->getId(),
+            '/legacy' => '/findings',
+            '/legacy/' => '/findings',
+            '/legacy/findings/'.$finding->getId() => '/findings/'.$finding->getId(),
+            '/legacy/findings/'.$finding->getId().'/' => '/findings/'.$finding->getId(),
             '/legacy/settings/' => '/legacy/settings',
         ] as $old => $canonical) {
             $query = 'message=fixture%20message&error=fixture%26diagnostic';
@@ -93,7 +94,7 @@ final class StudioInventoryTest extends DatabaseTestCase
         self::assertStringContainsString('Fixture', $response->getContent());
     }
 
-    public function testStudioAndLegacyListsKeepIndependentFiltersArchivesAndEscaping(): void
+    public function testInventoryFiltersHistoricalFieldsArchivesAndEscapesStoredMarkup(): void
     {
         $manual = $this->finding('manual');
         $auto = $this->finding('automatic')->setStatus('fixed')->setReviewState('manual_checking');
@@ -120,12 +121,9 @@ final class StudioInventoryTest extends DatabaseTestCase
             'scope=active&assessment=discarded' => [],
         ] as $query => $expected) {
             $studio = $this->request('/findings'.($query === '' ? '' : '?'.$query));
-            $legacy = $this->request('/legacy'.($query === '' ? '' : '?'.$query));
             self::assertSame(200, $studio->getStatusCode());
-            self::assertSame(200, $legacy->getStatusCode());
             $ids = array_map(static fn (Finding $case): string => $case->getId(), $expected);
             $this->assertIds($ids, $studio->getContent());
-            $this->assertIds($ids, $legacy->getContent());
             self::assertSame(count($expected), $this->resultCount($studio->getContent()));
         }
         $html = $this->request('/findings')->getContent();
@@ -159,11 +157,9 @@ final class StudioInventoryTest extends DatabaseTestCase
             "' OR 1=1 --" => [],
             'no-such-fixture' => [],
         ] as $query => $expected) {
-            foreach (['/findings', '/legacy'] as $path) {
-                $response = $this->request($path.'?'.http_build_query(['q' => $query]));
-                self::assertSame(200, $response->getStatusCode());
-                $this->assertIds(array_map(static fn (Finding $case): string => $case->getId(), $expected), $response->getContent());
-            }
+            $response = $this->request('/findings?'.http_build_query(['q' => $query]));
+            self::assertSame(200, $response->getStatusCode());
+            $this->assertIds(array_map(static fn (Finding $case): string => $case->getId(), $expected), $response->getContent());
         }
         self::assertSame($before, $this->snapshot());
     }
@@ -232,7 +228,7 @@ final class StudioInventoryTest extends DatabaseTestCase
             self::assertSame($returnTo, $xpath->query('.//input[@name="return_to"]', $form)->item(0)->getAttribute('value'));
             $token = $xpath->query('.//input[@name="_token"]', $form)->item(0)->getAttribute('value');
             $tokens[$action] = $token;
-            $response = $this->request('/findings/'.$finding->getId().'/'.$action, 'POST', $fields + ['_token' => $token, 'surface' => 'studio', 'return_to' => $returnTo]);
+            $response = $this->request('/findings/'.$finding->getId().'/'.$action, 'POST', $fields + ['_token' => $token, 'return_to' => $returnTo]);
             self::assertSame(302, $response->getStatusCode());
             self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
             parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
@@ -243,7 +239,7 @@ final class StudioInventoryTest extends DatabaseTestCase
         $xpath = $this->xpath($html);
         $token = $xpath->query('//form[contains(@action,"/notes")]//input[@name="_token"]')->item(0)->getAttribute('value');
         foreach (['https://outside.invalid/findings', '//outside.invalid/findings', '/legacy', '/findings/other-case', '/findings?assessment=invalid', '/findings?q%5B%5D=bad', '/findings#fragment'] as $returnTo) {
-            $response = $this->request('/findings/'.$finding->getId().'/notes', 'POST', ['_token' => $token, 'notes' => 'Safe destination', 'surface' => 'studio', 'return_to' => $returnTo]);
+            $response = $this->request('/findings/'.$finding->getId().'/notes', 'POST', ['_token' => $token, 'notes' => 'Safe destination', 'return_to' => $returnTo]);
             self::assertSame(302, $response->getStatusCode());
             self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
             parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
@@ -251,56 +247,47 @@ final class StudioInventoryTest extends DatabaseTestCase
         }
         $before = $this->snapshot();
         foreach (['assessment' => ['assessment' => 'confirmed'], 'mark-contacted' => [], 'notes' => ['notes' => 'Do not save']] as $action => $fields) {
-            self::assertSame(400, $this->request('/findings/'.$finding->getId().'/'.$action, 'POST', $fields + ['_token' => $tokens[$action], 'surface' => 'studio', 'return_to' => ['/findings']])->getStatusCode());
+            self::assertSame(400, $this->request('/findings/'.$finding->getId().'/'.$action, 'POST', $fields + ['_token' => $tokens[$action], 'return_to' => ['/findings']])->getStatusCode());
             self::assertSame($before, $this->snapshot());
         }
     }
 
-    public function testBothListsRejectMalformedAndConflictingFiltersWithoutWrites(): void
+    public function testInventoryRejectsMalformedAndConflictingFiltersWithoutWrites(): void
     {
         $this->finding('invalid-query');
         $before = $this->snapshot();
         foreach (['q%5B%5D=bad', 'assessment=unknown-value', 'observation=unknown-value', 'contact=maybe', 'scope=archive', 'page=0', 'pageSize=13', 'status=new&legacy_status=fixed', 'exact_domain=1&exactDomain=0'] as $query) {
-            foreach (['/findings', '/legacy'] as $path) {
-                $response = $this->request($path.'?'.$query);
-                self::assertSame(400, $response->getStatusCode(), $path.'?'.$query);
-                self::assertSame('text/plain; charset=UTF-8', $response->headers->get('Content-Type'));
-                self::assertSame($before, $this->snapshot());
-            }
+            $response = $this->request('/findings?'.$query);
+            self::assertSame(400, $response->getStatusCode(), '/findings?'.$query);
+            self::assertSame('text/plain; charset=UTF-8', $response->headers->get('Content-Type'));
+            self::assertSame($before, $this->snapshot());
         }
     }
 
-    public function testNativeIntakePostsKeepTheSelectedSurfaceAndCanonicalCaseLinks(): void
+    public function testNativeIntakePostsUseCanonicalCaseLinks(): void
     {
-        foreach (['/' => 'studio', '/legacy' => 'classic'] as $path => $surface) {
-            $xpath = $this->xpath($this->request($path)->getContent());
-            $form = $xpath->query('//form[@action="/findings"]')->item(0);
-            self::assertInstanceOf(\DOMElement::class, $form);
-            $parameters = [
-                '_token' => $xpath->query('.//input[@name="_token"]', $form)->item(0)->getAttribute('value'),
-                'url' => 'http://native-'.$surface.'.localhost/fixture',
-                'annotate' => 'Keep the original '.$surface.' note',
-            ];
-            $surfaceField = $xpath->query('.//input[@name="surface"]', $form)->item(0);
-            if ($surface === 'studio') {
-                self::assertInstanceOf(\DOMElement::class, $surfaceField);
-                self::assertSame('studio', $surfaceField->getAttribute('value'));
-                $parameters['surface'] = 'studio';
-            }
-            $stored = $this->request('/findings', 'POST', $parameters);
-            self::assertSame(302, $stored->getStatusCode());
-            $finding = $this->entityManager->getRepository(Finding::class)->findOneBy(['url' => $parameters['url']]);
-            self::assertInstanceOf(Finding::class, $finding);
-            self::assertSame($surface === 'studio' ? '/findings/'.$finding->getId() : '/legacy', parse_url($stored->headers->get('Location'), PHP_URL_PATH));
-            $duplicate = $this->request('/findings', 'POST', array_replace($parameters, ['annotate' => 'Must not replace notes']));
-            self::assertSame(302, $duplicate->getStatusCode());
-            self::assertSame(($surface === 'studio' ? '/findings/' : '/legacy/findings/').$finding->getId(), parse_url($duplicate->headers->get('Location'), PHP_URL_PATH));
-            $reloaded = $this->entityManager->find(Finding::class, $finding->getId());
-            self::assertSame($parameters['annotate'], $reloaded->getPrivateNotes());
-            self::assertSame(1, $this->entityManager->getRepository(\App\Entity\ScreenshotJob::class)->count(['finding' => $reloaded]));
-            self::assertSame(0, $this->entityManager->getRepository(RetestRun::class)->count(['finding' => $reloaded]));
-            self::assertSame(200, $this->request('/findings/'.$finding->getId())->getStatusCode());
-        }
+        $xpath = $this->xpath($this->request('/')->getContent());
+        $form = $xpath->query('//form[@action="/findings"]')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $form);
+        $parameters = [
+            '_token' => $xpath->query('.//input[@name="_token"]', $form)->item(0)->getAttribute('value'),
+            'url' => 'http://native-studio.localhost/fixture',
+            'annotate' => 'Keep the original studio note',
+        ];
+        self::assertSame(0, $xpath->query('.//input[@name="surface"]', $form)->length);
+        $stored = $this->request('/findings', 'POST', $parameters);
+        self::assertSame(302, $stored->getStatusCode());
+        $finding = $this->entityManager->getRepository(Finding::class)->findOneBy(['url' => $parameters['url']]);
+        self::assertInstanceOf(Finding::class, $finding);
+        self::assertSame('/findings/'.$finding->getId(), parse_url($stored->headers->get('Location'), PHP_URL_PATH));
+        $duplicate = $this->request('/findings', 'POST', array_replace($parameters, ['annotate' => 'Must not replace notes']));
+        self::assertSame(302, $duplicate->getStatusCode());
+        self::assertSame('/findings/'.$finding->getId(), parse_url($duplicate->headers->get('Location'), PHP_URL_PATH));
+        $reloaded = $this->entityManager->find(Finding::class, $finding->getId());
+        self::assertSame($parameters['annotate'], $reloaded->getPrivateNotes());
+        self::assertSame(1, $this->entityManager->getRepository(\App\Entity\ScreenshotJob::class)->count(['finding' => $reloaded]));
+        self::assertSame(0, $this->entityManager->getRepository(RetestRun::class)->count(['finding' => $reloaded]));
+        self::assertSame(200, $this->request('/findings/'.$finding->getId())->getStatusCode());
     }
 
     private function finding(string $label, string $hostname = 'inventory.localhost'): Finding

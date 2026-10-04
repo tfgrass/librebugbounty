@@ -36,7 +36,7 @@ final class StudioFindingTest extends DatabaseTestCase
         self::getContainer()->set(BrowserScreenshotClientInterface::class, $screenshot);
     }
 
-    public function testStudioAndClassicDetailAreReadOnlyViewsOfTheSameRecordedCase(): void
+    public function testStudioDetailIsReadOnlyAndTheLegacyBookmarkRedirectsToIt(): void
     {
         $finding = $this->finding('shared-detail');
         $this->observation($finding);
@@ -46,19 +46,18 @@ final class StudioFindingTest extends DatabaseTestCase
         $storage = self::getContainer()->get(EvidenceStorageInterface::class);
         $paths = $storage->listPaths();
 
-        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
-            $response = $this->request($path);
-            self::assertSame(200, $response->getStatusCode());
-            self::assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
-            $xpath = $this->xpath($response->getContent());
-            self::assertStringContainsString($finding->getUrl(), $xpath->evaluate('string(//body)'));
-            self::assertStringContainsString('fixture private note', $xpath->evaluate('string(//body)'));
-            self::assertStringContainsString('inconclusive', $xpath->evaluate('string(//body)'));
-            self::assertSame(1, $xpath->query('//form[@action="/findings/'.$finding->getId().'/assessment"]')->length);
-        }
         $studio = $this->request($this->studioPath($finding));
+        self::assertSame(200, $studio->getStatusCode());
+        self::assertStringContainsString('text/html', (string) $studio->headers->get('Content-Type'));
+        $xpath = $this->xpath($studio->getContent());
+        self::assertStringContainsString($finding->getUrl(), $xpath->evaluate('string(//body)'));
+        self::assertStringContainsString('fixture private note', $xpath->evaluate('string(//body)'));
+        self::assertStringContainsString('inconclusive', $xpath->evaluate('string(//body)'));
+        self::assertSame(1, $xpath->query('//form[@action="/findings/'.$finding->getId().'/assessment"]')->length);
         self::assertStringContainsString('no-store', (string) $studio->headers->get('Cache-Control'));
-        self::assertGreaterThanOrEqual(1, $this->xpath($studio->getContent())->query('//a[@href="/legacy/findings/'.$finding->getId().'"]')->length);
+        $legacy = $this->request('/legacy/findings/'.$finding->getId().'?message=fixture');
+        self::assertSame(308, $legacy->getStatusCode());
+        self::assertSame('/findings/'.$finding->getId().'?message=fixture', $legacy->headers->get('Location'));
         self::assertSame($before, $this->snapshot());
         self::assertSame($paths, $storage->listPaths());
     }
@@ -130,7 +129,7 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertSame($paths, self::getContainer()->get(EvidenceStorageInterface::class)->listPaths());
     }
 
-    public function testStudioActionsAgreeWithClassicForLegacyInconclusiveAndProtectedDecisions(): void
+    public function testStudioActionsCoverHistoricalInconclusiveAndProtectedDecisions(): void
     {
         $new = $this->finding('new');
         $legacy = $this->finding('legacy');
@@ -155,13 +154,11 @@ final class StudioFindingTest extends DatabaseTestCase
             [$confirmed, ['fixed', 'discarded']],
             [$duplicate, ['confirmed', 'fixed']],
         ] as [$finding, $expected]) {
-            $classic = $this->request('/legacy/findings/'.$finding->getId())->getContent();
             $studio = $this->request($this->studioPath($finding))->getContent();
-            self::assertSame($expected, $this->assessmentActions($classic));
-            self::assertSame($this->assessmentActions($classic), $this->assessmentActions($studio));
+            self::assertSame($expected, $this->assessmentActions($studio));
         }
         $legacyText = $this->xpath($this->request($this->studioPath($legacy))->getContent())->evaluate('string(//body)');
-        self::assertStringContainsString('Altbestand', $legacyText);
+        self::assertStringContainsString('Historischer Bestand', $legacyText);
         self::assertStringContainsString('Entscheidungsgrundlage unbekannt', $legacyText);
         self::assertNull($this->reload($legacy)->getManualAssessment());
         self::assertNull($this->reload($legacy)->getAssessedAt());
@@ -182,23 +179,21 @@ final class StudioFindingTest extends DatabaseTestCase
         $later->setStartedAt($laterAt)->setFinishedAt($laterAt);
         $this->entityManager->flush();
         $before = $this->snapshot();
-        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
-            $html = $this->request($path)->getContent();
-            self::assertContains('confirmed', $this->assessmentActions($html));
-            $xpath = $this->xpath($html);
-            foreach (['observation_id', 'evidence_id'] as $name) {
-                $select = $xpath->query('//select[@name="'.$name.'"]')->item(0);
-                self::assertInstanceOf(\DOMElement::class, $select);
-                self::assertSame(0, $xpath->query('.//option[@selected and @value!=""]', $select)->length);
-                self::assertSame('', $xpath->query('.//option', $select)->item(0)->getAttribute('value'));
-            }
-            self::assertSame(1, $xpath->query('//select[@name="observation_id"]/option[@value="'.$later->getId().'"]')->length);
-            self::assertSame(1, $xpath->query('//select[@name="evidence_id"]/option[@value="'.$evidence->getId().'"]')->length);
+        $html = $this->request($this->studioPath($finding))->getContent();
+        self::assertContains('confirmed', $this->assessmentActions($html));
+        $xpath = $this->xpath($html);
+        foreach (['observation_id', 'evidence_id'] as $name) {
+            $select = $xpath->query('//select[@name="'.$name.'"]')->item(0);
+            self::assertInstanceOf(\DOMElement::class, $select);
+            self::assertSame(0, $xpath->query('.//option[@selected and @value!=""]', $select)->length);
+            self::assertSame('', $xpath->query('.//option', $select)->item(0)->getAttribute('value'));
         }
+        self::assertSame(1, $xpath->query('//select[@name="observation_id"]/option[@value="'.$later->getId().'"]')->length);
+        self::assertSame(1, $xpath->query('//select[@name="evidence_id"]/option[@value="'.$evidence->getId().'"]')->length);
         self::assertSame($before, $this->snapshot());
     }
 
-    public function testStudioAssessmentContactAndNotesReturnToStudioAndRemainVisibleInClassic(): void
+    public function testStudioAssessmentContactAndNotesReturnToStudioAndRemainVisible(): void
     {
         $finding = $this->finding('writes');
         $this->observation($finding);
@@ -219,7 +214,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $firstContact = $finding->getContactedAt();
         self::assertInstanceOf(\DateTimeImmutable::class, $firstContact);
         $this->assertStudioRedirect($this->request('/findings/'.$finding->getId().'/mark-contacted', 'POST', [
-            '_token' => $contactToken, 'surface' => 'studio',
+            '_token' => $contactToken,
         ]), $finding);
         self::assertSame($firstContact->format(DATE_ATOM), $this->reload($finding)->getContactedAt()->format(DATE_ATOM));
 
@@ -229,12 +224,12 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertSame($notes, $finding->getPrivateNotes());
         self::assertSame('confirmed', $finding->getManualAssessment());
         self::assertCount(1, $this->entityManager->getRepository(FindingAssessment::class)->findBy(['finding' => $finding]));
-        $classic = $this->request('/legacy/findings/'.$finding->getId());
-        self::assertSame(200, $classic->getStatusCode());
-        $classicText = $this->xpath($classic->getContent())->evaluate('string(//body)');
-        self::assertStringContainsString('Befund bestätigt', $classicText);
-        self::assertStringContainsString($notes, $classicText);
-        self::assertStringContainsString($firstContact->format(DATE_ATOM), $classicText);
+        $detail = $this->request($this->studioPath($finding));
+        self::assertSame(200, $detail->getStatusCode());
+        $detailText = $this->xpath($detail->getContent())->evaluate('string(//body)');
+        self::assertStringContainsString('Befund bestätigt', $detailText);
+        self::assertStringContainsString($notes, $detailText);
+        self::assertStringContainsString('Kontaktiert', $detailText);
     }
 
     public function testInvalidCsrfAndNonScalarInputsNeverWrite(): void
@@ -245,7 +240,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $before = $this->snapshot();
         foreach (['assessment', 'mark-contacted', 'notes'] as $action) {
             foreach ([null, 'forged', $this->token($otherHtml, $action), ['not-a-token']] as $token) {
-                $parameters = ['surface' => 'studio', 'assessment' => 'fixed', 'notes' => 'do not store'];
+                $parameters = ['assessment' => 'fixed', 'notes' => 'do not store'];
                 if ($token !== null) {
                     $parameters['_token'] = $token;
                 }
@@ -267,15 +262,13 @@ final class StudioFindingTest extends DatabaseTestCase
         }
     }
 
-    public function testSurfaceCanOnlySelectAnInternalDetailAndClassicDefaultsRemainIntact(): void
+    public function testLegacySurfaceIsNotRenderedAndCannotSelectAnotherReturnTarget(): void
     {
         $finding = $this->finding('return-surface');
         $html = $this->request($this->studioPath($finding))->getContent();
         foreach (['assessment', 'mark-contacted', 'notes'] as $action) {
             $form = $this->form($html, $action);
-            $surface = $this->xpath($form)->query('//input[@name="surface"]')->item(0);
-            self::assertInstanceOf(\DOMElement::class, $surface);
-            self::assertSame('studio', $surface->getAttribute('value'));
+            self::assertSame(0, $this->xpath($form)->query('//input[@name="surface"]')->length);
         }
         foreach ([null, 'classic', 'https://outside.invalid/destination', '//outside.invalid', '/arbitrary/internal/path'] as $surface) {
             $parameters = ['_token' => $this->token($html, 'notes'), 'notes' => 'surface fixture'];
@@ -284,14 +277,14 @@ final class StudioFindingTest extends DatabaseTestCase
             }
             $response = $this->request('/findings/'.$finding->getId().'/notes', 'POST', $parameters);
             self::assertSame(302, $response->getStatusCode());
-            self::assertSame('/legacy/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+            self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
             self::assertContains(parse_url($response->headers->get('Location'), PHP_URL_HOST), [null, 'localhost']);
         }
         $response = $this->request('/findings/'.$finding->getId().'/assessment', 'POST', [
             '_token' => $this->token($html, 'assessment'), 'assessment' => 'fixed',
         ]);
         self::assertSame(302, $response->getStatusCode());
-        self::assertSame('/legacy/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
     }
 
     public function testDiscardingAsDuplicateRetainsArtifactsNotesAndExplicitDecisionHistory(): void
@@ -310,11 +303,9 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertCount(1, $this->entityManager->getRepository(FindingAssessment::class)->findBy(['finding' => $finding]));
         self::assertCount(1, $this->entityManager->getRepository(Evidence::class)->findBy(['finding' => $finding]));
         self::assertCount(1, $this->entityManager->getRepository(RetestRun::class)->findBy(['finding' => $finding]));
-        foreach ([$this->studioPath($finding), '/legacy/findings/'.$finding->getId()] as $path) {
-            $html = $this->request($path)->getContent();
-            self::assertStringContainsString('Verworfen · Duplikat', $this->xpath($html)->evaluate('string(//body)'));
-            self::assertSame(0, $this->xpath($html)->query('//form[@action="/findings/'.$finding->getId().'/retest" or @action="/findings/'.$finding->getId().'/screenshots"]')->length);
-        }
+        $html = $this->request($this->studioPath($finding))->getContent();
+        self::assertStringContainsString('Verworfen · Duplikat', $this->xpath($html)->evaluate('string(//body)'));
+        self::assertSame(0, $this->xpath($html)->query('//form[@action="/findings/'.$finding->getId().'/retest" or @action="/findings/'.$finding->getId().'/screenshots"]')->length);
         self::assertSame($paths, $storage->listPaths());
     }
 
@@ -384,7 +375,7 @@ final class StudioFindingTest extends DatabaseTestCase
         $html = $this->request($this->studioPath($finding))->getContent();
 
         return $this->request('/findings/'.$finding->getId().'/'.$action, 'POST', $parameters + [
-            '_token' => $this->token($html, $action), 'surface' => 'studio',
+            '_token' => $this->token($html, $action),
         ]);
     }
 

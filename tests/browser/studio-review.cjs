@@ -200,7 +200,8 @@ async function main() {
         await nav.waitFor();
         await nav.scrollIntoViewIfNeeded();
         assert.equal(await nav.locator('a[href="/review"]').count(), 1);
-        assert.equal(await nav.locator('a[href="/legacy/settings"]').count(), 1);
+        assert.equal(await nav.locator('a[href="/settings"]').count(), 1);
+        assert.equal(await nav.locator('a[href^="/legacy"]').count(), 0);
         const geometry = await nav.evaluate((node) => {
           const rect = (target) => {
             const r = target.getBoundingClientRect();
@@ -312,7 +313,7 @@ async function main() {
 
     await gotoReview('?kind=unchecked&after=' + f.queued.id);
     assert.equal(await currentId(), f.legacyManual.id);
-    assert.match(await page.locator('[data-review-card]').innerText(), /historisch|Altbestand|Historisch/);
+    assert.match(await page.locator('[data-review-card]').innerText(), /historisch/i);
     assert.match(await page.locator('[data-review-card]').innerText(), /unbekannt/);
     await gotoReview('?images=missing');
     assert.match(await page.locator('[data-review-card]').innerText(), /Noch kein Bild|Kein Bild|fehlt/);

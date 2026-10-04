@@ -91,6 +91,13 @@ final class FindingIntakeApiTest extends DatabaseTestCase
             self::assertSame(0, $this->entityManager->getRepository(Finding::class)->count([]));
             self::assertSame(0, $this->entityManager->getRepository(ScreenshotJob::class)->count([]));
         }
+
+        $invalidDomain = $this->request('/api/findings', 'POST', [
+            '_token' => $token,
+            'url' => 'https://localhost/fixture',
+        ]);
+        self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $invalidDomain->getStatusCode());
+        self::assertSame('Die URL oder ihre Domain ist ungültig.', $this->json($invalidDomain)['error']);
     }
 
     public function testQueueInsertFailureRollsBackTheFindingAndReturnsOnlyAGenericServerError(): void
@@ -157,7 +164,10 @@ final class FindingIntakeApiTest extends DatabaseTestCase
             'ids' => [...$fifty, Uuid::v4()->toRfc4122()],
         ]));
         self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $tooMany->getStatusCode());
-        self::assertStringContainsString('50', $this->json($tooMany)['error']);
+        $error = $this->json($tooMany);
+        self::assertSame('Höchstens 50 Finding-IDs können gleichzeitig gelesen werden.', $error['error']);
+        self::assertSame('Höchstens {count} Finding-IDs können gleichzeitig gelesen werden.', $error['errorKey']);
+        self::assertSame(['count' => 50], $error['errorParameters']);
     }
 
     private function intakeToken(): string

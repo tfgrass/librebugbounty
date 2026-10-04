@@ -21,7 +21,7 @@ use App\Value\ReviewState;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
 
-/** Shared, read-only detail projection for Classic and Studio. */
+/** Read-only projection for the Studio case detail and review workflows. */
 final class FindingDetailService
 {
     public function __construct(

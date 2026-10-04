@@ -11,6 +11,7 @@ mkdir(APP_TEST_ROOT, 0700, true);
 foreach ([
     'APP_ENV' => 'test',
     'APP_DEBUG' => '0',
+    'APP_SECRET' => 'isolated-phpunit-secret',
     'DATABASE_URL' => 'sqlite:///'.APP_TEST_ROOT.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => APP_TEST_ROOT.'/artifacts',
     'PLAYWRIGHT_WORKER_URL' => 'http://127.0.0.1:1',

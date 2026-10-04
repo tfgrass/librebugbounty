@@ -34,7 +34,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::getContainer()->set(BrowserScreenshotClientInterface::class, $screenshot);
     }
 
-    public function testStudioLoadsAlongsideTheClassicViewWithoutChangingDataOrArtifacts(): void
+    public function testStudioLoadsWithoutExposingLegacyNavigationOrChangingDataOrArtifacts(): void
     {
         self::getContainer()->get(FindingService::class)->createFinding('http://studio-existing.localhost/fixture');
         $before = $this->snapshot();
@@ -53,10 +53,7 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::assertSame(1, $xpath->query('.//textarea[@name="annotate"]', $form)->length);
         self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $this->payload($xpath));
 
-        $classicLinks = $xpath->query('//a[@href="/legacy" and (contains(., "Klass") or contains(., "Classic"))]');
-        self::assertGreaterThanOrEqual(1, $classicLinks->length);
-        self::assertNotSame('', trim($classicLinks->item(0)->textContent));
-        self::assertSame(Response::HTTP_OK, $this->request($classicLinks->item(0)->getAttribute('href'))->getStatusCode());
+        self::assertSame(0, $xpath->query('//a[starts-with(@href, "/legacy")]')->length);
         self::assertSame($before, $this->snapshot());
         self::assertSame($paths, $storage->listPaths());
     }

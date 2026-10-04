@@ -119,6 +119,61 @@ async function main() {
     await page.waitForFunction(() => document.activeElement === document.querySelector('#intake-form [name="url"]'));
     mark('The canonical intake exists at / and URL has initial keyboard focus');
 
+    const migrationPage = await context.newPage();
+    await migrationPage.route('**/api/findings/status?*', (route) => route.abort('failed'));
+    await migrationPage.addInitScript(() => {
+      const findingId = '00000000-0000-4000-8000-000000000777';
+      sessionStorage.setItem('librebugbounty.intake.v1', JSON.stringify({
+        version: 1,
+        draft: { url: 'http://127.0.0.1/old-draft', payload: 'ORIGINAL-PAYLOAD', notes: 'Original note' },
+        entries: [
+          {
+            localId: 'old-english-error', url: 'http://127.0.0.1/failed', notes: 'Keep this note', payload: 'KEEP-ME',
+            saveState: 'failed', error: 'The form has expired or is invalid. Reload the page.',
+          },
+          {
+            localId: 'old-english-status', url: 'http://127.0.0.1/status', notes: '', payload: '',
+            saveState: 'confirmed', findingId, outcome: 'stored',
+            status: {
+              id: findingId, url: 'http://127.0.0.1/status', discarded: false,
+              assessment: { value: null, reason: null, assessedAt: '' },
+              observation: {
+                id: '00000000-0000-4000-8000-000000000778', result: 'inconclusive', mode: 'browser',
+                observedAt: '2026-10-01T08:00:00+02:00', label: 'Inconclusive (inconclusive)',
+              },
+              screenshot: { state: 'failed', label: 'Screenshot failed', error: 'No image was stored for this screenshot job.' },
+              contactedAt: '',
+            },
+          },
+        ],
+      }));
+    });
+    await migrationPage.goto(base + '/');
+    await migrationPage.locator('[data-intake-entry]').first().waitFor();
+    assert.equal(await migrationPage.locator('[data-intake-entry]').count(), 2);
+    const migrationText = await migrationPage.locator('[data-intake]').innerText();
+    for (const expected of ['Die Eingabe wurde nicht gespeichert.', 'Screenshot fehlgeschlagen', 'Für diesen Screenshot-Auftrag wurde kein Bild gespeichert.']) {
+      assert.ok(migrationText.includes(expected), `Migrated German history must contain: ${expected}`);
+    }
+    for (const stale of ['The form has expired', 'Screenshot failed', 'No image was stored for this screenshot job.']) {
+      assert.ok(!migrationText.includes(stale), `Migrated German history must not retain: ${stale}`);
+    }
+    assert.deepEqual(await migrationPage.evaluate(() => {
+      const form = document.querySelector('#intake-form');
+      return { url: form.elements.url.value, payload: form.elements.payload.value, notes: form.elements.annotate.value };
+    }), { url: 'http://127.0.0.1/old-draft', payload: 'ORIGINAL-PAYLOAD', notes: 'Original note' });
+    const migrated = await migrationPage.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide'));
+      return JSON.parse(sessionStorage.getItem('librebugbounty.intake.v1'));
+    });
+    assert.equal(migrated.entries[0].errorKey, 'Die Eingabe wurde nicht gespeichert. Bitte prüfen oder die Seite neu laden.');
+    assert.equal(migrated.entries[1].status.observation.labelKey, 'Uneindeutig (inconclusive)');
+    assert.equal(migrated.entries[1].status.screenshot.labelKey, 'Screenshot fehlgeschlagen');
+    assert.equal(migrated.entries[1].status.screenshot.errorKey, 'Für diesen Screenshot-Auftrag wurde kein Bild gespeichert.');
+    await migrationPage.close();
+    await page.bringToFront();
+    mark('Keyless English v1 history renders in German while drafts and user content remain intact');
+
     const urls = Array.from({ length: 5 }, (_, index) => `http://127.0.0.1/studio-local-${index + 1}${index === 4 ? '/' + 'a'.repeat(700) : ''}`);
     for (const value of urls) {
       timings.push(await submitUrl(value));
@@ -259,49 +314,29 @@ async function main() {
     await page.bringToFront();
     mark('A new independent tab starts with empty history and URL');
 
-    await page.locator('a[href="/legacy"]').first().click();
-    await page.waitForURL(base + '/legacy');
-    await url.waitFor();
-    assert.deepEqual(await draftValues(), studioDraft);
-    assert.equal(await rows.count(), historyCount);
+    assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
     await submitUrl(urls[0], 200);
-    assert.match(await rows.first().innerText(), /Bereits vorhanden/);
+    assert.match(await rows.first().innerText(), /Schon vorhanden|Bereits vorhanden/);
     assert.equal((await counts()).finding, 5);
-    mark('Classic still submits to the same API and uses its detailed duplicate renderer');
-    const sharedHistoryCount = await rows.count();
-    await url.fill('http://127.0.0.1/unfinished-classic');
-    await payload.fill('LOCAL-CLASSIC');
-    await notes.fill('Classic draft\nnot yet submitted');
-    const classicDraft = await draftValues();
-    await page.locator('a[href="/"]').first().click();
-    await page.waitForURL(base + '/');
-    await url.waitFor();
-    assert.deepEqual(await draftValues(), classicDraft);
-    assert.equal(await rows.count(), sharedHistoryCount);
-    mark('Studio ↔ Classic links preserve URL, marker, multiline note and history in both directions');
+    mark('Duplicate handling stays on the canonical intake and no legacy navigation is rendered');
 
-    await submitUrl(urls[1], 200);
     await expandDetails();
-    await url.fill('http://127.0.0.1/after-studio-return');
+    await url.fill('http://127.0.0.1/after-detail-return');
     await payload.fill('LATEST-STUDIO');
-    await notes.fill('Newer Studio draft');
-    const newerStudioDraft = await draftValues();
-    const newerHistoryCount = await rows.count();
+    await notes.fill('Canonical Studio draft');
+    const canonicalDraft = await draftValues();
+    const canonicalHistoryCount = await rows.count();
+    const detailLink = await rows.first().locator('a').first().getAttribute('href');
+    assert.match(detailLink, /^\/findings\/[0-9a-f-]+$/);
+    await rows.first().locator('a').first().click();
+    await page.waitForURL(base + detailLink);
+    await page.locator('[data-studio-detail]').waitFor();
     await page.goBack();
     await url.waitFor();
-    assert.deepEqual(await draftValues(), newerStudioDraft, 'Back to Classic must adopt the newer shared draft');
-    assert.equal(await rows.count(), newerHistoryCount, 'Back to Classic must adopt newer history');
+    assert.deepEqual(await draftValues(), canonicalDraft, 'Returning from the canonical detail must retain the draft');
+    assert.equal(await rows.count(), canonicalHistoryCount, 'Returning from the canonical detail must retain history');
     const backPersisted = await page.evaluate(() => window.__studioPageShows.at(-1));
-    await url.fill('http://127.0.0.1/after-classic-back');
-    await payload.fill('');
-    await notes.fill('Newer partial Classic draft');
-    const newerClassicDraft = await draftValues();
-    await page.goForward();
-    await url.waitFor();
-    assert.deepEqual(await draftValues(), newerClassicDraft, 'Forward to Studio must adopt newer Classic draft including blank marker');
-    assert.equal(await rows.count(), newerHistoryCount);
-    const forwardPersisted = await page.evaluate(() => window.__studioPageShows.at(-1));
-    mark(`Back/Forward adopts the latest shared draft and history (BFCache: ${backPersisted}/${forwardPersisted})`);
+    mark(`Intake links to the canonical Studio detail and Back restores draft/history (BFCache: ${backPersisted})`);
 
     // Exercise persisted-pageshow explicitly as well: request interception can
     // make real BFCache unavailable in some Chromium versions/configurations.
@@ -314,7 +349,7 @@ async function main() {
       window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
     });
     assert.deepEqual(await draftValues(), { url: 'http://127.0.0.1/persisted-store', payload: '', notes: 'Latest shared store' });
-    assert.equal(await rows.count(), newerHistoryCount - 1);
+    assert.equal(await rows.count(), canonicalHistoryCount - 1);
     mark('Persisted pageshow rereads the shared store without overwriting newer draft/history');
 
     // Enter inside the note is a newline, including in Studio's optional details.

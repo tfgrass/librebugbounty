@@ -110,14 +110,13 @@ async function main() {
   };
   const submit = async (trigger, expectedPath) => {
     await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), trigger()]);
-    assert.equal(new URL(page.url()).pathname, expectedPath, 'Native write must return to its originating surface');
+    assert.equal(new URL(page.url()).pathname, expectedPath, 'Native write must return to the requested Studio path');
   };
 
   try {
     const initial = await fixture();
     const main = initial.fixtures.main;
     const studioPath = '/findings/' + main.id;
-    const classicPath = '/legacy/findings/' + main.id;
     assert.equal(initial.snapshot.finding.length, 7);
     assert.equal(initial.snapshot.finding_assessment.length, 0);
     await gotoCase(main.id);
@@ -126,7 +125,14 @@ async function main() {
     assert.equal(await page.evaluate(() => window.__fixtureExecuted), undefined);
     assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'unknown');
     assert.match(await page.locator('.studio-observation').innerText(), /uneindeutig|Uneindeutig/);
-    mark('Studio detail loads read-only with local fixture data, escaped long URL/notes and distinct observation/assessment');
+    assert.equal(await page.locator('form[data-studio-screenshot-action]').getAttribute('action'), studioPath + '/screenshots');
+    assert.equal(await page.locator('form[data-studio-screenshot-action]').getAttribute('aria-describedby'), 'studio-screenshot-action-hint');
+    assert.equal(await page.locator('form[data-studio-retest-action]').getAttribute('action'), studioPath + '/retest');
+    assert.equal(await page.locator('form[data-studio-retest-action]').getAttribute('aria-describedby'), 'studio-retest-action-hint');
+    assert.match(await page.locator('#studio-screenshot-action-hint').innerText(), /Hintergrund|background/i);
+    assert.match(await page.locator('#studio-retest-action-hint').innerText(), /kein Screenshot|no screenshot/i);
+    assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
+    mark('Studio detail loads fixture data, separated screenshot/recheck actions, escaped content and no legacy navigation');
 
     await page.waitForFunction(() => {
       const image = document.querySelector('[data-shot-id]:not([hidden]) img');
@@ -208,26 +214,17 @@ async function main() {
     await submit(() => page.locator('[data-studio-notes] button[type="submit"]').click(), studioPath);
     assert.equal(await page.locator('#studio-case-notes').inputValue(), savedNote);
     assert.equal(normalizedLines((await fixture()).snapshot.finding.find((row) => row.id === main.id).private_notes), savedNote);
-    await page.locator(`a[href="${classicPath}"]`).first().click();
-    await page.waitForURL(base + classicPath);
-    const classicNotes = page.locator('.detail-list > div').filter({ has: page.locator('dt', { hasText: /^Notes$/ }) }).locator('dd');
-    assert.equal(normalizedLines(await classicNotes.textContent()), savedNote);
-    await page.locator(`a[href="${studioPath}"]`).first().click();
-    await page.waitForURL(base + studioPath);
+    await page.reload();
+    await page.locator('[data-studio-detail]').waitFor();
     assert.equal(await page.locator('#studio-case-notes').inputValue(), savedNote);
-    mark('Notes save explicitly; Enter is a newline; Classic and Studio share the exact multiline note');
+    mark('Notes save explicitly; Enter is a newline; the canonical detail reloads the exact multiline note');
 
     await submit(() => page.locator('form[action$="/mark-contacted"] button').click(), studioPath);
     const contactAt = (await fixture()).snapshot.finding.find((row) => row.id === main.id).contacted_at;
     assert.ok(contactAt);
     assert.equal(await page.locator('form[action$="/mark-contacted"]').count(), 0);
-    await page.locator(`a[href="${classicPath}"]`).first().click();
-    await page.waitForURL(base + classicPath);
-    const classicContact = page.locator('.detail-list > div').filter({ has: page.locator('dt', { hasText: /^Contacted$/ }) }).locator('dd');
-    assert.notEqual(await classicContact.textContent(), 'n/a');
-    assert.ok((await classicContact.textContent()).startsWith(contactAt.slice(0, 10)));
-    await gotoCase(main.id);
-    mark('Contact records its timestamp and the shared state is visible in both surfaces');
+    assert.match(await page.locator('[aria-labelledby="studio-contact-title"]').innerText(), /Kontaktiert|Contacted/i);
+    mark('Contact records its timestamp and the canonical detail renders the saved state');
 
     assert.equal(await page.locator('#studio-observation-basis').inputValue(), '');
     assert.equal(await page.locator('#studio-evidence-basis').inputValue(), '');
@@ -251,11 +248,10 @@ async function main() {
     assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'fixed');
     assert.equal(await page.locator('#assessment-form button[value="fixed"]').count(), 0);
     assert.equal(await page.locator('#assessment-form button[value="confirmed"]').count(), 1);
-    await page.locator(`a[href="${classicPath}"]`).first().click();
-    await page.waitForURL(base + classicPath);
-    assert.match(await page.locator('#assessment').innerText(), /Behoben|behoben/);
-    await gotoCase(main.id);
-    mark('Explicitly chosen observation/evidence persists its snapshot; fixed state and correction actions are shared with Classic');
+    await page.reload();
+    await page.locator('[data-studio-detail]').waitFor();
+    assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'fixed');
+    mark('Explicitly chosen observation/evidence persists its snapshot and the canonical detail keeps correction actions');
 
     await expand('.studio-discard');
     await page.locator('#studio-discard-reason').selectOption('duplicate');

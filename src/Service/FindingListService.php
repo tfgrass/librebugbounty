@@ -8,7 +8,7 @@ use App\Repository\FindingReadRepository;
 use App\Repository\ScreenshotJobRepository;
 use App\Value\ScreenshotJobStatus;
 
-/** Shared read-only list semantics for Studio and the legacy interface. */
+/** Shared read-only list semantics for Studio and retained historical data. */
 final class FindingListService
 {
     private const LIST_QUERY_FIELDS = [
@@ -140,12 +140,12 @@ final class FindingListService
         if ($oldStatus !== '') {
             if (in_array($oldStatus, ['open', 'manual_review', 'unchecked'], true)) {
                 if ($legacyBucket !== '' && $legacyBucket !== $oldStatus) {
-                    throw new \InvalidArgumentException('Widersprüchliche Altgruppenfilter.');
+                    throw new \InvalidArgumentException('Widersprüchliche Filter für die historische Gruppe.');
                 }
                 $legacyBucket = $oldStatus;
             } else {
                 if ($legacyStatus !== '' && $legacyStatus !== $oldStatus) {
-                    throw new \InvalidArgumentException('Widersprüchliche Altstatusfilter.');
+                    throw new \InvalidArgumentException('Widersprüchliche Filter für den historischen Status.');
                 }
                 $legacyStatus = $oldStatus;
             }

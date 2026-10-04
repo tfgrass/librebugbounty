@@ -360,7 +360,7 @@ async function main() {
     await snapshot('delete-unconfirmed-375.png');
     mark('Six-link detail navigation fits at 375px and native required confirmation blocks accidental deletion');
 
-    const rejected = await context.request.post(base + '/findings/' + f['delete-js'].id + '/delete', { form: { surface: 'studio', return_to: deleteReturn } });
+    const rejected = await context.request.post(base + '/findings/' + f['delete-js'].id + '/delete', { form: { return_to: deleteReturn } });
     assert.equal(rejected.status(), 200);
     assert.equal(new URL(rejected.url()).pathname, '/findings/' + f['delete-js'].id);
     assert.ok(new URL(rejected.url()).searchParams.get('error'));

@@ -60,9 +60,9 @@
 .studio-finding-url { margin: 4px 0 5px; overflow: hidden; color: #94a4b7; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .studio-finding-record-meta { display: flex; flex-wrap: wrap; gap: 3px 10px; margin: 0; color: #9eabbd; font-size: 10px; overflow-wrap: anywhere; }
 .studio-finding-record-meta code { font-size: 9px; }
-.studio-finding-legacy { margin-top: 6px; color: #9eacbd; font-size: 10px; }
-.studio-finding-legacy summary { cursor: pointer; }
-.studio-finding-legacy p { margin: 7px 0 0; color: #b5c0ce; overflow-wrap: anywhere; }
+.studio-finding-history { margin-top: 6px; color: #9eacbd; font-size: 10px; }
+.studio-finding-history summary { cursor: pointer; }
+.studio-finding-history p { margin: 7px 0 0; color: #b5c0ce; overflow-wrap: anywhere; }
 .studio-finding-dimension { display: flex; flex-direction: column; gap: 5px; font-size: 11px; overflow-wrap: anywhere; }
 .studio-finding-dimension small { color: var(--studio-muted); font-size: 10px; line-height: 1.5; }
 .studio-finding-state[data-tone="confirmed"] { color: #adcbfb; }

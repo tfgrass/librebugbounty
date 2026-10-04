@@ -280,7 +280,7 @@ async function main() {
     assert.equal(rightHistory.length, 2); assert.equal(rightHistory.at(-1).assessment, 'confirmed');
     assert.equal(state.snapshot.finding.find((row) => row.id === f.shortcutConfirm.id).manual_assessment, 'confirmed');
     assert.deepEqual(state.snapshot.finding_review_acknowledgement, beforeArrowLeft.finding_review_acknowledgement);
-    assert.match(await page.locator('[data-review-notice]').innerText(), /Altbewertung|unbekannt/);
+    assert.match(await page.locator('[data-review-notice]').innerText(), /Frühere Bewertung|unbekannt/);
     await saveScreenshot('notice-legacy.png');
     mark('Left/right shortcuts still create fixed/confirmed judgments once, never keep acknowledgements, preserve technical records and retain the exact successor');
 

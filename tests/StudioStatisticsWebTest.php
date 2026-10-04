@@ -148,11 +148,11 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
         self::assertInstanceOf(\DOMElement::class, $form);
         $parameters = [];
         foreach ($xpath->query('.//input[@name]', $form) as $input) $parameters[$input->getAttribute('name')] = $input->getAttribute('value');
-        self::assertSame('studio', $parameters['surface']);
+        self::assertArrayNotHasKey('surface', $parameters);
         self::assertSame($return, $parameters['return_to']);
         $before = $this->snapshot();
         $route = '/findings/'.$finding->getId().'/mark-sent';
-        self::assertSame(403, $this->request($route, 'POST', ['_token' => 'invalid', 'surface' => 'studio'])->getStatusCode());
+        self::assertSame(403, $this->request($route, 'POST', ['_token' => 'invalid'])->getStatusCode());
         self::assertSame(400, $this->request($route, 'POST', array_replace($parameters, ['return_to' => ['/findings']]))->getStatusCode());
         self::assertSame($before, $this->snapshot());
         $response = $this->request($route, 'POST', $parameters);
@@ -180,7 +180,7 @@ final class StudioStatisticsWebTest extends DatabaseTestCase
         $detail = $this->request('/findings/'.$finding->getId());
         $token = $this->xpath($detail->getContent())->evaluate('string(//form[@action="'.$route.'"]//input[@name="_token"]/@value)');
         self::assertNotSame('', $token);
-        self::assertTrue($this->request($route, 'POST', ['_token' => $token, 'surface' => 'studio'])->isRedirection());
+        self::assertTrue($this->request($route, 'POST', ['_token' => $token])->isRedirection());
         $row = $this->entityManager->getConnection()->fetchAssociative('SELECT * FROM finding WHERE id = ?', [$finding->getId()]);
         self::assertNotNull($row['notified_owner_at']);
         self::assertNull($row['contacted_at']);

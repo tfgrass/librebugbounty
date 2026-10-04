@@ -46,7 +46,7 @@ final class StudioDeleteTest extends DatabaseTestCase
         self::assertSame(1, $xpath->query($form)->length);
         self::assertSame('/findings/'.$finding->getId().'/delete', $xpath->evaluate('string('.$form.'/@action)'));
         self::assertSame('post', $xpath->evaluate('string('.$form.'/@method)'));
-        self::assertSame('studio', $xpath->evaluate('string('.$form.'//input[@name="surface"]/@value)'));
+        self::assertSame(0, $xpath->query($form.'//input[@name="surface"]')->length);
         self::assertSame($returnTo, $xpath->evaluate('string('.$form.'//input[@name="return_to"]/@value)'));
         self::assertSame(1, $xpath->query($form.'//input[@type="checkbox" and @name="confirm_delete" and @value="1" and @required]')->length);
         self::assertSame(0, $xpath->query($form.'//input[@name="confirm_delete" and @checked]')->length);
@@ -60,9 +60,9 @@ final class StudioDeleteTest extends DatabaseTestCase
         $file = $storage->storeContents($finding, 'retain this local fixture', 'fixture.txt')->relativePath;
         $before = $this->snapshot();
         $returnTo = '/findings?scope=active&q=not-confirmed';
-        foreach ([[], ['confirm_delete' => '0'], ['confirm_delete' => 'true'], ['confirm_delete' => ['1']]] as $parameters) {
+        foreach ([[], ['confirm_delete' => '0'], ['confirm_delete' => 'true']] as $parameters) {
             $response = $this->request('/findings/'.$finding->getId().'/delete', 'POST', $parameters + [
-                'surface' => 'studio', 'return_to' => $returnTo,
+                'return_to' => $returnTo,
             ]);
             self::assertSame(302, $response->getStatusCode());
             self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
@@ -72,6 +72,14 @@ final class StudioDeleteTest extends DatabaseTestCase
             self::assertSame($before, $this->snapshot());
             self::assertSame('retain this local fixture', $storage->read($file));
         }
+        $withoutSurface = $this->request('/findings/'.$finding->getId().'/delete', 'POST');
+        self::assertSame(302, $withoutSurface->getStatusCode());
+        parse_str((string) parse_url($withoutSurface->headers->get('Location'), PHP_URL_QUERY), $withoutSurfaceQuery);
+        self::assertStringContainsString('bestätige', $withoutSurfaceQuery['error']);
+        self::assertSame(400, $this->request('/findings/'.$finding->getId().'/delete', 'POST', [
+            'return_to' => $returnTo, 'confirm_delete' => ['1'],
+        ])->getStatusCode());
+        self::assertSame($before, $this->snapshot());
     }
 
     public function testConfirmedDeletionRemovesOnlyTheSelectedCaseAndAllOfItsDependents(): void
@@ -96,7 +104,7 @@ final class StudioDeleteTest extends DatabaseTestCase
         $domainId = $finding->getDomain()->getId();
         $returnTo = '/findings?scope=active&q=retain&page=2&pageSize=25';
         $response = $this->request('/findings/'.$finding->getId().'/delete', 'POST', [
-            'surface' => 'studio', 'confirm_delete' => '1', 'return_to' => $returnTo,
+            'confirm_delete' => '1', 'return_to' => $returnTo,
         ]);
         self::assertSame(302, $response->getStatusCode());
         self::assertSame('/findings', parse_url($response->headers->get('Location'), PHP_URL_PATH));
@@ -115,11 +123,63 @@ final class StudioDeleteTest extends DatabaseTestCase
         self::assertSame('sibling fixture', $storage->read($siblingFile));
     }
 
+    public function testDeletingTheCurrentReviewAnchorKeepsFiltersWithoutTheStaleAnchor(): void
+    {
+        $finding = $this->finding('review-anchor');
+        $returnTo = '/review?kind=unchecked&images=all&after='.$finding->getId();
+
+        $response = $this->request('/findings/'.$finding->getId().'/delete', 'POST', [
+            'confirm_delete' => '1', 'return_to' => $returnTo,
+        ]);
+
+        self::assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+        self::assertSame('/review', parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        parse_str((string) parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
+        self::assertSame('unchecked', $query['kind'] ?? null);
+        self::assertSame('all', $query['images'] ?? null);
+        self::assertArrayNotHasKey('after', $query);
+        self::assertArrayHasKey('message', $query);
+        self::assertSame(Response::HTTP_OK, $this->request($response->headers->get('Location'))->getStatusCode());
+    }
+
+    public function testArtifactCleanupFailureReportsTheCommittedDeletionOnTheSafeReturnPath(): void
+    {
+        $finding = $this->finding('cleanup-failure');
+        $storage = $this->createMock(EvidenceStorageInterface::class);
+        $storage->expects(self::once())->method('deleteForFinding')->with($finding)
+            ->willThrowException(new \RuntimeException('Synthetic storage failure.'));
+        self::getContainer()->set(FindingService::class, new FindingService(
+            self::getContainer()->get(\App\Service\DomainService::class),
+            self::getContainer()->get(\App\Repository\FindingRepository::class),
+            $this->entityManager,
+            self::getContainer()->get(\App\Service\ValidationService::class),
+            $storage,
+        ));
+        $returnTo = '/review?kind=unchecked&images=all&after='.$finding->getId();
+
+        $response = $this->request('/findings/'.$finding->getId().'/delete', 'POST', [
+            'confirm_delete' => '1', 'return_to' => $returnTo,
+        ]);
+
+        self::assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+        self::assertSame('/review', parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        parse_str((string) parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
+        self::assertSame('unchecked', $query['kind'] ?? null);
+        self::assertSame('all', $query['images'] ?? null);
+        self::assertArrayNotHasKey('after', $query);
+        self::assertStringContainsString('aus der Datenbank gelöscht', $query['error'] ?? '');
+        self::assertStringContainsString('app:artifacts:audit', $query['error'] ?? '');
+        self::assertSame(0, (int) $this->entityManager->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM finding WHERE id = ?',
+            [$finding->getId()],
+        ));
+    }
+
     public function testAnExternalReturnPathCannotRedirectDeletionAwayFromTheInventory(): void
     {
         $finding = $this->finding('return-path');
         $response = $this->request('/findings/'.$finding->getId().'/delete', 'POST', [
-            'surface' => 'studio', 'confirm_delete' => '1', 'return_to' => 'https://outside.example.test/findings',
+            'confirm_delete' => '1', 'return_to' => 'https://outside.example.test/findings',
         ]);
         self::assertSame(302, $response->getStatusCode());
         self::assertSame('/findings', parse_url($response->headers->get('Location'), PHP_URL_PATH));
@@ -130,7 +190,7 @@ final class StudioDeleteTest extends DatabaseTestCase
     {
         $finding = $this->finding('invalid-input');
         $before = $this->snapshot();
-        foreach ([['surface' => ['studio']], ['surface' => 'studio', 'return_to' => ['/findings']]] as $parameters) {
+        foreach ([['surface' => ['studio']], ['return_to' => ['/findings']]] as $parameters) {
             self::assertSame(400, $this->request('/findings/'.$finding->getId().'/delete', 'POST', $parameters + [
                 'confirm_delete' => '1',
             ])->getStatusCode());

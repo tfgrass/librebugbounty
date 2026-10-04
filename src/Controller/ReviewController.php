@@ -6,6 +6,7 @@ use App\Dto\ReviewQueueView;
 use App\Repository\FindingRepository;
 use App\Entity\Finding;
 use App\Service\ReviewQueueService;
+use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -20,6 +21,7 @@ final class ReviewController
         private readonly ReviewQueueService $queue,
         private readonly FindingRepository $findings,
         private readonly CsrfTokenManagerInterface $csrf,
+        private readonly UiTranslator $i18n,
     ) {
     }
 
@@ -29,7 +31,7 @@ final class ReviewController
         try {
             $view = $this->queue->get($request->query->all());
         } catch (\InvalidArgumentException $exception) {
-            return $this->plain($exception->getMessage(), Response::HTTP_BAD_REQUEST);
+            return $this->plain($this->i18n->trans($exception->getMessage()), Response::HTTP_BAD_REQUEST);
         }
         $query = $request->query->all();
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
@@ -41,7 +43,7 @@ final class ReviewController
     public function assess(string $id, Request $request): Response
     {
         if (!Uuid::isValid($id) || !$this->findings->find($id) instanceof Finding) {
-            return $this->plain('Fall nicht gefunden.', Response::HTTP_NOT_FOUND);
+            return $this->plain($this->i18n->trans('Fall nicht gefunden.'), Response::HTTP_NOT_FOUND);
         }
         $parameters = $request->request->all();
         $submitted = [];
@@ -57,17 +59,17 @@ final class ReviewController
         try {
             $view = $this->queue->get($query, $id);
         } catch (\InvalidArgumentException $exception) {
-            return $this->render($this->queue->get([], $id), null, $exception->getMessage(), $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($this->queue->get([], $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
         }
         if ($malformed) {
-            return $this->render($view, null, 'Ungültige Bewertungsangaben.', $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($view, null, $this->i18n->trans('Ungültige Bewertungsangaben.'), $submitted, Response::HTTP_BAD_REQUEST);
         }
         if (!$this->csrf->isTokenValid(new CsrfToken('review_assessment_'.$id, $submitted['_token']))) {
-            return $this->render($view, null, 'Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.', $submitted, Response::HTTP_FORBIDDEN);
+            return $this->render($view, null, $this->i18n->trans('Die Bewertung wurde nicht gespeichert. Formular bitte neu laden.'), $submitted, Response::HTTP_FORBIDDEN);
         }
         // Keep a complete, unmodified current card available even if a failed
         // ORM flush closes the entity manager. Never redirect on write failure.
-        $failureResponse = $this->render($view, null, 'Die Bewertung konnte nicht gespeichert werden. Bitte den Fall neu laden und erneut prüfen.', $submitted, Response::HTTP_INTERNAL_SERVER_ERROR);
+        $failureResponse = $this->render($view, null, $this->i18n->trans('Die Bewertung konnte nicht gespeichert werden. Bitte den Fall neu laden und erneut prüfen.'), $submitted, Response::HTTP_INTERNAL_SERVER_ERROR);
         try {
             $this->queue->assess(
                 $id,
@@ -78,18 +80,18 @@ final class ReviewController
                 $submitted['context_token'],
             );
         } catch (\UnexpectedValueException $exception) {
-            return $this->render($this->queue->get($query, $id), null, $exception->getMessage(), $submitted, Response::HTTP_CONFLICT);
+            return $this->render($this->queue->get($query, $id), null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_CONFLICT);
         } catch (\InvalidArgumentException $exception) {
-            return $this->render($view, null, $exception->getMessage(), $submitted, Response::HTTP_BAD_REQUEST);
+            return $this->render($view, null, $this->i18n->trans($exception->getMessage()), $submitted, Response::HTTP_BAD_REQUEST);
         } catch (\Throwable) {
             return $failureResponse;
         }
 
         $message = match ($submitted['assessment']) {
-            'confirmed' => 'Vulnerable bestätigt.',
-            'fixed' => 'Not vulnerable bestätigt.',
-            'discarded' => 'Fall verworfen.',
-            'keep' => 'Hinweis geprüft. Bewertung beibehalten.',
+            'confirmed' => $this->i18n->trans('Vulnerable bestätigt.'),
+            'fixed' => $this->i18n->trans('Not vulnerable bestätigt.'),
+            'discarded' => $this->i18n->trans('Fall verworfen.'),
+            'keep' => $this->i18n->trans('Hinweis geprüft. Bewertung beibehalten.'),
         };
         $nextPath = $this->queue->path($view->kind, $view->images, $id);
 
@@ -99,6 +101,12 @@ final class ReviewController
     private function render(ReviewQueueView $view, ?string $message = null, ?string $error = null, array $submitted = [], int $status = Response::HTTP_OK): Response
     {
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $locale = $this->i18n->locale();
+        $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
+        $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
+        $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);
+        $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
+        $i18nJson = $this->i18n->browserCatalogJson();
         $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';
         $contextToken = $view->detail === null ? '' : $this->queue->contextToken($view->detail->finding->getId(), $view->stateFingerprint);
         $lastReviewedId = $view->lastReviewedId;

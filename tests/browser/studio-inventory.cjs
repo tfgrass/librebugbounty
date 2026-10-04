@@ -167,18 +167,31 @@ async function main() {
     assert.equal(await page.locator('#intake-form').count(), 1);
     mark('Studio aliases and old root filter bookmarks preserve their queries; plain /studio/ lands on the canonical intake');
 
-    const legacyResponse = await page.goto(base + '/legacy?scope=duplicates&pageSize=all');
-    assert.equal(legacyResponse.status(), 200);
-    await assertIds([f.duplicate.id, f['legacy-duplicate'].id], 'Legacy uses shared archive projection');
-    assert.equal(await stat('active'), f._expect.active);
-    const legacyOpen = await page.locator('[data-finding-id] a').first().getAttribute('href');
-    assert.ok(legacyOpen.startsWith('/findings/'), 'Legacy list opens the canonical Studio detail');
-    await page.goto(base + '/settings');
+    const legacyResponse = await context.request.get(base + '/legacy?scope=duplicates&pageSize=all', { maxRedirects: 0 });
+    assert.equal(legacyResponse.status(), 308);
+    const legacyLocation = new URL(legacyResponse.headers().location, base);
+    assert.equal(legacyLocation.pathname, '/findings');
+    assert.equal(legacyLocation.searchParams.get('scope'), 'duplicates');
+    assert.equal(legacyLocation.searchParams.get('pageSize'), 'all');
+    await page.goto(legacyLocation.href);
+    await assertIds([f.duplicate.id, f['legacy-duplicate'].id], 'Legacy list bookmark redirects to the canonical archive projection');
+    assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
+    const legacyDetail = await context.request.get(base + '/legacy/findings/' + f.duplicate.id + '?message=fixture', { maxRedirects: 0 });
+    assert.equal(legacyDetail.status(), 308);
+    assert.equal(legacyDetail.headers().location, '/findings/' + f.duplicate.id + '?message=fixture');
+    const settings = await page.goto(base + '/settings');
+    assert.equal(settings.status(), 200);
+    assert.equal(new URL(page.url()).pathname, '/settings');
+    assert.equal(await page.locator('[data-studio-settings]').count(), 1);
+    const cachedLegacySettings = await page.goto(base + '/legacy/settings');
+    assert.equal(cachedLegacySettings.status(), 200);
     assert.equal(new URL(page.url()).pathname, '/legacy/settings');
+    assert.equal(await page.locator('[data-studio-settings]').count(), 1);
+    assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
     for (const removedPath of ['/operator-priority', '/operator-priority/', '/legacy/operator-priority', '/legacy/operator-priority/']) {
       assert.equal((await context.request.get(base + removedPath + '?days=14')).status(), 404, removedPath);
     }
-    mark('Legacy inventory matches shared counts and opens Studio cases; settings remain reachable and removed priority URLs return 404');
+    mark('Legacy bookmarks redirect to Studio, cached legacy settings render Studio, and removed priority URLs return 404');
 
     const noJs = await browser.newContext({ viewport: { width: 640, height: 900 }, javaScriptEnabled: false });
     await protect(noJs);
@@ -196,7 +209,7 @@ async function main() {
     assert.equal(new URL(fallback.url()).searchParams.get('q'), 'literal%_!segment');
     await noJs.close();
     mark('Without JavaScript native search, case navigation and return to filtered results work');
-    assert.deepEqual((await fixture()).snapshot, initial.snapshot, 'Pure list/detail/Legacy reads must not mutate persisted records');
+    assert.deepEqual((await fixture()).snapshot, initial.snapshot, 'Pure list/detail/compatibility reads must not mutate persisted records');
     assert.equal(postRequests.length, 0);
     mark('List filters, statistics, responsive layouts and migration redirects leave the isolated database untouched and queue no work');
 
@@ -233,13 +246,15 @@ async function main() {
     await snapshot('studio-inventory-960-return-after-writes.png');
     mark('Page two → case → note/contact/assessment writes → return retains query, page size, page and shows updated shared states');
 
-    await page.goto(base + '/legacy/findings/' + mainId);
-    assert.equal((await page.locator('.detail-list > div').filter({ has: page.locator('dt', { hasText: /^Notes$/ }) }).locator('dd').textContent()).replace(/\r\n/g, '\n'), nextNote);
-    assert.match(await page.locator('#assessment').innerText(), /bestätigt/i);
+    const oldDetailBookmark = await page.goto(base + '/legacy/findings/' + mainId);
+    assert.equal(oldDetailBookmark.status(), 200);
+    assert.equal(new URL(page.url()).pathname, '/findings/' + mainId);
+    assert.equal(await page.locator('#studio-case-notes').inputValue(), nextNote);
+    assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'confirmed');
     await page.goto(base + '/studio/findings/' + mainId);
     assert.equal(new URL(page.url()).pathname, '/findings/' + mainId);
     assert.equal(await page.locator('.studio-assessment-value').getAttribute('data-assessment'), 'confirmed');
-    mark('Legacy detail and old Studio detail bookmarks resolve shared updated records');
+    mark('Old detail bookmarks redirect to the canonical Studio record');
 
     await page.goto(base + '/');
     const input = page.locator('#intake-form [name="url"]');
@@ -255,21 +270,24 @@ async function main() {
     await input.fill(draft.url);
     await page.locator('#intake-form [name="payload"]').fill(draft.payload);
     await page.locator('#intake-form [name="annotate"]').fill(draft.notes);
+    const storedDraft = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('librebugbounty.intake.v1') || 'null')?.draft);
+    assert.deepEqual(await storedDraft(), draft, 'Input events must persist the complete intake draft before navigation');
     await page.locator('.studio-workspace-nav a[href="/findings"]').click();
+    assert.deepEqual(await storedDraft(), draft, 'Inventory navigation must retain the tab-local intake draft');
     await page.locator('.studio-workspace-nav a[href="/"]').click();
+    assert.deepEqual(await storedDraft(), draft, 'Returning to intake must not overwrite the stored draft');
+    await page.waitForFunction((expected) => {
+      const form = document.querySelector('#intake-form');
+      return form?.elements.url.value === expected.url
+        && form.elements.payload.value === expected.payload
+        && form.elements.annotate.value === expected.notes;
+    }, draft);
     assert.equal(await input.inputValue(), draft.url);
     assert.equal(await page.locator('#intake-form [name="payload"]').inputValue(), draft.payload);
     assert.equal(await page.locator('#intake-form [name="annotate"]').inputValue(), draft.notes);
     assert.equal(await page.locator('[data-intake-entry]').count(), 1);
-    await page.locator('a[href="/legacy"]').first().click();
-    assert.equal(await input.inputValue(), draft.url);
-    assert.equal(await page.locator('#intake-form [name="payload"]').inputValue(), draft.payload);
-    assert.equal(await page.locator('#intake-form [name="annotate"]').inputValue(), draft.notes);
-    assert.equal(await page.locator('[data-intake-entry]').count(), 1);
-    await page.locator('a[href="/"]').first().click();
-    assert.equal(await input.inputValue(), draft.url);
-    assert.equal(await page.locator('[data-intake-entry]').count(), 1);
-    mark('Canonical intake opens Studio cases and preserves unsent URL/marker/multiline note plus tab history through inventory and Legacy navigation');
+    assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
+    mark('Canonical intake opens Studio cases and preserves unsent URL/marker/multiline note plus tab history through inventory navigation');
 
     const final = await fixture();
     assert.equal(final.snapshot.finding.length, initial.snapshot.finding.length);

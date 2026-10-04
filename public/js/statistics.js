@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  const i18n = window.LibreBugBountyI18n || { t: (key, parameters = {}) => String(key).replace(/\{([^}]+)\}/g, (match, name) => parameters[name] ?? match), number: String, date: (value) => String(value) };
+  const t = i18n.t;
+
   const root = document.querySelector('[data-statistics]');
   const payload = document.getElementById('statistics-data');
   if (!root || !payload) return;
@@ -9,7 +12,7 @@
   try { view = JSON.parse(payload.textContent); } catch (_) { return; }
   if (!Array.isArray(view.series) || !Array.isArray(view.calendar)) return;
 
-  const labels = { reported: 'Gemeldet', contacted: 'Kontaktiert', sent: 'Versendet', fixed: 'Behoben', confirmed: 'Bestätigt' };
+  const labels = Object.fromEntries(Object.entries({ reported: 'Gemeldet', contacted: 'Kontaktiert', sent: 'Versendet', fixed: 'Behoben', confirmed: 'Bestätigt' }).map(([key, label]) => [key, t(label)]));
   const colors = { reported: '#80adff', sent: '#bca4ff', fixed: '#77dbb0', confirmed: '#e9bf7e', contacted: '#78cee3' };
   const segmentColors = ['#80adff', '#bca4ff', '#77dbb0', '#e9bf7e', '#78cee3', '#e698b6', '#8c9cb4', '#adbe80'];
   const palettes = {
@@ -19,8 +22,8 @@
     confirmed: ['#283342', '#665037', '#96744c', '#be9b62', '#e9bf7e'],
     fixed: ['#283342', '#2a5149', '#3e7a66', '#59ad8e', '#77dbb0'],
   };
-  const number = new Intl.NumberFormat('de-DE');
-  const day = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' });
+  const number = { format: i18n.number };
+  const day = { format: i18n.date };
   const svgNamespace = 'http://www.w3.org/2000/svg';
   const metrics = Object.keys(labels);
   const count = value => Math.max(0, Number(value) || 0);
@@ -74,7 +77,7 @@
       const value = document.createElement('b');
       value.textContent = number.format(count(row[metric]));
       item.append(value);
-      if (url) item.setAttribute('aria-label', `${labels[metric]}: ${number.format(count(row[metric]))} · ${rowLabel(row)} · Fälle öffnen`);
+      if (url) item.setAttribute('aria-label', `${labels[metric]}: ${number.format(count(row[metric]))} · ${rowLabel(row)} · ${t('Fälle öffnen')}`);
       tooltipValues.append(item);
     }
     if (tooltip.parentNode !== rows[activeMetric]) rows[activeMetric].append(tooltip);
@@ -101,7 +104,7 @@
     const metric = chart.dataset.chartMetric;
     chart.setAttribute('tabindex', '0');
     chart.setAttribute('role', 'group');
-    chart.setAttribute('aria-roledescription', 'interaktives Liniendiagramm mit eigener Skala');
+    chart.setAttribute('aria-roledescription', t('interaktives Liniendiagramm mit eigener Skala'));
     const pointerIndex = event => {
       const rect = chart.getBoundingClientRect();
       return Math.round((event.clientX - rect.left) / Math.max(1, rect.width) * (view.series.length - 1));
@@ -162,7 +165,7 @@
       const arc = total ? length * count(segment.count) / total : 0;
       const circle = createSvg('circle', { class: 'stat-donut-segment', cx: 100, cy: 100, r: 68, fill: 'none', stroke: color, 'stroke-width': 20, 'stroke-dasharray': `${Math.max(0, arc - Math.min(2, arc * .15))} ${length}`, 'stroke-dashoffset': -offset });
       const title = createSvg('title', {});
-      title.textContent = `${segment.label}: ${number.format(count(segment.count))}`;
+      title.textContent = `${t(segment.label)}: ${number.format(count(segment.count))}`;
       circle.append(title);
       group.append(circle);
       offset += arc;
@@ -178,24 +181,24 @@
       dot.setAttribute('aria-hidden', 'true');
       const name = document.createElement('span');
       name.className = 'stat-tld-name';
-      name.textContent = segment.label;
+      name.textContent = t(segment.label);
       const value = document.createElement('strong');
       value.className = 'stat-tld-count';
       value.textContent = number.format(count(segment.count));
       const share = document.createElement('span');
       share.className = 'stat-tld-percent';
       const percentage = total ? 100 * count(segment.count) / total : 0;
-      share.textContent = percentage > 0 && percentage < 1 ? '< 1 %' : number.format(Math.round(percentage)) + ' %';
+      share.textContent = percentage > 0 && percentage < 1 ? '< 1%' : t('{number} %', { number: number.format(Math.round(percentage)) });
       row.append(dot, name, value, share);
       li.append(row);
       legend.append(li);
     });
     root.querySelector('[data-tld-total]').textContent = number.format(total);
-    root.querySelector('[data-tld-unit]').textContent = measure === 'hosts' ? 'Hosts' : 'Fälle';
-    root.querySelector('[data-tld-donut]').setAttribute('aria-label', `Domain-Endungen: ${number.format(total)} ${measure === 'hosts' ? 'Hosts' : 'Fälle'}`);
-    root.querySelector('[data-tld-note]').textContent = measure === 'hosts'
+    root.querySelector('[data-tld-unit]').textContent = t(measure === 'hosts' ? 'Hosts' : 'Fälle');
+    root.querySelector('[data-tld-donut]').setAttribute('aria-label', t('Domain-Endungen: {count} {unit}', { count: number.format(total), unit: t(measure === 'hosts' ? 'Hosts' : 'Fälle') }));
+    root.querySelector('[data-tld-note]').textContent = t(measure === 'hosts'
       ? 'Jeder vollständige Hostname zählt einmal. Mehrere Fälle auf demselben Host erhöhen die Hostzahl nicht.'
-      : 'Ein Fall zählt einmal. Die fünf häufigsten TLDs werden einzeln gezeigt; IP-Adressen und lokale Hosts stehen separat.';
+      : 'Ein Fall zählt einmal. Die fünf häufigsten TLDs werden einzeln gezeigt; IP-Adressen und lokale Hosts stehen separat.');
   }
 
   const heatmap = root.querySelector('[data-heatmap-chart]');
@@ -219,7 +222,7 @@
     const url = localCaseUrl(row.urls[metric]);
     const node = document.createElement(url ? 'a' : 'span');
     if (url) node.href = url;
-    node.textContent = `${date} · ${labels[metric]}: ${number.format(count(row[metric]))}${url ? ' · Fälle öffnen ↗' : ''}`;
+    node.textContent = `${date} · ${labels[metric]}: ${number.format(count(row[metric]))}${url ? ` · ${t('Fälle öffnen')} ↗` : ''}`;
     calendarSelection.replaceChildren(node);
   }
   function renderCalendar(metric) {
@@ -235,13 +238,13 @@
       cell.parentNode.setAttribute('href', localCaseUrl(row.urls[metric]) || '/findings');
     });
     root.querySelectorAll('.stat-heatmap-scale i').forEach((node, index) => node.style.setProperty('--cell-color', palette[index]));
-    document.getElementById('statistics-heatmap-description').textContent = `Kalenderjahr ${view.calendarYear} · ${labels[metric]} · Europe/Berlin`;
+    document.getElementById('statistics-heatmap-description').textContent = t('Kalenderjahr {year} · {metric} · Europe/Berlin', { year: view.calendarYear, metric: labels[metric] });
     if (calendarIndex >= 0) inspectCalendar(calendarIndex);
   }
   if (heatmap) {
     heatmap.setAttribute('tabindex', '0');
     heatmap.setAttribute('role', 'group');
-    heatmap.setAttribute('aria-roledescription', 'interaktiver Jahreskalender');
+    heatmap.setAttribute('aria-roledescription', t('interaktiver Jahreskalender'));
     const hovered = event => {
       const cell = event.target.closest('[data-heatmap-index]');
       if (cell) inspectCalendar(Number(cell.dataset.heatmapIndex));

@@ -9,7 +9,6 @@ final class SettingsService
 {
     public const DEFAULTS = [
         'intake.default_payload' => 'OPENBUGBOUNTY',
-        'intake.auto_verify_mode' => 'submit',
         'review.scan_timeout_ms' => '45000',
     ];
 
@@ -83,16 +82,9 @@ final class SettingsService
         return $this->getString('intake.default_payload', self::DEFAULTS['intake.default_payload']);
     }
 
-    public function getAutoVerifyMode(): string
-    {
-        $mode = $this->getString('intake.auto_verify_mode', self::DEFAULTS['intake.auto_verify_mode']);
-
-        return in_array($mode, ['submit', 'cron_only'], true) ? $mode : self::DEFAULTS['intake.auto_verify_mode'];
-    }
-
     public function getReviewScanTimeoutMs(): int
     {
-        return max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms']));
+        return min(120000, max(1000, $this->getInt('review.scan_timeout_ms', (int) self::DEFAULTS['review.scan_timeout_ms'])));
     }
 
     private function getRaw(string $key): ?string

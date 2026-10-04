@@ -263,7 +263,8 @@ final class ScreenshotQueueTest extends DatabaseTestCase
         self::assertSame(302, $first->getStatusCode());
         $second = $this->post('/findings', ['url' => $url, 'annotate' => 'Must not replace']);
         self::assertSame(302, $second->getStatusCode());
-        self::assertStringContainsString('URL%20not%20imported', $second->headers->get('Location'));
+        parse_str((string) parse_url($second->headers->get('Location'), PHP_URL_QUERY), $secondQuery);
+        self::assertStringContainsString('bereits', $secondQuery['message'] ?? '');
 
         $findings = $this->entityManager->getRepository(Finding::class)->findBy(['url' => $url]);
         self::assertCount(1, $findings);
@@ -298,8 +299,9 @@ final class ScreenshotQueueTest extends DatabaseTestCase
         ]);
 
         self::assertSame(302, $response->getStatusCode());
-        self::assertStringContainsString('/legacy/findings/'.$finding->getId(), $response->headers->get('Location'));
-        self::assertStringContainsString('URL%20not%20imported', $response->headers->get('Location'));
+        self::assertSame('/findings/'.$finding->getId(), parse_url($response->headers->get('Location'), PHP_URL_PATH));
+        parse_str((string) parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
+        self::assertStringContainsString('bereits', $query['message'] ?? '');
         self::assertCount(1, $this->entityManager->getRepository(Finding::class)->findBy(['url' => $finding->getUrl()]));
         $jobs = $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]);
         self::assertCount(1, $jobs);
@@ -348,8 +350,8 @@ SQL);
 
         self::assertSame(302, $response->getStatusCode());
         parse_str((string) parse_url($response->headers->get('Location'), PHP_URL_QUERY), $query);
-        self::assertStringContainsString('stored for fast-intake.localhost', $query['message'] ?? '');
-        self::assertStringContainsString('Screenshot queued', $query['message'] ?? '');
+        self::assertStringContainsString('fast-intake.localhost', $query['message'] ?? '');
+        self::assertStringContainsString('Screenshot', $query['message'] ?? '');
         self::assertArrayNotHasKey('error', $query);
 
         $finding = $this->entityManager->getRepository(Finding::class)->findOneBy(['url' => $url]);

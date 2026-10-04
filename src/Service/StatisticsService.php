@@ -177,7 +177,7 @@ final class StatisticsService
             'items' => [
                 ['key' => 'fixed_marker', 'label' => 'Als behoben markiert', 'count' => $legacyCounts['fixed_marker'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_review' => 'confirmed_fixed'], $filters['tld'])],
                 ['key' => 'checked_marker', 'label' => 'Als geprüft markiert', 'count' => $legacyCounts['checked_marker'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_review' => 'manually_checked'], $filters['tld'])],
-                ['key' => 'fixed_status', 'label' => 'Alter Status „fixed“', 'count' => $legacyCounts['fixed_status'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_status' => 'fixed'], $filters['tld'])],
+                ['key' => 'fixed_status', 'label' => 'Historischer Status „fixed“', 'count' => $legacyCounts['fixed_status'], 'url' => $this->listUrl(['scope' => 'all', 'assessment' => 'unknown', 'legacy_status' => 'fixed'], $filters['tld'])],
             ],
             'hasUndated' => array_sum($legacyCounts) > 0,
         ];
@@ -186,7 +186,7 @@ final class StatisticsService
             $notes[] = 'Der lange Zeitraum wird für eine lesbare Darstellung in '.($bucketMonths > 1 ? $bucketMonths.'-Monatsgruppen' : ($granularity === 'week' ? 'Wochen' : 'Monaten')).' zusammengefasst.';
         }
         if ($coverage['fixedWithoutDateCount'] > 0 || $coverage['confirmedWithoutDateCount'] > 0) {
-            $notes[] = 'Alte Statuswerte ohne aufgezeichnete manuelle Bewertung erhalten keinen erfundenen Bestätigungs- oder Behebungszeitpunkt.';
+            $notes[] = 'Historische Statuswerte ohne aufgezeichnete manuelle Bewertung erhalten keinen erfundenen Bestätigungs- oder Behebungszeitpunkt.';
         }
         if ($historyFrom !== null && $period->from < $historyFrom) {
             $notes[] = 'Bewertungshistorie ist erst ab '.$historyFrom->format('d.m.Y').' im erhaltenen Bestand belegt.';
@@ -198,7 +198,7 @@ final class StatisticsService
             $notes[] = 'Historische Kontakte erscheinen am gespeicherten Markierungsdatum. Frühere erneute Markierungen konnten diesen Zeitpunkt ersetzen; er belegt deshalb nicht immer den ersten Kontakt.';
         }
         if ($history['hasUndated']) {
-            $notes[] = 'Kennzeichnungen im Altbestand sind erhalten, ihre Bewertungsdaten sind unbekannt. Die Gruppen können sich überschneiden und werden nicht summiert oder in die datierten Bewertungskurven übernommen.';
+            $notes[] = 'Historische Kennzeichnungen sind erhalten, ihre Bewertungsdaten sind unbekannt. Die Gruppen können sich überschneiden und werden nicht summiert oder in die datierten Bewertungskurven übernommen.';
         }
         foreach ($series as &$row) {
             unset($row['_from'], $row['_until']);

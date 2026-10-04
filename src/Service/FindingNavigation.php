@@ -77,12 +77,30 @@ final class FindingNavigation
     /** @param array<string, mixed> $parameters */
     public function findingReturnPath(string $id, array $parameters): string
     {
-        if (($parameters['surface'] ?? null) !== 'studio') {
-            return '/legacy/findings/'.rawurlencode($id);
-        }
         $path = '/findings/'.rawurlencode($id);
         $returnTo = $this->listReturnPath($parameters['return_to'] ?? null);
 
         return $path.($returnTo === null ? '' : '?'.http_build_query(['return_to' => $returnTo], '', '&', PHP_QUERY_RFC3986));
+    }
+
+    public function returnPathAfterDeletion(string $deletedId, mixed $value): ?string
+    {
+        $returnTo = $this->listReturnPath($value);
+        if ($returnTo === null) {
+            return null;
+        }
+
+        $parts = parse_url($returnTo);
+        if (($parts['path'] ?? null) !== '/review') {
+            return $returnTo;
+        }
+        parse_str($parts['query'] ?? '', $query);
+        if (($query['after'] ?? null) !== $deletedId) {
+            return $returnTo;
+        }
+
+        unset($query['after'], $query['evidence']);
+
+        return $this->reviewReturnPath($query);
     }
 }

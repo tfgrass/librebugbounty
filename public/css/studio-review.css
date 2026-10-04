@@ -114,8 +114,8 @@
 .review-observation-note { margin: 10px 0 0; color: #b0a792; font-size: 10px; line-height: 1.6; }
 .review-observation-error { margin: 10px 0 0; padding-left: 9px; border-left: 2px solid #b47784; color: #e0b7c2; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
 .review-manual-state { padding: 16px 0 13px; margin-top: 5px; border-bottom: 1px solid #37414e; }
-.review-manual-state > p:not(.review-muted, .review-legacy) { margin: 4px 0 0; color: #c9d4e3; font-size: 11px; }
-.review-legacy { margin: 9px 0 0; padding-left: 9px; border-left: 2px solid #8c774a; color: #c6b487; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
+.review-manual-state > p:not(.review-muted, .review-history) { margin: 4px 0 0; color: #c9d4e3; font-size: 11px; }
+.review-history { margin: 9px 0 0; padding-left: 9px; border-left: 2px solid #8c774a; color: #c6b487; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
 .review-note { margin-top: 15px; }
 .review-note p { margin: 0; color: #b7c5d8; font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .review-note p.review-absent { color: #8e9bad; }

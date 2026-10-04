@@ -149,7 +149,7 @@ $read = $method === 'GET' && (preg_match('~^/(?:export(?:/download)?|findings(?:
 $delete = $method === 'POST' && preg_match('~^/findings/([a-f0-9-]{36})/delete$~D', $path, $matches);
 if ($delete) {
     $fixtures = json_decode(file_get_contents($root.'/fixtures.json'), true, flags: JSON_THROW_ON_ERROR);
-    $delete = in_array($matches[1], [$fixtures['delete-js']['id'], $fixtures['delete-nojs']['id']], true) && ($_POST['surface'] ?? '') === 'studio';
+    $delete = in_array($matches[1], [$fixtures['delete-js']['id'], $fixtures['delete-nojs']['id']], true);
 }
 $public = realpath(dirname(__DIR__, 2).'/public');
 $file = realpath($public.'/'.$path);

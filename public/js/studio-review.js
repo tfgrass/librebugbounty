@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  const t = window.LibreBugBountyI18n?.t || ((key) => key);
+
   const root = document.querySelector('[data-studio-review]');
   if (!root) return;
 
@@ -39,7 +41,7 @@
       keep?.setAttribute('aria-disabled', 'true');
       skip?.setAttribute('aria-disabled', 'true');
       if (submitStatus) submitStatus.textContent = event.submitter.value === 'keep'
-        ? 'Sichtung wird gespeichert …' : 'Bewertung wird gespeichert …';
+        ? t('Sichtung wird gespeichert …') : t('Bewertung wird gespeichert …');
     });
   }
 
@@ -108,9 +110,9 @@
         if (submitting) return;
         try {
           await navigator.clipboard.writeText(text.textContent);
-          if (copyStatus) copyStatus.textContent = 'URL kopiert.';
+          if (copyStatus) copyStatus.textContent = t('URL kopiert.');
         } catch {
-          if (copyStatus) copyStatus.textContent = 'Markiere die URL und kopiere sie manuell.';
+          if (copyStatus) copyStatus.textContent = t('Markiere die URL und kopiere sie manuell.');
         }
       });
     });

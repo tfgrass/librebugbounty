@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Service\StudioExportProfileService;
+use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -11,7 +12,10 @@ use Symfony\Component\Routing\Attribute\Route;
 
 final class StudioExportController
 {
-    public function __construct(private readonly StudioExportProfileService $profiles) {}
+    public function __construct(
+        private readonly StudioExportProfileService $profiles,
+        private readonly UiTranslator $i18n,
+    ) {}
 
     #[Route(path: '/export', name: 'studio_export', methods: ['GET'])]
     public function index(Request $request): Response
@@ -22,6 +26,12 @@ final class StudioExportController
             return $this->invalidFilter($exception);
         }
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $locale = $this->i18n->locale();
+        $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
+        $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
+        $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);
+        $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
+        $i18nJson = $this->i18n->browserCatalogJson();
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/export.php';
         $html = ob_get_clean();
@@ -77,7 +87,7 @@ final class StudioExportController
 
     private function invalidFilter(\InvalidArgumentException $exception): Response
     {
-        return new Response('Ungültiger Exportfilter: '.$exception->getMessage(), Response::HTTP_BAD_REQUEST, [
+        return new Response($this->i18n->trans('Ungültiger Exportfilter: {message}', ['message' => $this->i18n->trans($exception->getMessage())]), Response::HTTP_BAD_REQUEST, [
             'Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store',
         ]);
     }

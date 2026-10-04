@@ -17,7 +17,6 @@ final class SettingsServiceTest extends TestCase
         $service = new SettingsService($this->createEntityManager($store, $repo));
 
         self::assertSame('OPENBUGBOUNTY', $service->getDefaultPayload());
-        self::assertSame('submit', $service->getAutoVerifyMode());
         self::assertSame(45000, $service->getReviewScanTimeoutMs());
     }
 
@@ -28,13 +27,23 @@ final class SettingsServiceTest extends TestCase
         $service = new SettingsService($this->createEntityManager($store, $repo));
         $service->save([
             'intake.default_payload' => 'PAYLOAD123',
-            'intake.auto_verify_mode' => 'cron_only',
             'review.scan_timeout_ms' => '30000',
         ]);
 
         self::assertSame('PAYLOAD123', $service->getDefaultPayload());
-        self::assertSame('cron_only', $service->getAutoVerifyMode());
         self::assertSame(30000, $service->getReviewScanTimeoutMs());
+    }
+
+    public function testScreenshotTimeoutIsAlwaysClampedToTheWorkerLimits(): void
+    {
+        $store = [];
+        $repo = null;
+        $service = new SettingsService($this->createEntityManager($store, $repo));
+
+        $service->save(['review.scan_timeout_ms' => '999']);
+        self::assertSame(1000, $service->getReviewScanTimeoutMs());
+        $service->save(['review.scan_timeout_ms' => '120001']);
+        self::assertSame(120000, $service->getReviewScanTimeoutMs());
     }
 
     /**

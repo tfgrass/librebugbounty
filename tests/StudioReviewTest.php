@@ -344,13 +344,13 @@ final class StudioReviewTest extends DatabaseTestCase
         $xpath = $this->xpath($response->getContent());
         $token = $xpath->evaluate('string(//form[contains(@action,"/notes")]//input[@name="_token"]/@value)');
         $saved = $this->request('/findings/'.$finding->getId().'/notes', 'POST', [
-            '_token' => $token, 'surface' => 'studio', 'return_to' => $path, 'notes' => 'updated via normal detail',
+            '_token' => $token, 'return_to' => $path, 'notes' => 'updated via normal detail',
         ]);
         self::assertSame(302, $saved->getStatusCode());
         self::assertStringStartsWith($detailPath.'&message=', $saved->headers->get('Location'));
         $assessmentToken = $xpath->evaluate('string(//form[contains(@action,"/assessment")]//input[@name="_token"]/@value)');
         $assessed = $this->request('/findings/'.$finding->getId().'/assessment', 'POST', [
-            '_token' => $assessmentToken, 'surface' => 'studio', 'return_to' => $path, 'assessment' => 'confirmed',
+            '_token' => $assessmentToken, 'return_to' => $path, 'assessment' => 'confirmed',
         ]);
         self::assertSame(302, $assessed->getStatusCode());
         self::assertStringStartsWith($detailPath.'&message=', $assessed->headers->get('Location'));

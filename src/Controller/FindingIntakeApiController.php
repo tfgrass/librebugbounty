@@ -6,6 +6,7 @@ use App\Entity\Finding;
 use App\Repository\FindingRepository;
 use App\Service\FindingService;
 use App\Service\IntakeStatusService;
+use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -25,6 +26,7 @@ final class FindingIntakeApiController
         private readonly FindingRepository $findings,
         private readonly IntakeStatusService $intakeStatus,
         private readonly CsrfTokenManagerInterface $csrf,
+        private readonly UiTranslator $i18n,
     ) {
     }
 
@@ -70,8 +72,8 @@ final class FindingIntakeApiController
             );
             $finding = $result->finding;
             $outcome = $result->created ? 'stored' : 'duplicate';
-        } catch (\InvalidArgumentException $exception) {
-            return $this->error($exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
+        } catch (\InvalidArgumentException) {
+            return $this->error('Die URL oder ihre Domain ist ungültig.', Response::HTTP_UNPROCESSABLE_ENTITY);
         } catch (\Throwable) {
             return $this->storageError();
         }
@@ -100,10 +102,11 @@ final class FindingIntakeApiController
                 throw new \InvalidArgumentException('Mindestens eine Finding-ID ist erforderlich.');
             }
             if (count($ids) > self::MAX_STATUS_IDS) {
-                throw new \InvalidArgumentException(sprintf(
-                    'Höchstens %d Finding-IDs können gleichzeitig gelesen werden.',
-                    self::MAX_STATUS_IDS,
-                ));
+                return $this->error(
+                    'Höchstens {count} Finding-IDs können gleichzeitig gelesen werden.',
+                    Response::HTTP_UNPROCESSABLE_ENTITY,
+                    ['count' => self::MAX_STATUS_IDS],
+                );
             }
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
@@ -145,13 +148,13 @@ final class FindingIntakeApiController
     {
         if (!array_key_exists($name, $parameters)) {
             if ($required) {
-                throw new \InvalidArgumentException(sprintf('Das Feld "%s" ist erforderlich.', $name));
+                throw new \InvalidArgumentException('Ein erforderliches Textfeld fehlt.');
             }
 
             return '';
         }
         if (!is_string($parameters[$name])) {
-            throw new \InvalidArgumentException(sprintf('Das Feld "%s" muss Text enthalten.', $name));
+            throw new \InvalidArgumentException('Eingabefelder müssen Text enthalten.');
         }
 
         return $parameters[$name];
@@ -187,9 +190,14 @@ final class FindingIntakeApiController
         ]);
     }
 
-    private function error(string $message, int $status): JsonResponse
+    /** @param array<string, int|float|string> $parameters */
+    private function error(string $message, int $status, array $parameters = []): JsonResponse
     {
-        return $this->json(['error' => $message], $status);
+        return $this->json([
+            'error' => $this->i18n->trans($message, $parameters),
+            'errorKey' => $message,
+            'errorParameters' => $parameters,
+        ], $status);
     }
 
     private function storageError(): JsonResponse
