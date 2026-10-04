@@ -76,12 +76,19 @@ is ignored by Git.
 3. Update the checkout to the published release you want to use, preserving
    any local configuration changes. Release versions are listed in the
    [changelog](CHANGELOG.md).
-4. Remove the generated `playwright-worker/node_modules/` directory, if present,
+4. If your existing installation uses custom database or artifact paths, carry
+   both into `DATABASE_URL` and `EVIDENCE_STORAGE_DIR` under `web_environment` in
+   `.ddev/config.yaml`, using paths inside the container. Moneta explicitly sets
+   these variables there, so previous `.env` values alone no longer select your
+   storage. Keep the database and artifact tree from the same workspace together.
+   The backup tool needs their corresponding host paths; see
+   [custom installation paths](BACKUP.md#custom-installation-paths).
+5. Remove the generated `playwright-worker/node_modules/` directory, if present,
    while DDEV is stopped. The next start recreates it from the committed lockfile
    so the worker dependencies match the release's browser image.
-5. Run `ddev start`. Startup installs the locked Composer and worker
+6. Run `ddev start`. Startup installs the locked Composer and worker
    dependencies, applies pending database migrations, and starts the workers.
-6. Check that your existing cases, notes, assessments, and images are available.
+7. Check that your existing cases, notes, assessments, and images are available.
 
 An upgrade preserves the stored workspace; it does not require a database
 reset. If you need to return to the earlier application version, use the

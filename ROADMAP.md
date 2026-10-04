@@ -8,6 +8,18 @@ The current application uses SQLite, records completed contacts, and exports
 reports for manual sharing. It has no integrated email delivery or AI provider.
 See the [user guide](USAGE.md) for the current workflow.
 
+## Workflow preferences
+
+- Save preferred inventory page size, export profile, and screenshot selection
+  as defaults while keeping explicit choices on each page authoritative.
+- Offer configurable shortcuts for useful actions across the workspace, with
+  visible key hints and protection for text entry and normal browser controls.
+
+Moneta currently stores three global settings: the intake marker, browser time
+limit, and review decision pause. Inventory and export choices can already be
+changed on their pages; saved defaults and freely configurable shortcuts are
+future work.
+
 ## Database portability
 
 - Offer SQLite and a MySQL/MariaDB backend with consistent behavior for cases,

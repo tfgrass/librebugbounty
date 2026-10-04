@@ -3,12 +3,10 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
-## 2.0.0 — Moneta (Unreleased)
+## 2.0.0 — Moneta
 
 Moneta develops the original triage prototype into a complete local workspace,
 from URL intake to evidence, manual assessment, and export.
-This release is upcoming; the changes below describe the current development
-branch.
 
 ### Added
 
@@ -38,8 +36,8 @@ branch.
   report packages with selected image evidence. Private notes are included only
   when explicitly selected.
 - Settings for the intake marker, browser time limit, and an optional three- or
-  five-second review decision pause, plus version,
-  release history, author, and license information in About.
+  five-second review decision pause. About includes the version, release
+  history, author, and license information.
 - English UI by default with a persistent German/English switcher in the header.
 - English documentation available inside the application, including offline
   access to the user guide, installation, backup, changelog, and roadmap.

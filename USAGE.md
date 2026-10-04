@@ -134,7 +134,8 @@ and expandable table. The calendar and chart links open the matching cases.
 - **Reported** counts intake, using the storage timestamp if intake time is
   unavailable.
 - **Contacted** uses the stored contact-marker timestamp.
-- **Fixed** uses the first recorded manual Fixed assessment for each case.
+- **Fixed** uses the first effective manual Fixed assessment for each case.
+  Assessments cancelled by Review Back remain in history and are excluded.
 
 Dates are grouped in the Europe/Berlin time zone. A case is counted at most once
 per event type. Longer periods can be grouped into weeks or months to keep the
