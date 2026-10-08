@@ -54,8 +54,9 @@ $findingLink = $findingPath === null ? null : $findingPath.'?'.http_build_query(
 $lastReviewedLink = $lastReviewedId === null ? null : '/findings/'.$lastReviewedId.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
 $canAssess = $finding !== null && $view->eligible;
 $pocUrl = $finding?->getUrl();
+$pocUrl = is_string($pocUrl) ? str_replace(' ', '%20', $pocUrl) : $pocUrl;
 $pocParts = is_string($pocUrl) ? parse_url($pocUrl) : false;
-$canOpenPoc = is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x20\x7f]/', $pocUrl);
+$canOpenPoc = is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x1f\x7f]/', $pocUrl);
 $hasError = $error !== null && $error !== '';
 $waitingForImages = $view->total === 0 && $view->images === 'ready' && $view->counts[$view->kind] > 0;
 $evidenceLabels = [];

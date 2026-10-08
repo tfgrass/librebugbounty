@@ -391,6 +391,22 @@ SQL);
         self::assertSame($before, $this->findingSnapshot($finding));
     }
 
+    public function testScreenshotMissingAlsoQueuesFindingsWhoseStoredFileWasLost(): void
+    {
+        $finding = $this->finding('missing-file');
+        $evidence = (new Evidence())
+            ->setFinding($finding)
+            ->setKind('screenshot')
+            ->setFilePath('storage/artifacts/does-not-exist.png');
+        $this->entityManager->persist($evidence);
+        $this->entityManager->flush();
+
+        $tester = new CommandTester(self::getContainer()->get(ScreenshotMissingCommand::class));
+        self::assertSame(0, $tester->execute(['--limit' => 10]));
+        self::assertStringContainsString('Queued 1 screenshot', $tester->getDisplay());
+        self::assertCount(1, $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]));
+    }
+
     public function testVerificationResetRemovesScreenshotJobsBeforeClearingArtifacts(): void
     {
         $finding = $this->finding('reset-queue');

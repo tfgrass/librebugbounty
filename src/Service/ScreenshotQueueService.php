@@ -13,7 +13,7 @@ use App\Value\ScreenshotJobStatus;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 
-final class ScreenshotQueueService
+final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
 {
     public function __construct(
         private readonly ManagerRegistry $doctrine,
@@ -122,7 +122,7 @@ final class ScreenshotQueueService
 
     public function processNext(): ?ScreenshotJob
     {
-        return $this->operationLock->synchronized(fn (): ?ScreenshotJob => $this->processNextWithLock());
+        return $this->processNextWithLock();
     }
 
     private function processNextWithLock(): ?ScreenshotJob
@@ -135,7 +135,10 @@ final class ScreenshotQueueService
         // A sidecar that is still starting must leave persisted work queued.
         // Once a job is claimed, capture failures are terminal and visible.
         $this->client->waitUntilReady();
-        $job = $jobs->claimNext();
+        // Keep only the short queue mutation under the global lock. The actual
+        // browser capture may run for a long time and is handled by parallel
+        // workers, each with its own headed Playwright/Xvfb sidecar.
+        $job = $this->operationLock->synchronizedQueueMutation(fn (): ?ScreenshotJob => $jobs->claimNext());
         if (!$job instanceof ScreenshotJob) {
             return null;
         }

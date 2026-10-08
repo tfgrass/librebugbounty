@@ -244,6 +244,26 @@ class FindingRepository extends ServiceEntityRepository
     }
 
     /**
+     * Findings whose scheduled stock recheck is due, oldest first.
+     *
+     * @return list<Finding>
+     */
+    public function findDueForRecheck(\DateTimeImmutable $now, int $limit = 25): array
+    {
+        return $this->createQueryBuilder('f')
+            ->addSelect('d')
+            ->innerJoin('f.domain', 'd')
+            ->andWhere('f.nextDueAt IS NOT NULL')
+            ->andWhere('f.nextDueAt <= :now')
+            ->setParameter('now', $now)
+            ->setMaxResults($limit)
+            ->orderBy('f.nextDueAt', 'ASC')
+            ->addOrderBy('f.createdAt', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * @return list<Finding>
      */
     public function findAllForBrowserRetest(?Domain $domain = null, ?string $status = null, int $limit = 1000): array

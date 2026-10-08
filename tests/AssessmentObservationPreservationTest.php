@@ -126,6 +126,7 @@ final class AssessmentObservationPreservationTest extends DatabaseTestCase
         $service = new RetestService(
             $this->entityManager, self::getContainer()->get(RetestRunRepository::class), $browser,
             self::getContainer()->get(ValidationService::class), self::getContainer()->get(EvidenceStorageInterface::class),
+            new \App\Service\RecheckPolicy(),
         );
         $reviewBrowser = new ReviewBrowserTransportStub(['error']);
         $review = new ReviewService(self::getContainer()->get(FindingRepository::class), $service, $reviewBrowser, $this->entityManager);
@@ -186,6 +187,7 @@ final class AssessmentObservationPreservationTest extends DatabaseTestCase
         $service = new RetestService(
             $this->entityManager, self::getContainer()->get(RetestRunRepository::class), $browser,
             self::getContainer()->get(ValidationService::class), self::getContainer()->get(EvidenceStorageInterface::class),
+            new \App\Service\RecheckPolicy(),
         );
         try {
             $service->retest($finding);

@@ -75,6 +75,7 @@ final class RetestAllCommandTest extends UnitTestCase
             },
             new ValidationService($this->createValidator()),
             $this->storage,
+            new \App\Service\RecheckPolicy(),
         );
 
         $command = new RetestAllCommand(

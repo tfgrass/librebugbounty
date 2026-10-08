@@ -107,15 +107,18 @@ not capture an image, and the saved observation never replaces a manual
 assessment. The service is an internal component, not an API that needs to be
 called directly for normal use; see the [user guide](../USAGE.md).
 
-## Shared-display serialization
+## Display isolation and parallel lanes
 
-All headed operations use one FIFO promise lease around the full browser
-operation. This is the final ownership boundary for the Xvfb display even when
-several HTTP callers arrive concurrently. Headless retests do not need the
-display lease.
+The base `playwright` service handles headless technical rechecks. Four
+additional `playwright-shot-*` containers each run their own Node service and
+Xvfb desktop, so four Symfony screenshot workers can capture headed evidence in
+parallel without photographing another lane's browser. Within one container,
+all headed operations still use the FIFO promise lease around the full browser
+operation. Headless retests do not need that display lease.
 
-The Symfony queue adds its own single-worker and operation locks, but the Node
-lease remains necessary because `/retest` can also request a headed browser.
+The Symfony queue serializes enqueue mutations, while job claiming remains an
+atomic database update. Each screenshot worker uses a unique worker lock and
+one dedicated screenshot sidecar.
 
 ## Tests and checks
 
