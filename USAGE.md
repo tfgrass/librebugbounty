@@ -285,8 +285,9 @@ you can also view cases without images, or leave them for a later round.
 **How are old cases rechecked?** Four recheck workers run in the background
 and retest open and wontfix findings 28 days after their last check. They run
 headless and keep a one-hour minimum interval per domain even across the
-parallel workers. The technical pass itself takes no screenshots, so it can
-run in parallel. When the result changes, or a new `inconclusive`/`error`
+parallel workers. A case currently marked for manual checking pauses its
+automatic recheck until your review finishes. The technical pass itself takes
+no screenshots, so it can run in parallel. When the result changes, or a new `inconclusive`/`error`
 observation needs review, a screenshot is queued separately and one of the four
 headed screenshot lanes captures it. A finding the browser reports as fixed
 is marked as fixed directly; only unclear results enter your review queue, and

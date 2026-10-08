@@ -112,6 +112,6 @@ final class RecheckCatchUpService
         return "status IN ('".$statuses."')"
             ." AND manual_assessment IS NULL"
             ." AND (review_state IS NULL OR review_state NOT IN ('"
-            .ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";
+            .ReviewState::MANUAL_CHECKING."', '".ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";
     }
 }

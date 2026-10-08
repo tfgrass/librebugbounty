@@ -407,6 +407,24 @@ SQL);
         self::assertCount(1, $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]));
     }
 
+    public function testScreenshotMissingKeepsOneActiveJobWhileManualCheckingIsOpen(): void
+    {
+        $finding = $this->finding('manual-checking');
+        $finding->setReviewState(ReviewState::MANUAL_CHECKING);
+        $this->entityManager->flush();
+
+        $tester = new CommandTester(self::getContainer()->get(ScreenshotMissingCommand::class));
+        self::assertSame(0, $tester->execute(['--limit' => 10]));
+        self::assertCount(1, $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]));
+        self::assertSame('queued', $this->entityManager->getRepository(ScreenshotJob::class)->findOneBy(['finding' => $finding])?->getStatus());
+        self::assertStringContainsString('Queued 1 screenshot', $tester->getDisplay());
+
+        $tester = new CommandTester(self::getContainer()->get(ScreenshotMissingCommand::class));
+        self::assertSame(0, $tester->execute(['--limit' => 10]));
+        self::assertCount(1, $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]));
+        self::assertStringContainsString('1 finding(s) already had an active job', $tester->getDisplay());
+    }
+
     public function testVerificationResetRemovesScreenshotJobsBeforeClearingArtifacts(): void
     {
         $finding = $this->finding('reset-queue');

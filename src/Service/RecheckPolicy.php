@@ -5,12 +5,14 @@ namespace App\Service;
 use App\Entity\Finding;
 use App\Value\FindingStatus;
 use App\Value\RetestResult;
+use App\Value\ReviewState;
 
 /**
  * Stock recheck cadence for the recheck worker.
  *
  * Scope (D4): new/verified/reported/wontfix are rechecked every 28 days;
- * fixed, discarded and duplicate findings are never queued. Error results
+ * fixed, discarded, duplicate and currently manually checked findings are
+ * never queued. Error results
  * retry after a short backoff instead of blocking the slot for four weeks.
  * Claims lease a finding for 24 hours; a crashed worker's claim expires on
  * its own and the finding becomes due again.
@@ -32,7 +34,9 @@ final class RecheckPolicy
 
     public function isInScope(Finding $finding): bool
     {
-        return !$finding->isDiscarded() && in_array($finding->getStatus(), self::SCOPE_STATUSES, true);
+        return !$finding->isDiscarded()
+            && $finding->getReviewState() !== ReviewState::MANUAL_CHECKING
+            && in_array($finding->getStatus(), self::SCOPE_STATUSES, true);
     }
 
     public function nextDueAfter(Finding $finding, ?string $result, \DateTimeImmutable $now): ?\DateTimeImmutable

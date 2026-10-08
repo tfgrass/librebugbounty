@@ -50,6 +50,9 @@ final class RecheckCatchUpTest extends DatabaseTestCase
         $spaced->setNextDueAt(new \DateTimeImmutable('+45 minutes'));
         $claimed = $this->finding($domain, 'claimed', 'reported', new \DateTimeImmutable('-30 days'));
         $claimed->setNextDueAt(new \DateTimeImmutable('+24 hours'));
+        $manualChecking = $this->finding($domain, 'manual-checking', 'reported', new \DateTimeImmutable('-30 days'));
+        $manualChecking->setNextDueAt(new \DateTimeImmutable('+14 days'));
+        $manualChecking->setReviewState(ReviewState::MANUAL_CHECKING);
         $crashed = $this->finding($domain, 'crashed', 'reported', new \DateTimeImmutable('-30 days'));
         $crashed->setNextDueAt(new \DateTimeImmutable('+20 hours'));
         $protected = $this->finding($domain, 'protected', 'reported', new \DateTimeImmutable('-30 days'));
@@ -85,7 +88,7 @@ final class RecheckCatchUpTest extends DatabaseTestCase
             substr((string) $connection->fetchOne('SELECT next_due_at FROM finding WHERE id = ?', [$due->getId()]), 0, 19),
         );
         self::assertSame($claimedBefore, $connection->fetchOne('SELECT next_due_at FROM finding WHERE id = ?', [$claimed->getId()]));
-        foreach ([$protected, $reviewed, $discarded, $fresh] as $finding) {
+        foreach ([$protected, $reviewed, $manualChecking, $discarded, $fresh] as $finding) {
             $slot = $connection->fetchOne('SELECT next_due_at FROM finding WHERE id = ?', [$finding->getId()]);
             self::assertGreaterThan($now->modify('+1 hour')->format('Y-m-d H:i:s'), $slot);
         }

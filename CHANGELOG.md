@@ -31,6 +31,10 @@ repository's tagged commits.
   Xvfb container, while queue insertion remains serialized and job claims stay
   atomic, so parallel captures cannot duplicate work or photograph another
   lane's browser.
+- Cases currently in manual checking pause automatic rechecks, including the
+  selection-to-claim race, and a missing-screenshot backfill keeps at most one
+  active screenshot job per case. A completed assessment schedules its next
+  automatic check again.
 
 ### Changed
 

@@ -381,6 +381,9 @@ final class FindingService
             ManualAssessment::FIXED => ReviewState::CONFIRMED_FIXED,
             ManualAssessment::DISCARDED => null,
         });
+        if ($finding->getNextDueAt() === null) {
+            $this->recheckPolicy?->ensureNextDue($finding, $assessedAt);
+        }
         $this->entityManager->persist($history);
         // Doctrine's flush transaction writes current assessment and history
         // together; a failure cannot commit either half on its own.

@@ -334,7 +334,7 @@ final class RetestServiceTest extends UnitTestCase
 
         self::assertSame('reported', $finding->getStatus());
         self::assertSame('manual_checking', $finding->getReviewState());
-        self::assertNotNull($finding->getNextDueAt());
+        self::assertNull($finding->getNextDueAt(), 'Manual checking pauses the next automatic recheck.');
     }
 
     public function testErrorResultUsesShortBackoffAndFixedFindingsLeaveTheScope(): void

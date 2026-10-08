@@ -8,6 +8,7 @@ use App\Repository\FindingRepository;
 use App\Service\RecheckPolicy;
 use App\Service\RecheckService;
 use App\Service\RetestService;
+use App\Value\ReviewState;
 
 final class RecheckClaimDbTest extends DatabaseTestCase
 {
@@ -79,6 +80,27 @@ final class RecheckClaimDbTest extends DatabaseTestCase
         $repository = self::getContainer()->get(FindingRepository::class);
         self::assertSame([], $repository->findDueForRecheck(new \DateTimeImmutable()));
         self::assertNotSame([], $repository->findDueForRecheck(new \DateTimeImmutable('+25 hours')), 'Expired claims and the spacing window become due again on their own.');
+    }
+
+    public function testManualCheckingCannotWinARecheckClaim(): void
+    {
+        $domain = (new Domain())->setHostname('manual-race.example')->setScheme('https');
+        $this->entityManager->persist($domain);
+        $finding = $this->finding($domain, 'manual-race', new \DateTimeImmutable('-40 days'));
+        $this->entityManager->flush();
+
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE finding SET review_state = ? WHERE id = ?',
+            [ReviewState::MANUAL_CHECKING, $finding->getId()],
+        );
+        $this->entityManager->clear();
+
+        self::assertNull(self::getContainer()->get(RecheckService::class)->claimNext());
+        self::assertSame(
+            null,
+            $this->entityManager->getConnection()->fetchOne('SELECT next_due_at FROM finding WHERE id = ?', [$finding->getId()]),
+            'A review queue insertion after selection pauses the recheck schedule instead of claiming it.',
+        );
     }
 
     private function finding(Domain $domain, string $title, \DateTimeImmutable $nextDueAt): Finding

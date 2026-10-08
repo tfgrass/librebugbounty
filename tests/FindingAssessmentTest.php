@@ -35,6 +35,7 @@ final class FindingAssessmentTest extends DatabaseTestCase
         self::assertSame('verified', $finding->getStatus());
         self::assertSame(ReviewState::MANUALLY_CHECKED, $finding->getReviewState());
         self::assertTrue($finding->hasProtectedAssessment());
+        self::assertNotNull($finding->getNextDueAt(), 'Completing manual review restores the normal recheck schedule.');
         $history = $this->history($finding);
         self::assertCount(1, $history);
         self::assertSame($finding->getAssessedAt(), $history[0]->getAssessedAt());
