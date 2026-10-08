@@ -45,7 +45,7 @@ final class RefreshPreservationTest extends DatabaseTestCase
                 $browser->method('retest')->willReturn(new RetestResultData(result: 'error', errorMessage: 'local fixture'));
             }
             $validation = self::getContainer()->get(ValidationService::class);
-            $service = new RetestService($this->entityManager, self::getContainer()->get(RetestRunRepository::class), $browser, $validation, $storage);
+            $service = new RetestService($this->entityManager, self::getContainer()->get(RetestRunRepository::class), $browser, $validation, $storage, new \App\Service\RecheckPolicy());
             $command = new EvidenceRefreshCommand(self::getContainer()->get(DomainRepository::class), self::getContainer()->get(FindingRepository::class), $service, $validation);
             try {
                 (new CommandTester($command))->execute(['--finding-id' => $finding->getId(), '--browser' => 'chromium']);

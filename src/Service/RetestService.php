@@ -22,6 +22,7 @@ final class RetestService
         private readonly BrowserRetestClientInterface $browserRetestClient,
         private readonly ValidationService $validation,
         private readonly EvidenceStorageInterface $storage,
+        private readonly RecheckPolicy $recheckPolicy,
     ) {
     }
 
@@ -120,16 +121,20 @@ final class RetestService
 
         if (!$noStatusUpdate && !$finding->hasProtectedAssessment() && !$finding->isDiscarded()) {
             if ($result->result === RetestResult::FIXED) {
+                // An automatically observed fix is authoritative; only
+                // inconclusive outcomes enter manual review (D2).
                 $finding->setStatus('fixed');
             } elseif ($result->result === RetestResult::STILL_VULNERABLE) {
                 if (in_array($finding->getStatus(), ['new', 'fixed'], true)) {
                     $finding->setStatus('verified');
                 }
             }
-            if (in_array($result->result, [RetestResult::FIXED, RetestResult::INCONCLUSIVE], true)) {
+            if ($result->result === RetestResult::INCONCLUSIVE) {
                 $finding->setReviewState(ReviewState::MANUAL_CHECKING);
             }
         }
+
+        $finding->setNextDueAt($this->recheckPolicy->nextDueAfter($finding, $result->result, new \DateTimeImmutable()));
 
         $this->entityManager->persist($run);
         $this->entityManager->flush();

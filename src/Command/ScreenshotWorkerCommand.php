@@ -32,12 +32,16 @@ final class ScreenshotWorkerCommand extends Command
         $this
             ->addOption('once', null, InputOption::VALUE_NONE, 'Process at most one queued job and exit.')
             ->addOption('sleep', null, InputOption::VALUE_REQUIRED, 'Idle polling interval in seconds.', '2')
-            ->addOption('max-jobs', null, InputOption::VALUE_REQUIRED, 'Exit after this many jobs; zero means unlimited.', '0');
+            ->addOption('max-jobs', null, InputOption::VALUE_REQUIRED, 'Exit after this many jobs; zero means unlimited.', '0')
+            ->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Unique lock suffix when several workers use separate browser sidecars.', 'default');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $lock = fopen(sys_get_temp_dir().'/librebugbounty-screenshot-worker.lock', 'c+');
+        $workerId = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $input->getOption('worker-id'));
+        $workerId = trim($workerId === null ? '' : $workerId, '-');
+        $workerId = $workerId === '' ? 'default' : $workerId;
+        $lock = fopen(sys_get_temp_dir().'/librebugbounty-screenshot-worker-'.$workerId.'.lock', 'c+');
         if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
             $output->writeln('<error>Another screenshot worker already owns the queue.</error>');
             return Command::FAILURE;

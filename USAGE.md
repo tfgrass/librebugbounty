@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.0.0 “Moneta”. Start with the
+This guide describes LibreBugBounty 2.0.1 “Moneta”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the default English UI; German is available
@@ -260,15 +260,16 @@ identifiers in JSON remain unchanged.
 
 ## Troubleshooting
 
-**Screenshots stay queued.** Work is processed serially, so a slow capture can
-delay later jobs. Inspect the worker and the browser service:
+**Screenshots stay queued.** Four independent headed capture lanes process
+work in parallel; a slow capture delays only its own lane. Inspect the workers
+and browser services:
 
 ```bash
-ddev exec supervisorctl status webextradaemons:screenshot-queue
-ddev exec curl -fsS http://playwright:3000/health
+ddev exec supervisorctl status 'webextradaemons:screenshot-worker-*'
+ddev exec sh -c 'for n in 1 2 3 4; do curl -fsS http://playwright-shot-$n:3000/health; echo; done'
 ```
 
-The queue worker should be `RUNNING`, and the health request should succeed.
+All queue workers and health requests should succeed.
 If either service is unavailable, check `ddev describe` and the project's
 container logs. Once work completes, reload Review or the case detail.
 
@@ -280,6 +281,48 @@ Existing evidence remains available when a newer capture fails.
 **Review says there are no image-ready cases.** Check the image filter and
 the counts for cases without readable images. Waiting jobs may finish later;
 you can also view cases without images, or leave them for a later round.
+
+**How are old cases rechecked?** Four recheck workers run in the background
+and retest open and wontfix findings 28 days after their last check. They run
+headless and keep a one-hour minimum interval per domain even across the
+parallel workers. The technical pass itself takes no screenshots, so it can
+run in parallel. When the result changes, or a new `inconclusive`/`error`
+observation needs review, a screenshot is queued separately and one of the four
+headed screenshot lanes captures it. A finding the browser reports as fixed
+is marked as fixed directly; only unclear results enter your review queue, and
+error results retry after three days. Fixed findings are not rechecked. Check
+the workers with:
+
+```bash
+ddev exec supervisorctl status 'webextradaemons:recheck-worker-*'
+```
+
+**Catch-up: recheck everything older than 14 days at once.** The catch-up
+command reschedules every stale recheck slot to now and then burns the
+backlog down with a fleet of local workers running next to the four
+supervised ones. All workers claim findings atomically in the database, so
+no case is checked twice; slots currently leased by a running worker stay
+untouched. Protected cases (a recorded human decision) keep their regular
+schedule.
+
+```bash
+ddev exec php bin/console app:recheck:catch-up                          # preview only
+ddev exec php bin/console app:recheck:catch-up --execute --workers=16   # 16 extra local workers
+```
+
+Raise `--workers` as far as the machine carries it; each worker is one
+headless Chromium retest. The command exits when the queue is empty. Cases
+that turn out fixed or still vulnerable are applied automatically, unclear
+results land in the review queue, and errors retry after three days. Changed
+results queue screenshots for later visual review.
+
+**Backfill missing or unreadable screenshots.** The screenshot queue can
+repair both cases without screenshot evidence and cases whose saved image
+file is no longer readable. It never duplicates an active job:
+
+```bash
+ddev exec php bin/console app:screenshot:missing --limit=1000
+```
 
 **A stored image is missing.** Audit local artifact references without
 modifying them:

@@ -1,6 +1,6 @@
 # Roadmap
 
-These are future directions beyond LibreBugBounty 2.0.0 “Moneta”. They are not
+These are future directions beyond LibreBugBounty 2.0.1 “Moneta”. They are not
 features available in the current release or commitments to a delivery date.
 Scope and order will develop through use and feedback.
 

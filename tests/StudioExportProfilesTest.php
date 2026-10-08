@@ -141,6 +141,9 @@ final class StudioExportProfilesTest extends DatabaseTestCase
         $ack = new FindingReviewAcknowledgement($finding, 'history:'.$history->getId(), 'confirmed', [], [], null, $reviewed->getId());
         $this->entityManager->persist($ack);
         $this->entityManager->flush();
+        // Pin the first acknowledgement to a fixed past time; the later
+        // acknowledgements below use fixed timestamps that must stay newer.
+        $this->entityManager->getConnection()->executeStatement('UPDATE finding_review_acknowledgement SET reviewed_at = ? WHERE id = ?', ['2026-10-04 12:00:00', $ack->getId()]);
         [$manifest] = $this->reportDownload();
         self::assertSame($reviewed->getSha256(), $manifest['findings'][0]['screenshots'][0]['actualSha256']);
         self::assertSame('acknowledgement', $manifest['findings'][0]['screenshots'][0]['basisSource']);

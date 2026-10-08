@@ -254,6 +254,144 @@ final class RetestServiceTest extends UnitTestCase
         self::assertSame('browser', $run->getMode());
     }
 
+    public function testFixedResultIsAppliedWithoutManualReviewAndSchedulesNextRecheck(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Reported finding');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('reported');
+        $finding->setUrl('https://example.com/search?q=token');
+        $finding->setMethod('GET');
+        $entityManager->persist($finding);
+
+        $service = $this->createRetestService($entityManager, $repos, new class implements BrowserRetestClientInterface {
+            public function retest(BrowserRetestRequest $request): RetestResultData
+            {
+                return new RetestResultData(
+                    result: RetestResult::FIXED,
+                    httpStatus: 200,
+                    finalUrl: $request->url,
+                    raw: ['mocked' => true],
+                );
+            }
+        });
+
+        $before = new \DateTimeImmutable();
+        $service->retest($finding, false, 120000, false, false, true);
+
+        self::assertSame('fixed', $finding->getStatus());
+        self::assertNull($finding->getReviewState(), 'Automatic fixed results skip manual review (D2).');
+        self::assertNull($finding->getNextDueAt(), 'Fixed findings leave the recheck scope (D4).');
+    }
+
+    public function testInconclusiveResultKeepsManualReview(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Reported finding');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('reported');
+        $finding->setUrl('https://example.com/search?q=token');
+        $finding->setMethod('GET');
+        $entityManager->persist($finding);
+
+        $service = $this->createRetestService($entityManager, $repos, new class implements BrowserRetestClientInterface {
+            public function retest(BrowserRetestRequest $request): RetestResultData
+            {
+                return new RetestResultData(
+                    result: RetestResult::INCONCLUSIVE,
+                    httpStatus: 200,
+                    finalUrl: $request->url,
+                    raw: ['mocked' => true],
+                );
+            }
+        });
+
+        $service->retest($finding, false, 120000, false, false, true);
+
+        self::assertSame('reported', $finding->getStatus());
+        self::assertSame('manual_checking', $finding->getReviewState());
+        self::assertNotNull($finding->getNextDueAt());
+    }
+
+    public function testErrorResultUsesShortBackoffAndFixedFindingsLeaveTheScope(): void
+    {
+        $repos = $this->createRepositories();
+        $entityManager = $this->createEntityManagerMock();
+        $this->wirePersistCallbacks($entityManager, $repos['domains'], $repos['evidence'], $repos['findings'], $repos['retestRuns']);
+
+        $domain = new Domain();
+        $domain->setHostname('example.com');
+        $domain->setScheme('https');
+        $domain->setAuthorized(true);
+        $entityManager->persist($domain);
+
+        $finding = new Finding();
+        $finding->setDomain($domain);
+        $finding->setTitle('Reported finding');
+        $finding->setType(self::DEFAULT_FINDING_TYPE);
+        $finding->setSeverity('medium');
+        $finding->setStatus('reported');
+        $finding->setUrl('https://example.com/search?q=token');
+        $finding->setMethod('GET');
+        $entityManager->persist($finding);
+
+        $service = $this->createRetestService($entityManager, $repos, new class implements BrowserRetestClientInterface {
+            public function retest(BrowserRetestRequest $request): RetestResultData
+            {
+                return new RetestResultData(
+                    result: RetestResult::ERROR,
+                    errorMessage: 'boom',
+                    raw: ['mocked' => true],
+                );
+            }
+        });
+
+        $before = new \DateTimeImmutable();
+        $service->retest($finding, false, 120000, false, false, true);
+
+        self::assertSame('reported', $finding->getStatus());
+        self::assertNotNull($finding->getNextDueAt());
+        self::assertLessThan($before->modify('+4 days'), $finding->getNextDueAt(), 'Error results retry after the short backoff.');
+
+        $fixed = new Finding();
+        $fixed->setDomain($domain);
+        $fixed->setTitle('Fixed finding');
+        $fixed->setType(self::DEFAULT_FINDING_TYPE);
+        $fixed->setSeverity('medium');
+        $fixed->setStatus('fixed');
+        $fixed->setUrl('https://example.com/fixed?q=token');
+        $fixed->setMethod('GET');
+        $entityManager->persist($fixed);
+
+        $service->retest($fixed, false, 120000, false, false, true);
+
+        self::assertNull($fixed->getNextDueAt(), 'Fixed findings leave the recheck scope (D4).');
+    }
+
     private function createRetestService(
         \Doctrine\ORM\EntityManagerInterface $entityManager,
         array $repos,
@@ -265,6 +403,7 @@ final class RetestServiceTest extends UnitTestCase
             $browserRetestClient,
             new \App\Service\ValidationService($this->createValidator()),
             $this->storage,
+            new \App\Service\RecheckPolicy(),
         );
     }
 }

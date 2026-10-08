@@ -3,8 +3,7 @@
 namespace App\Command;
 
 use App\Repository\DomainRepository;
-use App\Repository\FindingRepository;
-use App\Service\ScreenshotQueueService;
+use App\Service\MissingScreenshotQueueService;
 use App\Service\ValidationService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -18,8 +17,7 @@ final class ScreenshotMissingCommand extends Command
 {
     public function __construct(
         private readonly DomainRepository $domains,
-        private readonly FindingRepository $findings,
-        private readonly ScreenshotQueueService $screenshotQueue,
+        private readonly MissingScreenshotQueueService $missingScreenshots,
         private readonly ValidationService $validation,
     ) {
         parent::__construct();
@@ -53,7 +51,7 @@ final class ScreenshotMissingCommand extends Command
         $limit = max(1, (int) $input->getOption('limit'));
         $dryRun = (bool) $input->getOption('dry-run');
 
-        $findings = $this->findings->findAllWithoutScreenshotEvidence($domain, $status, $limit);
+        $findings = $this->missingScreenshots->findMissing($domain, $status, $limit);
 
         if ($dryRun) {
             $rows = [];
@@ -83,7 +81,7 @@ final class ScreenshotMissingCommand extends Command
                 $finding->getDomain()->getHostname(),
             ));
 
-            $result = $this->screenshotQueue->enqueue($finding);
+            $result = $this->missingScreenshots->enqueueOne($finding);
             $result->created ? $queued++ : $alreadyActive++;
             $io->writeln('  -> '.$result->job->getStatus());
         }

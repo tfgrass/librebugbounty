@@ -1,4 +1,6 @@
 services:
+  # Headless technical rechecks. The screenshot lanes below each own a
+  # separate Xvfb desktop, so parallel headed captures cannot overlap.
   playwright:
     image: mcr.microsoft.com/playwright:v1.61.1-jammy
     container_name: ddev-${DDEV_SITENAME}-playwright
@@ -18,3 +20,35 @@ services:
       timeout: 2s
       retries: 30
       start_period: 5s
+
+  playwright-shot-1:
+    &playwright_shot_service
+    image: mcr.microsoft.com/playwright:v1.61.1-jammy
+    container_name: ddev-${DDEV_SITENAME}-playwright-shot-1
+    working_dir: /var/www/html/playwright-worker
+    command: ./start.sh
+    volumes:
+      - ../:/var/www/html
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  playwright-shot-2:
+    <<: *playwright_shot_service
+    container_name: ddev-${DDEV_SITENAME}-playwright-shot-2
+
+  playwright-shot-3:
+    <<: *playwright_shot_service
+    container_name: ddev-${DDEV_SITENAME}-playwright-shot-3
+
+  playwright-shot-4:
+    <<: *playwright_shot_service
+    container_name: ddev-${DDEV_SITENAME}-playwright-shot-4

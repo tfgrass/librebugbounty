@@ -3,6 +3,41 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
+## 2.0.1 — Moneta (2026-10-08)
+
+### Added
+
+- Catch-up command `app:recheck:catch-up --execute --workers=16` that
+  reschedules every recheck slot older than a configurable age (default 14
+  days) to now and processes the backlog with a local fleet of parallel
+  `app:recheck:worker --until-empty` processes next to the four supervised
+  DDEV workers. Freshly leased slots (live claims) are never rescheduled,
+  so no finding is rechecked twice; claims older than 30 minutes count as
+  crashed workers and are reclaimed early.
+- Stock recheck workers (`app:recheck:worker`, four parallel DDEV web
+  daemons) that recheck open and wontfix findings every 28 days, headless and
+  without screenshots in the parallel pass. Claims are atomic database updates leased for 24 hours,
+  so parallel workers never take the same finding and a crashed worker's
+  claim expires on its own. Each run is committed on its own and moves the
+  finding's `nextDueAt` forward, so an interrupted worker resumes seamlessly.
+  Error results retry after a short 3-day backoff instead of blocking for
+  four weeks, and claiming a finding pushes every other due finding of the
+  same domain back by one hour, keeping a one-hour minimum interval per
+  domain across all workers. A result change or a new `inconclusive`/`error`
+  observation queues a separate screenshot job for headed visual capture.
+- `app:screenshot:missing` now backfills both findings without screenshot
+  evidence and findings whose stored screenshot file is missing or unreadable.
+- Four parallel headed screenshot lanes. Each lane has its own Playwright and
+  Xvfb container, while queue insertion remains serialized and job claims stay
+  atomic, so parallel captures cannot duplicate work or photograph another
+  lane's browser.
+
+### Changed
+
+- An automatically observed `fixed` retest result now marks the finding as
+  fixed without entering manual review; only `inconclusive` results land in
+  the review queue. Fixed findings leave the recheck scope entirely.
+
 ## 2.0.0 — Moneta
 
 Moneta develops the original triage prototype into a complete local workspace,

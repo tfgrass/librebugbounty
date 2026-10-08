@@ -31,6 +31,7 @@ final class FindingService
         private readonly ?ScreenshotOperationLock $screenshotOperationLock = null,
         private readonly ?ScreenshotQueueService $screenshotQueue = null,
         private readonly ?ReviewNoticeService $reviewNotices = null,
+        private readonly ?RecheckPolicy $recheckPolicy = null,
     ) {
     }
 
@@ -170,6 +171,7 @@ final class FindingService
             $finding->setSubmittedAt($submittedAt);
             $finding->setNotifiedOwnerAt($notifiedOwnerAt);
             $finding->setReviewState(null);
+            $this->recheckPolicy?->ensureNextDue($finding, $submittedAt);
 
             $initialScreenshotJob = (new ScreenshotJob())
                 ->setFinding($finding)
@@ -197,6 +199,10 @@ final class FindingService
         // creation lock because ensureExists() acquires that lock itself.
         if (!$result->created && !$result->finding->isDiscarded()) {
             $this->screenshotQueue?->ensureExists($result->finding);
+            if ($result->finding->getNextDueAt() === null) {
+                $this->recheckPolicy?->ensureNextDue($result->finding, new \DateTimeImmutable());
+                $this->entityManager->flush();
+            }
         }
 
         return $result;

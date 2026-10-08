@@ -14,6 +14,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Table(name: 'finding')]
 #[ORM\UniqueConstraint(name: 'uniq_finding_domain_url', columns: ['domain_id', 'url'])]
 #[ORM\Index(name: 'idx_finding_list_order', columns: ['submitted_at', 'created_at'])]
+#[ORM\Index(name: 'idx_finding_next_due', columns: ['next_due_at'])]
 #[ORM\HasLifecycleCallbacks]
 class Finding extends AbstractTimestampedEntity
 {
@@ -72,6 +73,9 @@ class Finding extends AbstractTimestampedEntity
 
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $lastRetestedAt = null;
+
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $nextDueAt = null;
 
     #[ORM\Column(type: 'string', length: 32, nullable: true)]
     private ?string $reviewState = null;
@@ -305,6 +309,18 @@ class Finding extends AbstractTimestampedEntity
     public function setLastRetestedAt(?\DateTimeImmutable $lastRetestedAt): self
     {
         $this->lastRetestedAt = $lastRetestedAt;
+
+        return $this;
+    }
+
+    public function getNextDueAt(): ?\DateTimeImmutable
+    {
+        return $this->nextDueAt;
+    }
+
+    public function setNextDueAt(?\DateTimeImmutable $nextDueAt): self
+    {
+        $this->nextDueAt = $nextDueAt;
 
         return $this;
     }

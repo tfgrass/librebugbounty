@@ -152,6 +152,18 @@ final class InMemoryFindingRepository extends FindingRepository
         return $count;
     }
 
+    public function findDueForRecheck(\DateTimeImmutable $now, int $limit = 25): array
+    {
+        $results = array_values(array_filter($this->findings, static function (Finding $finding) use ($now): bool {
+            return $finding->getNextDueAt() !== null && $finding->getNextDueAt() <= $now;
+        }));
+        usort($results, static function (Finding $a, Finding $b): int {
+            return $a->getNextDueAt() <=> $b->getNextDueAt();
+        });
+
+        return array_slice($results, 0, $limit);
+    }
+
     public function findDueForRetest(?\DateTimeImmutable $olderThan = null, ?Domain $domain = null, ?string $status = null, int $limit = 20): array
     {
         $olderThan ??= new \DateTimeImmutable('-30 days');
