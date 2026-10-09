@@ -6,6 +6,7 @@ use App\Entity\ScreenshotJob;
 use App\Repository\ScreenshotJobRepository;
 use App\Service\ScreenshotOperationLock;
 use App\Service\ScreenshotQueueService;
+use App\Service\WorkerHeartbeatService;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -23,6 +24,7 @@ final class ScreenshotWorkerCommand extends Command
         private readonly ScreenshotQueueService $queue,
         private readonly ManagerRegistry $doctrine,
         private readonly ScreenshotOperationLock $operationLock,
+        private readonly WorkerHeartbeatService $heartbeats,
     ) {
         parent::__construct();
     }
@@ -59,6 +61,7 @@ final class ScreenshotWorkerCommand extends Command
             fclose($lock);
             return $once ? Command::FAILURE : Command::SUCCESS;
         }
+        $this->heartbeat();
 
         [$failed, $recovered] = $this->operationLock->synchronizedMaintenance(function (): array {
             $jobs = $this->screenshotJobs();
@@ -80,6 +83,7 @@ final class ScreenshotWorkerCommand extends Command
 
         try {
             while (!$this->stop) {
+                $this->heartbeat();
                 $job = $this->queue->processNext();
                 if ($job !== null) {
                     $processed++;
@@ -115,6 +119,17 @@ final class ScreenshotWorkerCommand extends Command
         }
 
         return $repository;
+    }
+
+    private function heartbeat(): void
+    {
+        // Liveness reporting must never take the worker down; a failed
+        // heartbeat write is best-effort only.
+        try {
+            $this->heartbeats->touchIfDue(WorkerHeartbeatService::SCREENSHOT);
+        } catch (\Throwable) {
+            // Ignore transient database contention.
+        }
     }
 
     private function waitForSchema(OutputInterface $output, bool $once): bool

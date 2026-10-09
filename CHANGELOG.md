@@ -15,13 +15,14 @@ repository's tagged commits.
   so no finding is rechecked twice; claims older than 30 minutes count as
   crashed workers and are reclaimed early.
 - Stock recheck workers (`app:recheck:worker`, four parallel DDEV web
-  daemons) that recheck open and wontfix findings every 28 days, headless and
+  daemons) that recheck open and wontfix findings after the configured
+  interval (14 days by default, 1–90 days in Settings), headless and
   without screenshots in the parallel pass. Claims are atomic database updates leased for 24 hours,
   so parallel workers never take the same finding and a crashed worker's
   claim expires on its own. Each run is committed on its own and moves the
   finding's `nextDueAt` forward, so an interrupted worker resumes seamlessly.
-  Error results retry after a short 3-day backoff instead of blocking for
-  four weeks, and claiming a finding pushes every other due finding of the
+  Error results retry after the configured backoff (3 days by default)
+  instead of blocking for a full interval, and claiming a finding pushes every other due finding of the
   same domain back by one hour, keeping a one-hour minimum interval per
   domain across all workers. A result change or a new `inconclusive`/`error`
   observation queues a separate screenshot job for headed visual capture.
@@ -35,6 +36,13 @@ repository's tagged commits.
   selection-to-claim race, and a missing-screenshot backfill keeps at most one
   active screenshot job per case. A completed assessment schedules its next
   automatic check again.
+- A **Status & health** section on the Settings page. Recheck and screenshot
+  workers write shared, rate-limited heartbeats; the page shows whether each
+  worker kind is alive, current recheck counts (due now, scheduled, paused for
+  manual review), the next due time, the active interval and error backoff,
+  and screenshot queue counts including failures. Shortening the recheck
+  interval pulls future normal slots forward while protecting error backoffs
+  and live worker claims.
 
 ### Changed
 

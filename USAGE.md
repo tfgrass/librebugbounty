@@ -204,7 +204,7 @@ effective profile and screenshot choice explicitly, so they match its preview.
 
 ## Settings
 
-Open the gear icon for **Settings & info**. Six settings are available:
+Open the gear icon for **Settings & info**. Eight settings are available:
 
 - **Default marker:** prefilled when a new URL is entered. Existing cases keep
   their saved marker.
@@ -221,6 +221,21 @@ Open the gear icon for **Settings & info**. Six settings are available:
 - **Screenshots in report packages:** Evidence used for my assessment, Latest
   stored image, All stored images, or No image files. The factory default is
   Latest stored image.
+- **Recheck interval:** days after a completed check before the next automatic
+  recheck becomes due. The factory default is 14 days; allowed values are 1 to
+  90 days. Shortening the interval pulls future normal slots forward to
+  “last check + new interval”, while error backoffs and live worker claims stay
+  untouched. Enlarging it takes effect with each following completed check.
+- **Retry after errors:** days before an `error` result is rechecked. The
+  factory default is 3 days; allowed values are 1 to 30 days.
+
+Above the preferences, **Status & health** shows whether the recheck and
+screenshot workers have sent a recent heartbeat, how many rechecks are due now,
+scheduled, or paused for manual review, when the next slot is due, and the
+current screenshot queue counts. This answers “is the background work running?”
+without opening a terminal. Workers report their liveness while running; after
+a DDEV restart the first signal appears as soon as a worker has started its
+loop.
 
 The inventory and export defaults are saved for this installation. Explicit
 page or URL selections take precedence for that view or export; they do not
@@ -283,7 +298,8 @@ the counts for cases without readable images. Waiting jobs may finish later;
 you can also view cases without images, or leave them for a later round.
 
 **How are old cases rechecked?** Four recheck workers run in the background
-and retest open and wontfix findings 28 days after their last check. They run
+and retest open and wontfix findings after the configured interval (14 days
+by default) following their last check. They run
 headless and keep a one-hour minimum interval per domain even across the
 parallel workers. A case currently marked for manual checking pauses its
 automatic recheck until your review finishes. The technical pass itself takes
@@ -291,8 +307,9 @@ no screenshots, so it can run in parallel. When the result changes, or a new `in
 observation needs review, a screenshot is queued separately and one of the four
 headed screenshot lanes captures it. A finding the browser reports as fixed
 is marked as fixed directly; only unclear results enter your review queue, and
-error results retry after three days. Fixed findings are not rechecked. Check
-the workers with:
+error results retry after the configured backoff (3 days by default). Fixed
+findings are not rechecked. Check the workers on the Settings page under
+**Status & health**, or from the terminal with:
 
 ```bash
 ddev exec supervisorctl status 'webextradaemons:recheck-worker-*'

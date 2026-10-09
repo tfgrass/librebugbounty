@@ -4,6 +4,7 @@ namespace App\Command;
 
 use App\Entity\Finding;
 use App\Service\RecheckService;
+use App\Service\WorkerHeartbeatService;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -27,6 +28,7 @@ final class RecheckWorkerCommand extends Command
     public function __construct(
         private readonly RecheckService $recheckService,
         private readonly ManagerRegistry $doctrine,
+        private readonly WorkerHeartbeatService $heartbeats,
     ) {
         parent::__construct();
     }
@@ -56,6 +58,7 @@ final class RecheckWorkerCommand extends Command
         if (!$this->waitForSchema($output, $once)) {
             return $once ? Command::FAILURE : Command::SUCCESS;
         }
+        $this->heartbeat();
 
         $sleepMicros = max(1000000, (int) round((float) $input->getOption('sleep') * 1000000));
         $maxJobs = max(0, (int) $input->getOption('max-jobs'));
@@ -63,6 +66,7 @@ final class RecheckWorkerCommand extends Command
         $processed = 0;
 
         while (!$this->stop) {
+            $this->heartbeat();
             $outcome = $this->recheckService->processNext($timeout);
             if ($outcome !== null) {
                 $processed++;
@@ -80,7 +84,7 @@ final class RecheckWorkerCommand extends Command
             if ($once || $untilEmpty) {
                 break;
             }
-            usleep($sleepMicros);
+            $this->idle($sleepMicros);
         }
 
         return Command::SUCCESS;
@@ -114,5 +118,34 @@ final class RecheckWorkerCommand extends Command
         }
 
         return false;
+    }
+
+    /**
+     * Sleep in short chunks so the shared heartbeat stays fresh and SIGTERM
+     * is noticed within seconds even during the default five-minute idle
+     * poll interval.
+     */
+    private function idle(int $sleepMicros): void
+    {
+        $remaining = $sleepMicros;
+        while ($remaining > 0 && !$this->stop) {
+            $chunk = min(30_000_000, $remaining);
+            usleep($chunk);
+            $remaining -= $chunk;
+            if ($remaining > 0) {
+                $this->heartbeat();
+            }
+        }
+    }
+
+    private function heartbeat(): void
+    {
+        // Liveness reporting must never take the worker down; a failed
+        // heartbeat write is best-effort only.
+        try {
+            $this->heartbeats->touchIfDue(WorkerHeartbeatService::RECHECK);
+        } catch (\Throwable) {
+            // Ignore transient database contention.
+        }
     }
 }

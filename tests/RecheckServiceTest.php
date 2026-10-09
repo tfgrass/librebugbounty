@@ -115,7 +115,7 @@ final class RecheckServiceTest extends UnitTestCase
         self::assertSame([], $this->queuedScreenshots, 'A stable result does not start serial screenshot work.');
         self::assertSame('reported', $older->getStatus(), 'still_vulnerable keeps reported findings reported.');
         self::assertNotNull($older->getNextDueAt());
-        self::assertGreaterThan(new \DateTimeImmutable('+27 days'), $older->getNextDueAt());
+        self::assertGreaterThan(new \DateTimeImmutable('+13 days'), $older->getNextDueAt());
         self::assertNotNull($future->getNextDueAt());
     }
 
@@ -156,7 +156,7 @@ final class RecheckServiceTest extends UnitTestCase
 
         self::assertSame('skipped-protected', $outcome);
         self::assertNotNull($protected->getNextDueAt());
-        self::assertGreaterThan(new \DateTimeImmutable('+27 days'), $protected->getNextDueAt());
+        self::assertGreaterThan(new \DateTimeImmutable('+13 days'), $protected->getNextDueAt());
     }
 
     public function testDomainSpacingLeavesTheSecondFindingOfTheSameDomainDue(): void

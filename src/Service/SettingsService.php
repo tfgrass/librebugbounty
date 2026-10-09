@@ -14,6 +14,8 @@ final class SettingsService
         'inventory.page_size' => '10',
         'export.default_profile' => 'report',
         'export.screenshot_mode' => 'latest',
+        'recheck.interval_days' => '14',
+        'recheck.error_backoff_days' => '3',
     ];
 
     public function __construct(
@@ -111,6 +113,16 @@ final class SettingsService
     public function getExportScreenshotMode(): string
     {
         return $this->getChoice('export.screenshot_mode', ['basis', 'latest', 'all', 'none']);
+    }
+
+    public function getRecheckIntervalDays(): int
+    {
+        return min(90, max(1, $this->getInt('recheck.interval_days', (int) self::DEFAULTS['recheck.interval_days'])));
+    }
+
+    public function getRecheckErrorBackoffDays(): int
+    {
+        return min(30, max(1, $this->getInt('recheck.error_backoff_days', (int) self::DEFAULTS['recheck.error_backoff_days'])));
     }
 
     /** @param list<string> $choices */

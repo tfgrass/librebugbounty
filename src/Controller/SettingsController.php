@@ -3,7 +3,9 @@
 namespace App\Controller;
 
 use App\AppInfo;
+use App\Service\RecheckScheduleService;
 use App\Service\SettingsService;
+use App\Service\SystemHealthService;
 use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -15,6 +17,8 @@ final class SettingsController
     public function __construct(
         private readonly SettingsService $settings,
         private readonly UiTranslator $i18n,
+        private readonly RecheckScheduleService $recheckSchedule,
+        private readonly SystemHealthService $health,
     ) {
     }
 
@@ -32,6 +36,8 @@ final class SettingsController
             inventoryPageSize: $this->settings->getInventoryPageSize(),
             exportProfile: $this->settings->getExportProfile(),
             exportScreenshotMode: $this->settings->getExportScreenshotMode(),
+            recheckIntervalDays: (string) $this->settings->getRecheckIntervalDays(),
+            recheckErrorBackoffDays: (string) $this->settings->getRecheckErrorBackoffDays(),
             errors: [],
             message: $request->query->getString('message') ?: null,
         );
@@ -46,6 +52,8 @@ final class SettingsController
             'inventory_page_size' => $this->settings->getInventoryPageSize(),
             'export_profile' => $this->settings->getExportProfile(),
             'export_screenshot_mode' => $this->settings->getExportScreenshotMode(),
+            'recheck_interval_days' => (string) $this->settings->getRecheckIntervalDays(),
+            'recheck_error_backoff_days' => (string) $this->settings->getRecheckErrorBackoffDays(),
         ];
         if (!is_string($parameters['default_payload'] ?? null)
             || !is_string($parameters['review_timeout_ms'] ?? null)
@@ -73,6 +81,8 @@ final class SettingsController
         $inventoryPageSize = $optional['inventory_page_size'];
         $exportProfile = $optional['export_profile'];
         $exportScreenshotMode = $optional['export_screenshot_mode'];
+        $recheckIntervalDays = $optional['recheck_interval_days'];
+        $recheckErrorBackoffDays = $optional['recheck_error_backoff_days'];
         $errors = [];
         if ($defaultPayload === '') {
             $errors['default_payload'] = $this->i18n->trans('Das Standardkennzeichen darf nicht leer sein.');
@@ -97,11 +107,18 @@ final class SettingsController
         if (!in_array($exportScreenshotMode, ['basis', 'latest', 'all', 'none'], true)) {
             $errors['export_screenshot_mode'] = $this->i18n->trans('Wähle eine verfügbare Screenshot-Auswahl.');
         }
-
-        if ($errors !== []) {
-            return $this->render($request, $defaultPayload, $reviewTimeout, $reviewDecisionDelay, $inventoryPageSize, $exportProfile, $exportScreenshotMode, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        if ($recheckIntervalDays === '' || !ctype_digit($recheckIntervalDays) || (int) $recheckIntervalDays < 1 || (int) $recheckIntervalDays > 90) {
+            $errors['recheck_interval_days'] = $this->i18n->trans('Das Recheck-Intervall muss eine ganze Zahl zwischen 1 und 90 Tagen sein.');
+        }
+        if ($recheckErrorBackoffDays === '' || !ctype_digit($recheckErrorBackoffDays) || (int) $recheckErrorBackoffDays < 1 || (int) $recheckErrorBackoffDays > 30) {
+            $errors['recheck_error_backoff_days'] = $this->i18n->trans('Der Fehler-Backoff muss eine ganze Zahl zwischen 1 und 30 Tagen sein.');
         }
 
+        if ($errors !== []) {
+            return $this->render($request, $defaultPayload, $reviewTimeout, $reviewDecisionDelay, $inventoryPageSize, $exportProfile, $exportScreenshotMode, $recheckIntervalDays, $recheckErrorBackoffDays, $errors, null, Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $previousIntervalDays = $this->settings->getRecheckIntervalDays();
         $values = [
             'intake.default_payload' => $defaultPayload,
             'review.scan_timeout_ms' => (string) (int) $reviewTimeout,
@@ -111,12 +128,16 @@ final class SettingsController
             'inventory_page_size' => 'inventory.page_size',
             'export_profile' => 'export.default_profile',
             'export_screenshot_mode' => 'export.screenshot_mode',
+            'recheck_interval_days' => 'recheck.interval_days',
+            'recheck_error_backoff_days' => 'recheck.error_backoff_days',
         ] as $field => $key) {
             if (array_key_exists($field, $parameters)) {
                 $values[$key] = $optional[$field];
             }
         }
         $this->settings->save($values);
+        $newIntervalDays = $this->settings->getRecheckIntervalDays();
+        $this->recheckSchedule->applyIntervalChange($previousIntervalDays, $newIntervalDays, new \DateTimeImmutable());
 
         return new RedirectResponse('/settings?message='.rawurlencode($this->i18n->trans('Einstellungen gespeichert.')));
     }
@@ -130,6 +151,8 @@ final class SettingsController
         string $inventoryPageSize,
         string $exportProfile,
         string $exportScreenshotMode,
+        string $recheckIntervalDays,
+        string $recheckErrorBackoffDays,
         array $errors,
         ?string $message,
         int $status = Response::HTTP_OK,
@@ -155,6 +178,7 @@ final class SettingsController
         $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);
         $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
         $i18nJson = $this->i18n->browserCatalogJson();
+        $health = $this->health->snapshot();
 
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/settings.php';
