@@ -5,6 +5,9 @@
 /** @var string $inventoryPageSize */
 /** @var string $exportProfile */
 /** @var string $exportScreenshotMode */
+/** @var string $recheckIntervalDays */
+/** @var string $recheckErrorBackoffDays */
+/** @var array{recheck: array{active: bool, ageSeconds: ?int, dueNow: int, scheduled: int, pausedManual: int, nextDueAt: ?\DateTimeInterface, intervalDays: int, errorBackoffDays: int}, screenshot: array{active: bool, ageSeconds: ?int, queued: int, running: int, available: int, failed: int}} $health */
 /** @var array<string, string> $errors */
 /** @var ?string $message */
 /** @var array<string, string> $app */
@@ -48,6 +51,59 @@
             <span><?= $escape($t('Bitte korrigiere die markierten Felder. Deine Eingaben bleiben erhalten.')) ?></span>
           </div>
         <?php endif; ?>
+
+        <section class="studio-settings-panel studio-settings-health" aria-labelledby="settings-health-title">
+          <div class="studio-settings-panel-heading">
+            <div><h2 id="settings-health-title"><?= $escape($t('Status & Gesundheit')) ?></h2></div>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6h5" transform="translate(0 1)" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="studio-settings-health-grid">
+            <article class="studio-settings-health-card" data-health-kind="recheck">
+              <header>
+                <span class="studio-settings-health-dot" data-state="<?= $health['recheck']['active'] ? 'ok' : ($health['recheck']['ageSeconds'] === null ? 'unknown' : 'stale') ?>" aria-hidden="true"></span>
+                <h3><?= $escape($t('Recheck-Worker')) ?></h3>
+              </header>
+              <p class="studio-settings-health-state">
+                <?php if ($health['recheck']['active']): ?>
+                  <?= $escape($t('Aktiv · Signal vor {seconds} s', ['seconds' => (int) $health['recheck']['ageSeconds']])) ?>
+                <?php elseif ($health['recheck']['ageSeconds'] === null): ?>
+                  <?= $escape($t('Noch kein Signal')) ?>
+                <?php else: ?>
+                  <?= $escape($t('Kein Signal seit {seconds} s', ['seconds' => (int) $health['recheck']['ageSeconds']])) ?>
+                <?php endif; ?>
+              </p>
+              <dl>
+                <div><dt><?= $escape($t('Fällig jetzt')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['dueNow'])) ?></dd></div>
+                <div><dt><?= $escape($t('Geplant')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['scheduled'])) ?></dd></div>
+                <div><dt><?= $escape($t('Pausiert für Review')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['pausedManual'])) ?></dd></div>
+                <div><dt><?= $escape($t('Nächster Termin')) ?></dt><dd><?= $health['recheck']['nextDueAt'] === null ? $escape($t('Kein Termin')) : $escape($formatTime($health['recheck']['nextDueAt'])) ?></dd></div>
+                <div><dt><?= $escape($t('Intervall')) ?></dt><dd><?= $escape($t('{days} Tage', ['days' => $health['recheck']['intervalDays']])) ?></dd></div>
+              </dl>
+            </article>
+            <article class="studio-settings-health-card" data-health-kind="screenshot">
+              <header>
+                <span class="studio-settings-health-dot" data-state="<?= $health['screenshot']['active'] ? 'ok' : ($health['screenshot']['ageSeconds'] === null ? 'unknown' : 'stale') ?>" aria-hidden="true"></span>
+                <h3><?= $escape($t('Screenshot-Worker')) ?></h3>
+              </header>
+              <p class="studio-settings-health-state">
+                <?php if ($health['screenshot']['active']): ?>
+                  <?= $escape($t('Aktiv · Signal vor {seconds} s', ['seconds' => (int) $health['screenshot']['ageSeconds']])) ?>
+                <?php elseif ($health['screenshot']['ageSeconds'] === null): ?>
+                  <?= $escape($t('Noch kein Signal')) ?>
+                <?php else: ?>
+                  <?= $escape($t('Kein Signal seit {seconds} s', ['seconds' => (int) $health['screenshot']['ageSeconds']])) ?>
+                <?php endif; ?>
+              </p>
+              <dl>
+                <div><dt><?= $escape($t('Wartend')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['queued'])) ?></dd></div>
+                <div><dt><?= $escape($t('In Arbeit')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['running'])) ?></dd></div>
+                <div><dt><?= $escape($t('Belege vorhanden')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['available'])) ?></dd></div>
+                <div><dt><?= $escape($t('Fehlgeschlagen')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['failed'])) ?></dd></div>
+              </dl>
+            </article>
+          </div>
+          <p class="studio-settings-field-hint"><?= $escape($t('Die Anzeige zeigt den zuletzt gespeicherten Worker-Signalisierungszeitpunkt und zählt die Warteschlangen direkt aus der Datenbank.')) ?></p>
+        </section>
 
         <div class="studio-settings-layout">
           <section class="studio-settings-panel" aria-labelledby="settings-title">
@@ -96,6 +152,23 @@
               </select>
               <p class="studio-settings-field-hint" id="settings-inventory-page-size-hint"><?= $escape($t('Startwert für den Bestand. Alle Fälle kannst du weiterhin direkt auf der Seite wählen.')) ?></p>
               <?php if (isset($errors['inventory_page_size'])): ?><p class="studio-settings-field-error" id="settings-inventory-page-size-error"><?= $escape($errors['inventory_page_size']) ?></p><?php endif; ?>
+              </fieldset>
+
+              <fieldset class="studio-settings-group">
+              <legend><?= $escape($t('Automatische Rechecks')) ?></legend>
+              <label for="settings-recheck-interval"><?= $escape($t('Recheck-Intervall')) ?>
+                <span><?= $escape($t('Tage nach einem abgeschlossenen Check. Verkürzen zieht bereits geplante Checks vor; Fehler-Backoffs bleiben unverändert.')) ?></span>
+              </label>
+              <input id="settings-recheck-interval" name="recheck_interval_days" value="<?= $escape($recheckIntervalDays) ?>" inputmode="numeric" pattern="[0-9]+" min="1" max="90" aria-describedby="settings-recheck-interval-hint<?= isset($errors['recheck_interval_days']) ? ' settings-recheck-interval-error' : '' ?>"<?= isset($errors['recheck_interval_days']) ? ' aria-invalid="true"' : '' ?>>
+              <p class="studio-settings-field-hint" id="settings-recheck-interval-hint"><?= $escape($t('Standard sind 14 Tage. Zulässig sind 1 bis 90 Tage.')) ?></p>
+              <?php if (isset($errors['recheck_interval_days'])): ?><p class="studio-settings-field-error" id="settings-recheck-interval-error"><?= $escape($errors['recheck_interval_days']) ?></p><?php endif; ?>
+
+              <label for="settings-recheck-error-backoff"><?= $escape($t('Wiederholung nach Fehlern')) ?>
+                <span><?= $escape($t('Tage, bevor ein Fehlerergebnis erneut automatisch geprüft wird.')) ?></span>
+              </label>
+              <input id="settings-recheck-error-backoff" name="recheck_error_backoff_days" value="<?= $escape($recheckErrorBackoffDays) ?>" inputmode="numeric" pattern="[0-9]+" min="1" max="30" aria-describedby="settings-recheck-error-backoff-hint<?= isset($errors['recheck_error_backoff_days']) ? ' settings-recheck-error-backoff-error' : '' ?>"<?= isset($errors['recheck_error_backoff_days']) ? ' aria-invalid="true"' : '' ?>>
+              <p class="studio-settings-field-hint" id="settings-recheck-error-backoff-hint"><?= $escape($t('Standard sind 3 Tage. Zulässig sind 1 bis 30 Tage.')) ?></p>
+              <?php if (isset($errors['recheck_error_backoff_days'])): ?><p class="studio-settings-field-error" id="settings-recheck-error-backoff-error"><?= $escape($errors['recheck_error_backoff_days']) ?></p><?php endif; ?>
               </fieldset>
 
               <fieldset class="studio-settings-group">

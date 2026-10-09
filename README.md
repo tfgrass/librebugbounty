@@ -1,11 +1,24 @@
 # LibreBugBounty 2.0.1 “Moneta”
 
-**A local-first OpenBugBounty alternative for reflected XSS research.**
+**A self-hosted bug bounty workspace for reflected XSS research — an
+open-source, local-first OpenBugBounty alternative.**
 
 LibreBugBounty turns a stream of candidate URLs into a reviewable local case
-file. It stores intake durably, captures browser evidence in the background,
-keeps technical observations separate from your manual decision, and exports
-the result when you are ready to report it.
+file for vulnerability triage and responsible disclosure. It stores intake
+durably, captures browser evidence in the background, keeps technical
+observations separate from your manual decision, and exports the result when
+you are ready to report it.
+
+- **Intake:** fast URL capture with duplicate detection and background
+  Chromium screenshots
+- **Triage:** evidence-first review with keyboard, touch, and decision pause
+- **Maintenance:** parallel automatic rechecks on a configurable cadence,
+  with worker health monitoring
+- **Disclosure:** searchable inventory, contact history, activity
+  statistics, and evidence-ready ZIP exports
+
+**Stack:** PHP · Symfony · SQLite · Playwright/Chromium · DDEV — everything
+stays on your machine.
 
 The application runs on your own machine and is designed for a focused,
 single-user workflow. LibreBugBounty is independent of and not affiliated with

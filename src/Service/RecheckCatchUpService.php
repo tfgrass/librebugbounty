@@ -32,7 +32,7 @@ final class RecheckCatchUpService
     public function preview(\DateTimeImmutable $cutoff, \DateTimeImmutable $now): array
     {
         $scope = $this->scopeSql();
-        [$leaseLow, $leaseHigh] = $this->claimWindow($now);
+        [$leaseLow, $leaseHigh] = RecheckPolicy::claimWindow($now);
 
         $eligible = (int) $this->connection->fetchOne(
             'SELECT COUNT(*) FROM finding WHERE '.$scope.' AND '.self::COLUMNS.' <= :cutoff',
@@ -67,7 +67,7 @@ final class RecheckCatchUpService
      */
     public function pullDue(\DateTimeImmutable $cutoff, \DateTimeImmutable $now): int
     {
-        [$leaseLow, $leaseHigh] = $this->claimWindow($now);
+        [$leaseLow, $leaseHigh] = RecheckPolicy::claimWindow($now);
 
         return (int) $this->connection->executeStatement(
             'UPDATE finding SET next_due_at = :now'
@@ -85,21 +85,6 @@ final class RecheckCatchUpService
         );
     }
 
-    /**
-     * Window in which next_due_at can only be a live claim: leases run 24
-     * hours and a browser retest finishes within minutes, so any slot between
-     * now+23.5h and now+25h belongs to a worker that is currently running.
-     *
-     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable}
-     */
-    private function claimWindow(\DateTimeImmutable $now): array
-    {
-        $low = $now->modify('+'.(RecheckPolicy::CLAIM_LEASE_HOURS * 60 - 30).' minutes');
-        $high = $now->modify('+'.(RecheckPolicy::CLAIM_LEASE_HOURS + 1).' hours');
-
-        return [$low, $high];
-    }
-
     private function scopeSql(): string
     {
         $statuses = implode("', '", [
@@ -112,6 +97,6 @@ final class RecheckCatchUpService
         return "status IN ('".$statuses."')"
             ." AND manual_assessment IS NULL"
             ." AND (review_state IS NULL OR review_state NOT IN ('"
-            .ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";
+            .ReviewState::MANUAL_CHECKING."', '".ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";
     }
 }

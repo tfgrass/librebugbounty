@@ -16,6 +16,7 @@ use App\Service\ScreenshotEnqueuerInterface;
 use App\Service\ValidationService;
 use App\Value\ManualAssessment;
 use App\Value\RetestResult;
+use App\Value\ReviewState;
 
 final class RecheckServiceTest extends UnitTestCase
 {
@@ -114,7 +115,7 @@ final class RecheckServiceTest extends UnitTestCase
         self::assertSame([], $this->queuedScreenshots, 'A stable result does not start serial screenshot work.');
         self::assertSame('reported', $older->getStatus(), 'still_vulnerable keeps reported findings reported.');
         self::assertNotNull($older->getNextDueAt());
-        self::assertGreaterThan(new \DateTimeImmutable('+27 days'), $older->getNextDueAt());
+        self::assertGreaterThan(new \DateTimeImmutable('+13 days'), $older->getNextDueAt());
         self::assertNotNull($future->getNextDueAt());
     }
 
@@ -127,6 +128,8 @@ final class RecheckServiceTest extends UnitTestCase
 
         $client = $this->neverCalledClient();
         $fixed = $this->dueFinding($entityManager, 'fixed.example', '-40 days', 'fixed');
+        $manualChecking = $this->dueFinding($entityManager, 'manual.example', '-39 days', 'reported');
+        $manualChecking->setReviewState(ReviewState::MANUAL_CHECKING);
         $open = $this->dueFinding($entityManager, 'open.example', '-39 days', 'reported');
 
         $service = $this->createService($entityManager, $repos, $client);
@@ -134,6 +137,7 @@ final class RecheckServiceTest extends UnitTestCase
 
         self::assertSame($open, $claimed, 'Fixed findings leave the recheck scope (D4).');
         self::assertNull($fixed->getNextDueAt());
+        self::assertNull($manualChecking->getNextDueAt(), 'A finding currently in manual checking pauses its recheck slot.');
     }
 
     public function testProtectedAssessmentIsSkippedWithoutBrowserWork(): void
@@ -152,7 +156,7 @@ final class RecheckServiceTest extends UnitTestCase
 
         self::assertSame('skipped-protected', $outcome);
         self::assertNotNull($protected->getNextDueAt());
-        self::assertGreaterThan(new \DateTimeImmutable('+27 days'), $protected->getNextDueAt());
+        self::assertGreaterThan(new \DateTimeImmutable('+13 days'), $protected->getNextDueAt());
     }
 
     public function testDomainSpacingLeavesTheSecondFindingOfTheSameDomainDue(): void

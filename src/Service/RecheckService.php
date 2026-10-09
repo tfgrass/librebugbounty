@@ -6,6 +6,7 @@ use App\Entity\Finding;
 use App\Repository\FindingRepository;
 use App\Repository\RetestRunRepository;
 use App\Value\RetestResult;
+use App\Value\ReviewState;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -74,9 +75,9 @@ final class RecheckService
         $connection->beginTransaction();
         try {
             $claimed = $connection->executeStatement(
-                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ?',
-                [$lease, $candidate->getId(), $expected],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ? AND (review_state IS NULL OR review_state <> ?)',
+                [$lease, $candidate->getId(), $expected, ReviewState::MANUAL_CHECKING],
+                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
             if ($claimed !== 1) {
                 $connection->rollBack();
@@ -104,6 +105,17 @@ final class RecheckService
     private function recheck(Finding $finding, int $timeoutMs): string
     {
         try {
+            // The database can change after selection and before the claim is
+            // applied. Re-read before browser work so a concurrent manual
+            // assessment or manual-review queue insertion pauses this run.
+            if ($this->entityManager->contains($finding)) {
+                $this->entityManager->refresh($finding);
+            }
+            if ($finding->getReviewState() === ReviewState::MANUAL_CHECKING) {
+                $finding->setNextDueAt(null);
+                $this->entityManager->flush();
+                return 'skipped-manual-checking';
+            }
             if ($finding->hasProtectedAssessment()) {
                 // A human decision is authoritative; never retest it, just
                 // push the slot forward.

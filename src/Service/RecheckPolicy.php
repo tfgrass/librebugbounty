@@ -5,19 +5,21 @@ namespace App\Service;
 use App\Entity\Finding;
 use App\Value\FindingStatus;
 use App\Value\RetestResult;
+use App\Value\ReviewState;
 
 /**
  * Stock recheck cadence for the recheck worker.
  *
- * Scope (D4): new/verified/reported/wontfix are rechecked every 28 days;
- * fixed, discarded and duplicate findings are never queued. Error results
- * retry after a short backoff instead of blocking the slot for four weeks.
+ * Scope (D4): new/verified/reported/wontfix are rechecked after the
+ * configured interval (14 days by default); fixed, discarded, duplicate and
+ * currently manually checked findings are never queued. Error results retry
+ * after a short backoff instead of blocking the slot for a full interval.
  * Claims lease a finding for 24 hours; a crashed worker's claim expires on
  * its own and the finding becomes due again.
  */
 final class RecheckPolicy
 {
-    public const INTERVAL_DAYS = 28;
+    public const INTERVAL_DAYS = 14;
     public const ERROR_BACKOFF_DAYS = 3;
     public const DOMAIN_MIN_INTERVAL_SECONDS = 3600;
     public const CLAIM_LEASE_HOURS = 24;
@@ -30,9 +32,16 @@ final class RecheckPolicy
         FindingStatus::WONTFIX,
     ];
 
+    public function __construct(
+        private readonly ?SettingsService $settings = null,
+    ) {
+    }
+
     public function isInScope(Finding $finding): bool
     {
-        return !$finding->isDiscarded() && in_array($finding->getStatus(), self::SCOPE_STATUSES, true);
+        return !$finding->isDiscarded()
+            && $finding->getReviewState() !== ReviewState::MANUAL_CHECKING
+            && in_array($finding->getStatus(), self::SCOPE_STATUSES, true);
     }
 
     public function nextDueAfter(Finding $finding, ?string $result, \DateTimeImmutable $now): ?\DateTimeImmutable
@@ -41,7 +50,7 @@ final class RecheckPolicy
             return null;
         }
 
-        $days = $result === RetestResult::ERROR ? self::ERROR_BACKOFF_DAYS : self::INTERVAL_DAYS;
+        $days = $result === RetestResult::ERROR ? $this->errorBackoffDays() : $this->intervalDays();
 
         return $now->modify(sprintf('+%d days', $days));
     }
@@ -50,11 +59,36 @@ final class RecheckPolicy
     {
         if ($this->isInScope($finding) && $finding->getNextDueAt() === null) {
             $base = $finding->getLastRetestedAt() ?? $finding->getSubmittedAt() ?? $finding->getCreatedAt();
-            $finding->setNextDueAt($base->modify(sprintf('+%d days', self::INTERVAL_DAYS)));
+            $finding->setNextDueAt($base->modify(sprintf('+%d days', $this->intervalDays())));
         }
         if (!$this->isInScope($finding)) {
             $finding->setNextDueAt(null);
         }
+    }
+
+    public function intervalDays(): int
+    {
+        return $this->settings?->getRecheckIntervalDays() ?? self::INTERVAL_DAYS;
+    }
+
+    public function errorBackoffDays(): int
+    {
+        return $this->settings?->getRecheckErrorBackoffDays() ?? self::ERROR_BACKOFF_DAYS;
+    }
+
+    /**
+     * Window in which next_due_at can only be a live claim: leases run 24
+     * hours and a browser retest finishes within minutes, so any slot between
+     * now+23.5h and now+25h belongs to a worker that is currently running.
+     *
+     * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable}
+     */
+    public static function claimWindow(\DateTimeImmutable $now): array
+    {
+        $low = $now->modify('+'.(self::CLAIM_LEASE_HOURS * 60 - 30).' minutes');
+        $high = $now->modify('+'.(self::CLAIM_LEASE_HOURS + 1).' hours');
+
+        return [$low, $high];
     }
 
     /**

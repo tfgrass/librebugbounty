@@ -47,7 +47,11 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame('report', $xpath->evaluate('string(//select[@name="export_profile"]/option[@selected]/@value)'));
             self::assertSame('latest', $xpath->evaluate('string(//select[@name="export_screenshot_mode"]/option[@selected]/@value)'));
             self::assertSame(0, $xpath->query('//select[@name="inventory_page_size"]/option[@value="all"]')->length);
-            self::assertSame(4, $xpath->query('//fieldset/legend')->length);
+            self::assertSame(5, $xpath->query('//fieldset/legend')->length);
+            self::assertSame(SettingsService::DEFAULTS['recheck.interval_days'], $xpath->evaluate('string(//input[@name="recheck_interval_days"]/@value)'));
+            self::assertSame(SettingsService::DEFAULTS['recheck.error_backoff_days'], $xpath->evaluate('string(//input[@name="recheck_error_backoff_days"]/@value)'));
+            self::assertSame(2, $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " studio-settings-health-card ")]')->length);
+            self::assertSame('unknown', $xpath->evaluate('string(//*[contains(concat(" ", normalize-space(@class), " "), " studio-settings-health-dot ")]/@data-state)'));
             self::assertSame(AppInfo::HOMEPAGE, $xpath->evaluate('string(//a[normalize-space(.)="'.AppInfo::AUTHOR.' ↗"]/@href)'));
             self::assertSame(AppInfo::OPENBUGBOUNTY_URL, $xpath->evaluate('string(//a[contains(normalize-space(.),"'.AppInfo::OPENBUGBOUNTY_PROFILE.'")]/@href)'));
             self::assertStringContainsString(AppInfo::VERSION, $xpath->evaluate('string(//body)'));
@@ -144,6 +148,64 @@ final class StudioSettingsTest extends DatabaseTestCase
             $xpath = $this->xpath($this->request('/settings')->getContent());
 
             self::assertSame($displayed, $xpath->evaluate('string(//input[@name="review_timeout_ms"]/@value)'));
+        }
+    }
+
+    public function testRecheckIntervalsCanBeSavedAndShorteningPullsOldFutureSlotsForward(): void
+    {
+        $settings = self::getContainer()->get(SettingsService::class);
+        $domain = new \App\Entity\Domain();
+        $domain->setHostname('settings-shorten.example')->setScheme('https');
+        $this->entityManager->persist($domain);
+        $finding = new \App\Entity\Finding();
+        $finding->setDomain($domain)->setTitle('old-schedule')->setType('stored-case')
+            ->setSeverity('medium')->setStatus('reported')
+            ->setUrl('https://settings-shorten.example/case')->setMethod('GET');
+        $finding->setLastRetestedAt(new \DateTimeImmutable('-30 days'));
+        $finding->setNextDueAt(new \DateTimeImmutable('+13 days'));
+        $this->entityManager->flush();
+
+        $response = $this->request('/settings', 'POST', [
+            'default_payload' => 'RELEASE-MARKER',
+            'review_timeout_ms' => '45000',
+            'recheck_interval_days' => '7',
+            'recheck_error_backoff_days' => '5',
+        ]);
+
+        self::assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+        self::assertSame(7, $settings->getRecheckIntervalDays());
+        self::assertSame(5, $settings->getRecheckErrorBackoffDays());
+        $slot = $this->entityManager->getConnection()->fetchOne(
+            'SELECT next_due_at FROM finding WHERE id = ?',
+            [$finding->getId()],
+        );
+        self::assertLessThanOrEqual((new \DateTimeImmutable())->format('Y-m-d H:i:s'), $slot);
+
+        $xpath = $this->xpath($this->request('/settings')->getContent());
+        self::assertSame('7', $xpath->evaluate('string(//input[@name="recheck_interval_days"]/@value)'));
+        self::assertSame('5', $xpath->evaluate('string(//input[@name="recheck_error_backoff_days"]/@value)'));
+    }
+
+    public function testInvalidRecheckIntervalsAreRejectedWithoutSavingAnySettings(): void
+    {
+        $settings = self::getContainer()->get(SettingsService::class);
+        $settings->save(['recheck.interval_days' => '14']);
+        $before = $this->rows();
+
+        foreach (['0', '91', '-7', '3.5', 'abc', ''] as $interval) {
+            $response = $this->request('/settings', 'POST', [
+                'default_payload' => 'RELEASE-MARKER',
+                'review_timeout_ms' => '45000',
+                'recheck_interval_days' => $interval,
+                'recheck_error_backoff_days' => '31',
+            ]);
+
+            self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode());
+            $xpath = $this->xpath($response->getContent());
+            self::assertSame($interval, $xpath->evaluate('string(//input[@name="recheck_interval_days"]/@value)'));
+            self::assertSame(1, $xpath->query('//input[@name="recheck_interval_days" and @aria-invalid="true"]')->length);
+            self::assertSame(1, $xpath->query('//input[@name="recheck_error_backoff_days" and @aria-invalid="true"]')->length);
+            self::assertSame($before, $this->rows());
         }
     }
 
