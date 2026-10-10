@@ -1,4 +1,4 @@
-# LibreBugBounty 2.0.1 “Moneta”
+# LibreBugBounty 2.0.2 “Moneta”
 
 **A self-hosted bug bounty workspace for reflected XSS research — an
 open-source, local-first OpenBugBounty alternative.**
@@ -76,7 +76,7 @@ An optional decision pause helps prevent accidental classifications.
 notes and completed contacts, and request rechecks or new screenshots.
 Opening a case never starts browser work.
 
-**Follow-up** (Unreleased) separates “Do not pursue” and explicit case/domain
+**Follow-up** (2.0.2) separates “Do not pursue” and explicit case/domain
 contact/check opt-outs from the factual assessment. Manual **security.txt contact
 discovery** retains sourced email and disclosure-portal suggestions; it never
 sends messages. Follow-up statistics expose sample sizes and missing dates.

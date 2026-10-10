@@ -1,8 +1,8 @@
 # Publishing LibreBugBounty releases
 
 Release notes are stored here so the published GitHub text can be reviewed
-alongside the code. For the current patch release, use tag `v2.0.1`, title
-`LibreBugBounty 2.0.1 — Moneta`, and the body in `v2.0.1.md`.
+alongside the code. For the current patch release, use tag `v2.0.2`, title
+`LibreBugBounty 2.0.2 — Moneta`, and the body in `v2.0.2.md`.
 
 ## Before publication
 
@@ -38,12 +38,12 @@ the tag and GitHub release publishes that commit. Use the reviewed notes file
 rather than automatically generated commit messages.
 
 ```bash
-git tag -a v2.0.1 -m 'LibreBugBounty 2.0.1 Moneta'
-git push origin v2.0.1
-gh release create v2.0.1 \
+git tag -a v2.0.2 -m 'LibreBugBounty 2.0.2 Moneta'
+git push origin v2.0.2
+gh release create v2.0.2 \
   --verify-tag \
-  --title 'LibreBugBounty 2.0.1 — Moneta' \
-  --notes-file .github/releases/v2.0.1.md
+  --title 'LibreBugBounty 2.0.2 — Moneta' \
+  --notes-file .github/releases/v2.0.2.md
 ```
 
 Once published, check the release title, notes, source archives, and links to

@@ -3,7 +3,7 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
-## Unreleased
+## 2.0.2 — Moneta (2026-10-10)
 
 ### Changed
 

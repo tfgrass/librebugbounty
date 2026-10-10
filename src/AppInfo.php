@@ -5,7 +5,7 @@ namespace App;
 final class AppInfo
 {
     public const NAME = 'LibreBugBounty';
-    public const VERSION = '2.0.1';
+    public const VERSION = '2.0.2';
     public const RELEASE_NAME = 'Moneta';
     public const AUTHOR = 'Tom Graßmann IT+Media';
     public const HOMEPAGE = 'https://grassmann-it.de/';

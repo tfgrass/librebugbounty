@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.0.1 “Moneta”. Start with the
+This guide describes LibreBugBounty 2.0.2 “Moneta”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the default English UI; German is available
@@ -31,7 +31,7 @@ An empty active inventory can also mean that all cases are archived. Use the
 archive selection to find them. If filters have no matches, clear the filters
 instead of creating a new case.
 
-## Follow-up and contact suggestions (Unreleased)
+## Follow-up and contact suggestions (2.0.2)
 
 In a case, **Follow-up → Do not pursue** records a closure reason independently
 of the assessment. Explicit **No further contact** and **No further checks**
@@ -90,7 +90,7 @@ with sample size and missing/invalid dates. This is not measured first contact o
 a response rate. These cards use retained all-time records and the selected TLD,
 independently of the chart period; reason links open matching Inventory cases.
 
-## Disclosure record and reminders (Unreleased)
+## Disclosure record and reminders (2.0.2)
 
 **Disclosure & history** in a case records **Report submitted**, **Response
 received** or **Note**. Supply a calendar date, channel and recipient/participant

@@ -1,4 +1,4 @@
-# Follow-up and contact enrichment (Unreleased)
+# Follow-up and contact enrichment (2.0.2)
 
 ## Scope
 
