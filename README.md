@@ -80,7 +80,7 @@ Opening a case never starts browser work.
 contact/check opt-outs from the factual assessment. Manual **security.txt contact
 discovery** retains sourced email and disclosure-portal suggestions; it never
 sends messages. Follow-up statistics expose sample sizes and missing dates.
-See [usage](USAGE.md#follow-up-and-contact-suggestions-unreleased) and the
+See [usage](USAGE.md#follow-up-and-contact-suggestions-202) and the
 [internal provider/deployment notes](ENRICHMENT.md). Hunter.io, AI and arbitrary
 plugins are not implemented.
 
