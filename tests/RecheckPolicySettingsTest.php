@@ -29,7 +29,7 @@ final class RecheckPolicySettingsTest extends DatabaseTestCase
             'recheck.error_backoff_days' => '5',
         ]);
         $policy = self::getContainer()->get(RecheckPolicy::class);
-        $finding = (new Finding())->setStatus('reported');
+        $finding = (new Finding())->setDomain((new \App\Entity\Domain())->setHostname('cadence.invalid'))->setStatus('reported');
         $now = new \DateTimeImmutable();
 
         self::assertSame(7, $policy->intervalDays());
@@ -48,7 +48,7 @@ final class RecheckPolicySettingsTest extends DatabaseTestCase
     public function testManualCheckingRemainsOutsideTheScheduleAndLosesItsSlot(): void
     {
         $policy = self::getContainer()->get(RecheckPolicy::class);
-        $finding = (new Finding())->setStatus('reported');
+        $finding = (new Finding())->setDomain((new \App\Entity\Domain())->setHostname('cadence.invalid'))->setStatus('reported');
         $finding->setReviewState(ReviewState::MANUAL_CHECKING);
         $now = new \DateTimeImmutable();
 

@@ -41,6 +41,7 @@ final class RetestService
         if ($finding->isDiscarded()) {
             throw new \LogicException('Discarded findings are ignored.');
         }
+        (new FindingWorkPolicy($this->entityManager->getConnection()))->assertChecksAllowed($finding);
 
         $this->validation->assertRetestMode(RetestMode::BROWSER);
 

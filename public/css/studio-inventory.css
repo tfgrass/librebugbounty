@@ -144,3 +144,28 @@
   .studio-list-metrics summary span { display: block; margin: 5px 0 0; }
   .studio-list-pages { width: 100%; justify-content: flex-start; }
 }
+
+.studio-list-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.studio-inventory-views { margin-bottom: 16px; padding: 13px 18px; border: 1px solid var(--studio-line); border-radius: 7px; background: var(--studio-panel); }
+.studio-inventory-views summary { cursor: pointer; color: #c5d8f2; font-size: 12px; overflow-wrap: anywhere; }
+.studio-inventory-views > summary { font-weight: 550; }
+.studio-inventory-views > summary > span { margin-left: 8px; color: var(--studio-muted); font-size: 11px; font-weight: 400; }
+.studio-view-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 18px; }
+.studio-view-columns > * { min-width: 0; }
+.studio-view-columns h2 { margin: 0; font-size: 13px; font-weight: 550; }
+.studio-view-list { margin: 12px 0; padding: 0; list-style: none; }
+.studio-view-list > li { padding: 11px 0; border-bottom: 1px solid var(--studio-line); min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.studio-view-link { display: block; color: #b4d4ff; overflow-wrap: anywhere; }
+.studio-view-link[aria-current] { padding-left: 8px; border-left: 2px solid var(--studio-blue); color: #e0edff; }
+.studio-view-description { margin: 7px 0; color: var(--studio-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.studio-view-manage, .studio-view-save { margin-top: 10px; }
+.studio-inventory-views form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 12px 0; }
+.studio-inventory-views label { display: grid; flex: 1 1 170px; min-width: 0; gap: 5px; color: #bac4d0; font-size: 11px; }
+.studio-inventory-views input:not([type=hidden]) { width: 100%; min-width: 0; height: 36px; padding: 6px 9px; border: 1px solid #495260; border-radius: 4px; background: #15191e; color: var(--studio-text); font-family: inherit; font-size: 12px; }
+.studio-inventory-views :is(input, button, summary, a):focus-visible { outline: 2px solid var(--studio-blue); outline-offset: 3px; }
+.studio-inventory-views form .studio-list-hint { margin: 0; flex: 1 1 160px; }
+@media (max-width: 760px) {
+  .studio-view-columns { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .studio-inventory-views { padding: 13px; }
+}

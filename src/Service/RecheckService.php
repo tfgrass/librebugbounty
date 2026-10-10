@@ -75,7 +75,7 @@ final class RecheckService
         $connection->beginTransaction();
         try {
             $claimed = $connection->executeStatement(
-                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ? AND (review_state IS NULL OR review_state <> ?)',
+                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ? AND (review_state IS NULL OR review_state <> ?) AND '.FindingWorkPolicy::checksAllowedSql($connection, 'finding'),
                 [$lease, $candidate->getId(), $expected, ReviewState::MANUAL_CHECKING],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );

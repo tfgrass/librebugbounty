@@ -26,6 +26,7 @@ final class ReviewController
         private readonly UiTranslator $i18n,
         private readonly ReviewTrail $trails,
         private readonly SettingsService $settings,
+        private readonly \App\Service\FindingWorkPolicy $workPolicy,
     ) {
     }
 
@@ -294,6 +295,7 @@ final class ReviewController
         $lastReviewedId = $view->lastReviewedId;
         $selectedEvidenceId = $view->selectedEvidenceId;
         ob_start();
+        $checksAllowed = $view->detail === null || $this->workPolicy->checksAllowed($view->detail->finding);
         require dirname(__DIR__, 2).'/templates/studio/review.php';
         $html = ob_get_clean();
 

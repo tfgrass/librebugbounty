@@ -15,11 +15,11 @@ $path = $view->path;
 $listQuery = $view->filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $pagination['page']];
 $returnPath = $path.'?'.http_build_query($listQuery, '', '&', PHP_QUERY_RFC3986);
 $pageUrl = static fn (int $page): string => $path.'?'.http_build_query(array_replace($listQuery, ['page' => $page]), '', '&', PHP_QUERY_RFC3986);
-$scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($listQuery, ['scope' => $scope, 'page' => 1]), '', '&', PHP_QUERY_RFC3986);
+$scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($view->filterQuery, ['scope' => $scope, 'pageSize' => $pagination['pageSize']]), '', '&', PHP_QUERY_RFC3986);
 $resetUrl = $path.'?'.http_build_query(['pageSize' => $pagination['pageSize']], '', '&', PHP_QUERY_RFC3986);
 $exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
-$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '';
+$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '' || $filter->pursuit !== '' || $filter->closureReason !== '' || $filter->contactWork !== '' || $filter->reminder !== '';
 $hasSelectionFilters = $hasAdditionalFilters || $filter->q !== '' || $filter->assessment !== '' || $filter->observation !== '' || $filter->contact !== '';
 $isFirstStart = $view->stats['active']['count'] + $view->stats['discarded']['count'] === 0;
 $isArchivedOnly = !$isFirstStart && $view->stats['active']['count'] === 0 && $filter->scope === 'active' && !$hasSelectionFilters;
@@ -46,11 +46,13 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
     <main class="studio-list-main" id="findings">
       <div class="studio-list-heading">
         <div><p class="studio-eyebrow"><?= $escape($t('Bestand')) ?></p><h1><?= $escape($t('Fälle')) ?></h1></div>
-        <a class="studio-list-button studio-list-button-primary" href="/"><span aria-hidden="true">+</span> <?= $escape($t('URL erfassen')) ?></a>
+        <div class="studio-list-heading-actions"><a class="studio-list-button" href="/errors"><?= $escape($t('Fehlerübersicht')) ?></a><a class="studio-list-button studio-list-button-primary" href="/"><span aria-hidden="true">+</span> <?= $escape($t('URL erfassen')) ?></a></div>
       </div>
 
       <?php if ($message !== null && $message !== ''): ?><p class="studio-list-feedback" data-tone="success" role="status"><?= $escape($message) ?></p><?php endif; ?>
       <?php if ($error !== null && $error !== ''): ?><p class="studio-list-feedback" data-tone="error" role="alert"><?= $escape($error) ?></p><?php endif; ?>
+
+      <?php require __DIR__.'/inventory-views.php'; ?>
 
       <section class="studio-list-tools" aria-label="<?= $escape($t('Suche und Filter')) ?>">
         <nav class="studio-list-scopes" aria-label="<?= $escape($t('Bestand und Archiv')) ?>">
@@ -100,6 +102,9 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
             <details class="studio-list-additional"<?= $hasAdditionalFilters ? ' open' : '' ?>>
               <summary><?= $escape($t('Weitere Filter')) ?><?= $hasAdditionalFilters ? $escape($t(' · aktiv')) : '' ?></summary>
               <div class="studio-list-additional-fields">
+                <?php foreach (['reminder' => ['Wiedervorlage', $filter->reminder, ['today' => 'Heute', 'overdue' => 'Überfällig', 'open' => 'Alle offenen Wiedervorlagen']], 'pursuit' => ['Nachverfolgung', $filter->pursuit, ['active' => 'Wird weiterverfolgt', 'closed' => 'Nicht weiterverfolgen']], 'closure_reason' => ['Beendigungsgrund', $filter->closureReason, \App\Value\PursuitStatus::REASONS], 'contact_work' => ['Kontaktarbeit', $filter->contactWork, ['allowed' => 'Nicht gesperrt', 'blocked' => 'Gesperrt']]] as $name => [$label, $selected, $choices]): ?>
+                  <label><?= $escape($t($label)) ?><select name="<?= $escape($name) ?>"><option value=""><?= $escape($t('Alle')) ?></option><?php foreach ($choices as $value => $choice): ?><option value="<?= $escape($value) ?>"<?= $selected === $value ? ' selected' : '' ?>><?= $escape($t($choice)) ?></option><?php endforeach; ?></select></label>
+                <?php endforeach; ?>
                 <label>Domain <input name="domain" value="<?= $escape($filter->domain) ?>" placeholder="example.com" autocomplete="off"></label>
                 <label><?= $escape($t('Domainvergleich')) ?> <select name="exact_domain"><option value="0"<?= !$filter->exactDomain ? ' selected' : '' ?>><?= $escape($t('Enthält den Domainfilter')) ?></option><option value="1"<?= $filter->exactDomain ? ' selected' : '' ?>><?= $escape($t('Entspricht dem Domainfilter exakt')) ?></option></select></label>
                 <label><?= $escape($t('Ereignis')) ?> <select name="event"><option value=""><?= $escape($t('Kein Ereignisfilter')) ?></option><?php foreach ($eventLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $filter->event === $value ? ' selected' : '' ?>><?= $escape($t($label)) ?></option><?php endforeach; ?></select></label>
@@ -151,6 +156,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
               <article class="studio-finding-row" data-finding-id="<?= $escape($finding->id) ?>">
                 <div class="studio-finding-identity">
                   <a class="studio-finding-domain" href="<?= $escape($detailUrl) ?>"><?= $escape($finding->domain) ?></a>
+                  <?php if ($finding->pursuit === 'closed' || $finding->checksBlocked || $finding->contactBlocked): ?><p class="studio-finding-record-meta" data-work-status><?php if ($finding->pursuit === 'closed'): ?><span><?= $escape($t('Nicht weiterverfolgen')) ?></span><?php endif; ?><?php if ($finding->checksBlocked): ?><span><?= $escape($t('Prüfungen gesperrt')) ?></span><?php endif; ?><?php if ($finding->contactBlocked): ?><span><?= $escape($t('Kontakt gesperrt')) ?></span><?php endif; ?></p><?php endif; ?>
                   <p class="studio-finding-title"><?= $escape($finding->title) ?></p>
                   <p class="studio-finding-url" title="<?= $escape($finding->url) ?>"><?= $escape($finding->url) ?></p>
                   <p class="studio-finding-record-meta"><code><?= $escape(substr($finding->id, 0, 8)) ?></code><span><?= $escape($finding->type) ?></span><span><?= $escape($finding->severity) ?></span></p>
@@ -216,5 +222,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
     <?php $activeWorkspace = 'inventory'; require __DIR__.'/navigation.php'; ?>
   </div>
   <script id="studio-i18n" type="application/json"><?= $i18nJson ?></script>
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/studio-inventory-views.js" defer></script>
 </body>
 </html>

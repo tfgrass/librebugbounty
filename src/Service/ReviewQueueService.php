@@ -283,14 +283,15 @@ final class ReviewQueueService
 
     private function candidatesSql(): string
     {
-        if (!AssessmentHistoryProjection::available($this->entityManager->getConnection())) { return self::CANDIDATES; }
+        $candidates = self::CANDIDATES.' AND '.FindingWorkPolicy::pursuitActiveSql($this->entityManager->getConnection());
+        if (!AssessmentHistoryProjection::available($this->entityManager->getConnection())) { return $candidates; }
         // A deliberate reset stays in the all supply until a fresh judgment,
         // even if the last technical run was conclusive. It is not falsely
         // classified as "no technical run" by the existing unchecked filter.
         return str_replace(
             ['SELECT f.id, f.created_at, r.result', "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error'))"],
             ["SELECT f.id, f.created_at, CASE WHEN r.result IS NOT NULL AND r.result NOT IN ('inconclusive', 'error') THEN 'reset' ELSE r.result END AS result", "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error') OR EXISTS (SELECT 1 FROM finding_assessment_reset reset WHERE reset.finding_id = f.id))"],
-            self::CANDIDATES,
+            $candidates,
         );
     }
 

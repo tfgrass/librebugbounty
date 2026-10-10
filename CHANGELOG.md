@@ -3,6 +3,75 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
+## Unreleased
+
+### Changed
+
+- Settings health now reports each expected worker separately, with active/total
+  counts and last-signal times. A partial fleet cannot appear fully healthy.
+- Browser-service reachability is checked separately with bounded read-only
+  health requests. Green requires both recent worker signals and reachable
+  services; status refresh also works without JavaScript.
+- Heartbeats use atomic per-worker writes without flushing unrelated ORM
+  changes. Screenshot success counts are labelled as historical completed
+  captures rather than proof of readable evidence files.
+
+### Added
+
+- Local disclosure history for report submissions, responses and notes, with
+  date/channel/recipient and optional ticket/comment; repeated form submissions
+  are deduplicated. One revision-protected manual reminder per case supports
+  replacement and completion, plus Today/Overdue/Open Inventory filters available
+  to saved views. No extra worker, messages or legacy marker changes. Includes an
+  additive migration and explicit case-deletion cleanup.
+
+- One chosen disclosure route per case, from stored email/web suggestions or a
+  manual email/form/portal entry with optional person, source and note. A source
+  snapshot survives lookups and expiry; stale forms and unavailable/foreign
+  suggestions are rejected. No messages, policy changes or historical marker
+  changes. Includes an additive contact-route migration and deletion cleanup.
+
+- Settings restriction centre with retained hostnames even after case deletion,
+  scoped contact/check releases, case reopening and the last 100 policy changes.
+  Native policy forms reject stale revisions, including changes reverted by
+  another tab, without altering another scope or scheduling new rechecks.
+
+- Independent follow-up status and closure reasons, with explicit case or
+  exact-hostname contact/check opt-outs, retained restriction history and
+  backend execution/queue guards. Reopening does not change an assessment.
+- Follow-up filters and badges, available to saved/recent views, plus current
+  closure-reason counts and confirmation-to-contact-marker median with sample
+  size, missing dates and consistent inventory drilldowns.
+- Manually triggered security.txt contact suggestions with source, retrieval
+  time, expiry, email/web channels, policies and distinct invalid/error states.
+  Repeated requests coalesce; previous attempts remain stored. Private-network
+  requests, redirects and oversized responses are blocked.
+- A trusted-code contact-provider interface as a future extension seam, not an
+  arbitrary plugin loader or automatic enrichment/messaging system.
+- Additive migration `Version20261010000000`; see `ENRICHMENT.md` for deployment,
+  retained opt-outs/audit data, limitations and rollback considerations.
+
+- Named Inventory views with native save, rename, open and delete controls.
+  Views retain validated filters, not page numbers, page sizes or frozen results;
+  they are stored with installation settings and work without JavaScript.
+- Browser-local Recent Views for the last ten applied filter combinations,
+  deduplicated across equivalent URLs, with direct promotion to a named view and
+  a clear-history action. Typing, pagination, reloads and form feedback do not
+  create history; unavailable browser storage does not block saved views.
+- Isolated saved-view and history coverage, including CSRF protection, literal
+  user text, damaged preferences, storage failures, mobile layouts and no-JS use.
+- A native before/after comparison of retained screenshots with capture/storage
+  dates, provenance and the recorded assessment-evidence marker. Selection is
+  read-only and cannot change an assessment or its export basis.
+- A filterable error overview linked from Settings health and Inventory, with
+  one entry per affected case. Latest capture/technical failures are separate
+  from historical job totals; image-file diagnostics run only on explicit views.
+- Isolated PHP and browser coverage for comparison, unavailable/invalid images,
+  deduplicated case errors, recovery from earlier failures, and read-only behavior.
+- A CI Settings browser smoke suite with isolated storage and mocked health
+  services, covering all eight preferences, DE/EN, narrow windows, native
+  forms, validation, and healthy/partial/stale/unreachable/unknown states.
+
 ## 2.0.1 — Moneta (2026-10-08)
 
 ### Added

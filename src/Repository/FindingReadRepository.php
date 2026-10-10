@@ -40,6 +40,9 @@ final class FindingReadRepository
             .'f.submitted_at, f.created_at, f.contacted_at, f.notified_owner_at AS sent_at, '
             .'r.id AS observation_id, r.result AS observation_result, r.mode AS observation_mode, '
             .'COALESCE(r.finished_at, r.started_at) AS observation_at, '
+            .'CASE WHEN '.\App\Service\FindingWorkPolicy::pursuitActiveSql($this->connection)." THEN 'active' ELSE 'closed' END AS pursuit, "
+            .'CASE WHEN '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->connection).' THEN 0 ELSE 1 END AS checks_blocked, '
+            .'CASE WHEN '.\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).' THEN 0 ELSE 1 END AS contact_blocked, '
             .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded'
             .self::FROM.$where
             .' ORDER BY f.submitted_at DESC, f.created_at DESC, f.rowid DESC LIMIT :limit OFFSET :offset';
@@ -99,6 +102,23 @@ final class FindingReadRepository
             'all' => [],
         };
         $parameters = [];
+        if ($filter->reminder !== '') {
+            if (!\App\Service\DisclosureRecordService::available($this->connection)) $conditions[] = '1 = 0';
+            else {
+                $due = match ($filter->reminder) { 'today' => ' AND dr.due_on = :reminder_today', 'overdue' => ' AND dr.due_on < :reminder_today', default => '' };
+                $conditions[] = 'EXISTS (SELECT 1 FROM disclosure_reminder dr WHERE dr.finding_id = f.id AND dr.completed_at IS NULL'.$due.')';
+                if ($due !== '') $parameters['reminder_today'] = \App\Service\DisclosureRecordService::today();
+            }
+        }
+        if ($filter->contactWork !== '') $conditions[] = ($filter->contactWork === 'blocked' ? 'NOT (' : '(').\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).')';
+        if ($filter->pursuit !== '' || $filter->closureReason !== '') {
+            $available = \App\Service\FindingWorkPolicy::available($this->connection);
+            if ($filter->pursuit !== '') $conditions[] = ($filter->pursuit === 'closed' ? 'NOT (' : '(').\App\Service\FindingWorkPolicy::pursuitActiveSql($this->connection).')';
+            if ($filter->closureReason !== '') {
+                $conditions[] = $available ? "EXISTS (SELECT 1 FROM finding_follow_up fw WHERE fw.finding_id = f.id AND fw.pursuit = 'closed' AND fw.reason = :closure_reason)" : '1 = 0';
+                if ($available) $parameters['closure_reason'] = $filter->closureReason;
+            }
+        }
         $domain = strtolower(trim($filter->domain));
         if ($domain !== '') {
             $conditions[] = $filter->exactDomain ? 'LOWER(d.hostname) = :domain' : 'LOWER(d.hostname) LIKE :domain';
@@ -215,6 +235,9 @@ final class FindingReadRepository
             sentAt: $this->date($row['sent_at']),
             reviewNotice: ($notice?->observations ?? []) !== [],
             noticeReasons: array_values(array_unique(array_column($notice?->observations ?? [], 'reason'))),
+            pursuit: $row['pursuit'],
+            checksBlocked: (bool) $row['checks_blocked'],
+            contactBlocked: (bool) $row['contact_blocked'],
         );
     }
 

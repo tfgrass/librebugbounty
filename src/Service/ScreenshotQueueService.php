@@ -78,6 +78,7 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
             'INSERT INTO screenshot_job (id, finding_id, url, status, active_key, requested_at, attempts, created_at, updated_at) '
             .'SELECT :id, id, :url, :status, id, :requested, 0, :created, :updated FROM finding WHERE id = :finding '
             ."AND (manual_assessment IS NULL OR manual_assessment <> 'discarded') AND status NOT IN ('discarded', 'duplicate') "
+            .'AND '.FindingWorkPolicy::checksAllowedSql($connection, 'finding').' '
             .'ON CONFLICT(active_key) DO NOTHING',
             [
                 'id' => $candidate->getId(),
@@ -112,6 +113,7 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
 
     private function assertNotDiscarded(Finding $finding): void
     {
+        (new FindingWorkPolicy($this->entityManager()->getConnection()))->assertChecksAllowed($finding);
         $state = $this->entityManager()->getConnection()->fetchAssociative(
             'SELECT manual_assessment, status FROM finding WHERE id = ?', [$finding->getId()],
         );
@@ -145,6 +147,7 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
 
         $storedPath = null;
         try {
+            $this->assertNotDiscarded($job->getFinding());
             $result = $this->client->capture(new BrowserScreenshotRequest(
                 url: $job->getUrl(),
                 timeoutMs: $this->settings->getReviewScanTimeoutMs(),

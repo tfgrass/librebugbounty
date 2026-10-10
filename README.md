@@ -76,6 +76,18 @@ An optional decision pause helps prevent accidental classifications.
 notes and completed contacts, and request rechecks or new screenshots.
 Opening a case never starts browser work.
 
+**Follow-up** (Unreleased) separates “Do not pursue” and explicit case/domain
+contact/check opt-outs from the factual assessment. Manual **security.txt contact
+discovery** retains sourced email and disclosure-portal suggestions; it never
+sends messages. Follow-up statistics expose sample sizes and missing dates.
+See [usage](USAGE.md#follow-up-and-contact-suggestions-unreleased) and the
+[internal provider/deployment notes](ENRICHMENT.md). Hunter.io, AI and arbitrary
+plugins are not implemented.
+
+**My views** saves named filter combinations for quick access to the current
+matching cases. **Recent views** keeps the last ten applied combinations in your
+browser; promote one to a saved view or clear the local history at any time.
+
 <p>
   <a href="docs/screenshots/inventory.png"><img src="docs/screenshots/inventory.png" alt="Inventory lists cases with search, filters, and their current state" width="680"></a>
 </p>
@@ -180,6 +192,22 @@ npm --prefix playwright-worker ci --no-audit --no-fund
 npm --prefix playwright-worker test
 python3 -B -m unittest discover -s tests -p 'backup_local_test.py' -v
 ```
+
+CI also runs a Studio browser smoke test with disposable storage and mocked
+browser-health services. It covers eight preferences, DE/EN, narrow windows,
+native forms without JavaScript, partial or unavailable worker states, retained
+image comparison and the deduplicated error overview. Synthetic stored records
+exercise diagnostics without contacting targets or queuing capture work.
+With native PHP 8.3+ (including `pdo_sqlite` and `zip`), Node.js and Python 3.11+
+installed, run the same smoke suite locally:
+
+```bash
+./playwright-worker/node_modules/.bin/playwright install --with-deps chromium
+python3 tests/browser/run_preferences.py
+```
+
+The runner starts its own loopback server, removes its temporary database on
+exit, and keeps screenshots and logs under `var/preferences-acceptance-*`.
 
 The README screenshots are generated from a disposable synthetic database and
 artifact directory. The command never reads the normal `storage/` tree:

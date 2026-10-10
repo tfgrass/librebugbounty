@@ -19,6 +19,8 @@ final class SettingsController
         private readonly UiTranslator $i18n,
         private readonly RecheckScheduleService $recheckSchedule,
         private readonly SystemHealthService $health,
+        private readonly \App\Service\FollowUpService $followUp,
+        private readonly \Symfony\Component\Security\Csrf\CsrfTokenManagerInterface $csrf,
     ) {
     }
 
@@ -179,6 +181,10 @@ final class SettingsController
         $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
         $i18nJson = $this->i18n->browserCatalogJson();
         $health = $this->health->snapshot();
+        $restrictions = $this->followUp->restrictions();
+        $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';
+        $query = $request->query->all();
+        $restrictionError = is_string($query['error'] ?? null) ? $query['error'] : null;
 
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/settings.php';

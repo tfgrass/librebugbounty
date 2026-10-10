@@ -156,7 +156,7 @@ final class StatisticsService
                 $snapshotCounts[$assessment]++;
             }
             $snapshotCounts['contacted'] += $events['contacted'] !== null ? 1 : 0;
-            if ($assessment === 'confirmed' && $events['contacted'] === null && $events['reported'] !== null) {
+            if ($assessment === 'confirmed' && $events['contacted'] === null && $events['reported'] !== null && ($fact['contact_work_allowed'] ?? true)) {
                 // Waiting age is the calendar age since Ingest, matching list links.
                 $reportedDay = new \DateTimeImmutable($calendarDay($events['reported']), $displayZone);
                 $age = (int) $reportedDay->diff($today)->format('%r%a');
@@ -184,9 +184,9 @@ final class StatisticsService
             $snapshot[] = ['key' => $key, 'label' => $label, 'count' => $snapshotCounts[$key], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => $key], $filters['tld'])];
         }
         $aging = [
-            ['key' => 'recent', 'label' => 'Bis 7 Tage', 'count' => $agingCounts['recent'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'from' => $today->modify('-7 days')->format('Y-m-d')], $filters['tld'])],
-            ['key' => 'waiting', 'label' => '8–30 Tage', 'count' => $agingCounts['waiting'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'from' => $today->modify('-30 days')->format('Y-m-d'), 'to' => $today->modify('-8 days')->format('Y-m-d')], $filters['tld'])],
-            ['key' => 'old', 'label' => 'Über 30 Tage', 'count' => $agingCounts['old'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'event' => 'reported', 'to' => $today->modify('-31 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'recent', 'label' => 'Bis 7 Tage', 'count' => $agingCounts['recent'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'contact_work' => 'allowed', 'event' => 'reported', 'from' => $today->modify('-7 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'waiting', 'label' => '8–30 Tage', 'count' => $agingCounts['waiting'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'contact_work' => 'allowed', 'event' => 'reported', 'from' => $today->modify('-30 days')->format('Y-m-d'), 'to' => $today->modify('-8 days')->format('Y-m-d')], $filters['tld'])],
+            ['key' => 'old', 'label' => 'Über 30 Tage', 'count' => $agingCounts['old'], 'url' => $this->listUrl(['scope' => 'active', 'assessment' => 'confirmed', 'contact' => 'no', 'contact_work' => 'allowed', 'event' => 'reported', 'to' => $today->modify('-31 days')->format('Y-m-d')], $filters['tld'])],
         ];
         $history = [
             'contactDatedCount' => $contactDatedCount,

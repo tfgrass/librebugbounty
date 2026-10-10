@@ -7,7 +7,7 @@
 /** @var string $exportScreenshotMode */
 /** @var string $recheckIntervalDays */
 /** @var string $recheckErrorBackoffDays */
-/** @var array{recheck: array{active: bool, ageSeconds: ?int, dueNow: int, scheduled: int, pausedManual: int, nextDueAt: ?\DateTimeInterface, intervalDays: int, errorBackoffDays: int}, screenshot: array{active: bool, ageSeconds: ?int, queued: int, running: int, available: int, failed: int}} $health */
+/** @var array<string, mixed> $health */
 /** @var array<string, string> $errors */
 /** @var ?string $message */
 /** @var array<string, string> $app */
@@ -52,57 +52,52 @@
           </div>
         <?php endif; ?>
 
-        <section class="studio-settings-panel studio-settings-health" aria-labelledby="settings-health-title">
+        <section class="studio-settings-panel studio-settings-health" id="health" aria-labelledby="settings-health-title">
           <div class="studio-settings-panel-heading">
             <div><h2 id="settings-health-title"><?= $escape($t('Status & Gesundheit')) ?></h2></div>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 12h4l2.5-6 4 12 2.5-6h5" transform="translate(0 1)" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <a class="studio-health-refresh" href="/settings#health"><?= $escape($t('Status aktualisieren')) ?></a>
           </div>
+          <p class="studio-settings-field-hint studio-health-checked"><?= $escape($t('Stand: {date}', ['date' => $formatTime($health['checkedAt'], true)])) ?></p>
           <div class="studio-settings-health-grid">
-            <article class="studio-settings-health-card" data-health-kind="recheck">
+            <?php foreach (['recheck' => 'Recheck-Worker', 'screenshot' => 'Screenshot-Worker'] as $kind => $label): $group = $health[$kind]; ?>
+            <article class="studio-settings-health-card" data-health-kind="<?= $escape($kind) ?>" data-health-state="<?= $escape($group['state']) ?>">
               <header>
-                <span class="studio-settings-health-dot" data-state="<?= $health['recheck']['active'] ? 'ok' : ($health['recheck']['ageSeconds'] === null ? 'unknown' : 'stale') ?>" aria-hidden="true"></span>
-                <h3><?= $escape($t('Recheck-Worker')) ?></h3>
+                <span class="studio-settings-health-dot" data-state="<?= $escape($group['state']) ?>" aria-hidden="true"></span>
+                <h3><?= $escape($t($label)) ?></h3>
               </header>
-              <p class="studio-settings-health-state">
-                <?php if ($health['recheck']['active']): ?>
-                  <?= $escape($t('Aktiv · Signal vor {seconds} s', ['seconds' => (int) $health['recheck']['ageSeconds']])) ?>
-                <?php elseif ($health['recheck']['ageSeconds'] === null): ?>
-                  <?= $escape($t('Noch kein Signal')) ?>
-                <?php else: ?>
-                  <?= $escape($t('Kein Signal seit {seconds} s', ['seconds' => (int) $health['recheck']['ageSeconds']])) ?>
-                <?php endif; ?>
-              </p>
+              <p class="studio-settings-health-state" data-health-summary><?= $escape($t('{active}/{expected} Worker aktiv', ['active' => $group['activeWorkers'], 'expected' => $group['expectedWorkers']])) ?></p>
+              <p class="studio-settings-field-hint" data-health-browser-summary><?= $escape($t('{active}/{expected} Browserdienste erreichbar', ['active' => $group['reachableBrowsers'], 'expected' => $group['expectedBrowsers']])) ?></p>
+              <ul class="studio-health-workers" aria-label="<?= $escape($t($label)) ?>">
+                <?php foreach ($group['workers'] as $worker): ?>
+                <li data-health-worker="<?= $escape($worker['id']) ?>" data-worker-state="<?= $escape($worker['state']) ?>" data-browser-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>">
+                  <div><strong><?= $escape($worker['id']) ?></strong><span class="studio-health-worker-state"><?= $escape($t(['ok' => 'Signal aktuell', 'stale' => 'Signal veraltet', 'unknown' => 'Noch kein Signal'][$worker['state']])) ?></span></div>
+                  <span class="studio-health-worker-seen"><?= $worker['lastSeen'] === null ? $escape($t('Zeitpunkt unbekannt')) : $escape($t('Letztes Signal: {date}', ['date' => $formatTime($worker['lastSeen'], true)])) ?></span>
+                  <span class="studio-health-browser" data-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>"><?= $escape($t($worker['browserReachable'] ? 'Browserdienst erreichbar' : 'Browserdienst nicht erreichbar')) ?></span>
+                </li>
+                <?php endforeach; ?>
+              </ul>
               <dl>
-                <div><dt><?= $escape($t('Fällig jetzt')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['dueNow'])) ?></dd></div>
-                <div><dt><?= $escape($t('Geplant')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['scheduled'])) ?></dd></div>
-                <div><dt><?= $escape($t('Pausiert für Review')) ?></dt><dd><?= $escape($formatNumber($health['recheck']['pausedManual'])) ?></dd></div>
-                <div><dt><?= $escape($t('Nächster Termin')) ?></dt><dd><?= $health['recheck']['nextDueAt'] === null ? $escape($t('Kein Termin')) : $escape($formatTime($health['recheck']['nextDueAt'])) ?></dd></div>
-                <div><dt><?= $escape($t('Intervall')) ?></dt><dd><?= $escape($t('{days} Tage', ['days' => $health['recheck']['intervalDays']])) ?></dd></div>
+                <?php if ($kind === 'recheck'): ?>
+                <div><dt><?= $escape($t('Fällig jetzt')) ?></dt><dd><?= $escape($formatNumber($group['dueNow'])) ?></dd></div>
+                <div><dt><?= $escape($t('Geplant')) ?></dt><dd><?= $escape($formatNumber($group['scheduled'])) ?></dd></div>
+                <div><dt><?= $escape($t('Pausiert für Review')) ?></dt><dd><?= $escape($formatNumber($group['pausedManual'])) ?></dd></div>
+                <div><dt><?= $escape($t('Nächster Termin')) ?></dt><dd><?= $group['nextDueAt'] === null ? $escape($t('Kein Termin')) : $escape($formatTime($group['nextDueAt'])) ?></dd></div>
+                <div><dt><?= $escape($t('Intervall')) ?></dt><dd><?= $escape($t('{days} Tage', ['days' => $group['intervalDays']])) ?></dd></div>
+                <div><dt><?= $escape($t('Fälle mit technischem Fehler')) ?></dt><dd><a href="/errors?kind=technical" data-health-errors="technical"><?= $escape($formatNumber($group['errorCases'])) ?></a></dd></div>
+                <?php else: ?>
+                <div><dt><?= $escape($t('Wartend')) ?></dt><dd><?= $escape($formatNumber($group['queued'])) ?></dd></div>
+                <div><dt><?= $escape($t('In Arbeit')) ?></dt><dd><?= $escape($formatNumber($group['running'])) ?></dd></div>
+                <div><dt><?= $escape($t('Abgeschlossene Aufnahmen')) ?></dt><dd><?= $escape($formatNumber($group['available'])) ?></dd></div>
+                <div><dt><?= $escape($t('Fehlgeschlagene Aufträge (Historie)')) ?></dt><dd><?= $escape($formatNumber($group['failed'])) ?></dd></div>
+                <div><dt><?= $escape($t('Fälle mit Aufnahmefehler')) ?></dt><dd><a href="/errors?kind=screenshot" data-health-errors="screenshot"><?= $escape($formatNumber($group['errorCases'])) ?></a></dd></div>
+                <?php endif; ?>
               </dl>
             </article>
-            <article class="studio-settings-health-card" data-health-kind="screenshot">
-              <header>
-                <span class="studio-settings-health-dot" data-state="<?= $health['screenshot']['active'] ? 'ok' : ($health['screenshot']['ageSeconds'] === null ? 'unknown' : 'stale') ?>" aria-hidden="true"></span>
-                <h3><?= $escape($t('Screenshot-Worker')) ?></h3>
-              </header>
-              <p class="studio-settings-health-state">
-                <?php if ($health['screenshot']['active']): ?>
-                  <?= $escape($t('Aktiv · Signal vor {seconds} s', ['seconds' => (int) $health['screenshot']['ageSeconds']])) ?>
-                <?php elseif ($health['screenshot']['ageSeconds'] === null): ?>
-                  <?= $escape($t('Noch kein Signal')) ?>
-                <?php else: ?>
-                  <?= $escape($t('Kein Signal seit {seconds} s', ['seconds' => (int) $health['screenshot']['ageSeconds']])) ?>
-                <?php endif; ?>
-              </p>
-              <dl>
-                <div><dt><?= $escape($t('Wartend')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['queued'])) ?></dd></div>
-                <div><dt><?= $escape($t('In Arbeit')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['running'])) ?></dd></div>
-                <div><dt><?= $escape($t('Belege vorhanden')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['available'])) ?></dd></div>
-                <div><dt><?= $escape($t('Fehlgeschlagen')) ?></dt><dd><?= $escape($formatNumber($health['screenshot']['failed'])) ?></dd></div>
-              </dl>
-            </article>
+            <?php endforeach; ?>
           </div>
-          <p class="studio-settings-field-hint"><?= $escape($t('Die Anzeige zeigt den zuletzt gespeicherten Worker-Signalisierungszeitpunkt und zählt die Warteschlangen direkt aus der Datenbank.')) ?></p>
+          <p class="studio-settings-field-hint studio-health-checked"><?= $escape($t('Grün bedeutet: alle erwarteten Worker senden aktuelle Signale und ihre Browserdienste antworten. Die Dienstprüfung startet keine Browseraufnahme.')) ?></p>
+          <p class="studio-settings-field-hint"><?= $escape($t('Signale gelten für Rechecks 10 Minuten und für Screenshots 5 Minuten. Auftragszahlen enthalten die Historie; abgeschlossene Aufnahmen bestätigen nicht die Lesbarkeit der Bilddateien.')) ?></p>
+          <p class="studio-settings-field-hint"><a href="/errors"><?= $escape($t('Fehlerübersicht öffnen')) ?></a> · <a href="/errors?kind=missing" data-health-errors="missing"><?= $escape($t('Gespeicherte Bilddateien prüfen')) ?></a></p>
         </section>
 
         <div class="studio-settings-layout">
@@ -207,6 +202,8 @@
               </nav>
             </section>
           </section>
+
+          <?php require __DIR__.'/restrictions.php'; ?>
 
           <section class="studio-settings-panel studio-about-panel" id="about" aria-labelledby="about-title">
             <div class="studio-about-hero" data-about-release>

@@ -14,7 +14,7 @@ final class FindingListService
         'q', 'domain', 'assessment', 'observation', 'contact', 'scope',
         'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket',
         'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain',
-        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review',
+        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review', 'pursuit', 'closure_reason', 'contact_work', 'reminder',
     ];
 
     public function __construct(
@@ -96,6 +96,10 @@ final class FindingListService
             'to' => $filter->to,
             'tld' => $filter->tld,
             'sent' => $filter->sent,
+            'pursuit' => $filter->pursuit,
+            'closure_reason' => $filter->closureReason,
+            'contact_work' => $filter->contactWork,
+            'reminder' => $filter->reminder,
         ], static fn (string $value): bool => $value !== '');
     }
 
@@ -118,7 +122,7 @@ final class FindingListService
     public function parse(array $query): array
     {
         foreach ([...self::LIST_QUERY_FIELDS, 'message', 'error'] as $field) {
-            if (array_key_exists($field, $query) && !is_string($query[$field])) {
+            if (array_key_exists($field, $query) && (!is_string($query[$field]) || !mb_check_encoding($query[$field], 'UTF-8'))) {
                 throw new \InvalidArgumentException('Filterangaben müssen einzelne Textwerte sein.');
             }
         }
@@ -187,6 +191,10 @@ final class FindingListService
             tld: strtolower($get('tld')),
             sent: $get('sent'),
             legacyReview: $get('legacy_review'),
+            pursuit: $get('pursuit'),
+            closureReason: $get('closure_reason'),
+            contactWork: $get('contact_work'),
+            reminder: $get('reminder'),
         );
 
         return [$filter, $page, $pageSize];

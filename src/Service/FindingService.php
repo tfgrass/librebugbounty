@@ -197,7 +197,7 @@ final class FindingService
         // Re-submitting the same URL repairs that invariant without creating a
         // second finding or replacing any of its fields. This happens after the
         // creation lock because ensureExists() acquires that lock itself.
-        if (!$result->created && !$result->finding->isDiscarded()) {
+        if (!$result->created && !$result->finding->isDiscarded() && (new FindingWorkPolicy($this->entityManager->getConnection()))->checksAllowed($result->finding)) {
             $this->screenshotQueue?->ensureExists($result->finding);
             if ($result->finding->getNextDueAt() === null) {
                 $this->recheckPolicy?->ensureNextDue($result->finding, new \DateTimeImmutable());
@@ -231,6 +231,11 @@ final class FindingService
             // existing Doctrine connection. Remove every dependent record
             // explicitly so deleting a finding cannot create new orphans.
             $relatedClasses = [FindingAssessment::class, ScreenshotJob::class, Evidence::class, RetestRun::class];
+            if (FindingWorkPolicy::available($this->entityManager->getConnection())) {
+                array_unshift($relatedClasses, \App\Entity\FindingFollowUp::class, \App\Entity\ContactDiscovery::class);
+            }
+            if (\App\Service\ContactRouteService::available($this->entityManager->getConnection())) { array_unshift($relatedClasses, \App\Entity\FindingContactRoute::class); }
+            if (\App\Service\DisclosureRecordService::available($this->entityManager->getConnection())) { array_unshift($relatedClasses, \App\Entity\DisclosureActivity::class, \App\Entity\DisclosureReminder::class); }
             if ($this->reviewNotices?->available()) { array_unshift($relatedClasses, FindingReviewAcknowledgement::class); }
             if (AssessmentHistoryProjection::available($this->entityManager->getConnection())) {
                 foreach ($this->entityManager->getRepository(FindingAssessmentReset::class)->findBy(['finding' => $finding]) as $reset) {

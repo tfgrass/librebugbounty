@@ -79,7 +79,7 @@ final class FirstStartWebTest extends DatabaseTestCase
         self::assertStringContainsString($locale === 'de' ? 'Keine aktiven Fälle' : 'No active cases', $xpath->evaluate('string(//*[@data-list-empty-state="archived"])'));
         $archivePath = $xpath->evaluate('string(//*[@data-list-empty-state="archived"]//a[starts-with(@href,"/findings?")]/@href)');
         parse_str((string) parse_url($archivePath, PHP_URL_QUERY), $archiveQuery);
-        self::assertSame(['scope' => 'discarded', 'pageSize' => '10', 'page' => '1'], $archiveQuery);
+        self::assertSame(['scope' => 'discarded', 'pageSize' => '10'], $archiveQuery, 'A scope change starts at page one without being marked as pagination.');
         $archive = $this->xpath($this->request($archivePath)->getContent());
         self::assertSame(1, $archive->query('//*[@data-finding-id="'.$finding->getId().'"]')->length);
         foreach (['/statistics', '/export', '/review'] as $path) {

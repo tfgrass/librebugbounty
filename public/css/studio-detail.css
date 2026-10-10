@@ -165,3 +165,41 @@
   .studio-case-heading { padding-block: 16px; }
   .studio-shot-image-link { height: 300px; min-height: 225px; }
 }
+
+.studio-comparison { width: min(100%, 1720px); margin-inline: auto; padding: 24px 30px; border-top: 1px solid var(--studio-line); background: #171a1e; scroll-margin-top: 60px; }
+.studio-comparison-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.studio-comparison-controls label { flex: 1 1 240px; min-width: 0; font-size: 12px; color: var(--studio-muted); }
+.studio-comparison-controls select { display: block; width: 100%; min-width: 0; margin-top: 6px; padding: 9px; border: 1px solid #465163; border-radius: 4px; background: #13171c; color: #dce6f2; font-size: 12px; text-overflow: ellipsis; }
+.studio-comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; row-gap: 0; }
+.studio-comparison-shot { display: grid; grid-template-rows: subgrid; grid-row: span 2; }
+.studio-comparison-shot figcaption > div { align-items: start; flex-direction: column; overflow-wrap: anywhere; }
+.studio-comparison-shot figcaption { align-items: start; }
+.studio-basis-badge { color: var(--studio-amber) !important; }
+.studio-comparison-shot [hidden] { display: none !important; }
+@media (max-width: 720px) {
+  .studio-comparison { padding: 20px 16px; }
+  .studio-comparison-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-comparison-shot .studio-shot-image-link { min-height: 220px; height: 320px; }
+  .studio-detail-sections { gap: 16px; flex-wrap: wrap; }
+}
+
+/* Administrative state is deliberately separate from factual assessment. */
+.studio-follow-up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0; }
+.studio-work-card { min-width: 0; padding: 1.4rem; border: 1px solid var(--studio-border, #363b40); border-radius: 12px; overflow-wrap: anywhere; }
+.studio-work-card h2 { margin-top: 0; }
+.studio-work-card form { display: grid; gap: .75rem; margin: 1rem 0; }
+.studio-work-card select { box-sizing: border-box; width: 100%; min-width: 0; padding: .65rem; color: inherit; background: #181c20; border: 1px solid #525962; border-radius: 6px; }
+.studio-work-check { display: flex; align-items: start; gap: .65rem; }
+.studio-work-check input { flex: 0 0 auto; margin-top: .25rem; }
+.studio-work-effective { border-left: 3px solid #93b4d0; padding-left: .7rem; }
+.studio-work-card code { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .studio-follow-up-grid { grid-template-columns: 1fr; } }
+.studio-follow-up-grid { width: min(100%, 1720px); margin-inline: auto; }
+.studio-work-card { scroll-margin-top: 60px; }
+@media (max-width: 720px) {
+  .studio-work-card, .studio-evidence-workspace, .studio-inspector, .studio-technical-section, .studio-comparison, .studio-shot { scroll-margin-top: 125px; }
+}
+/* Seven case sections can wrap to three rows on narrow screens, also without JS. */
+@media (max-width: 480px) {
+  .studio-work-card, .studio-evidence-workspace, .studio-inspector, .studio-technical-section, .studio-comparison, .studio-shot { scroll-margin-top: 185px; }
+}

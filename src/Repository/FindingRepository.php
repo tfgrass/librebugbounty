@@ -239,6 +239,7 @@ class FindingRepository extends ServiceEntityRepository
         }
 
         $this->excludeDiscarded($qb);
+        $this->excludeWorkRestricted($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -250,7 +251,7 @@ class FindingRepository extends ServiceEntityRepository
      */
     public function findDueForRecheck(\DateTimeImmutable $now, int $limit = 25): array
     {
-        return $this->createQueryBuilder('f')
+        $qb = $this->createQueryBuilder('f')
             ->addSelect('d')
             ->innerJoin('f.domain', 'd')
             ->andWhere('f.nextDueAt IS NOT NULL')
@@ -258,9 +259,9 @@ class FindingRepository extends ServiceEntityRepository
             ->setParameter('now', $now)
             ->setMaxResults($limit)
             ->orderBy('f.nextDueAt', 'ASC')
-            ->addOrderBy('f.createdAt', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('f.createdAt', 'ASC');
+        $this->excludeWorkRestricted($qb);
+        return $qb->getQuery()->getResult();
     }
 
     /**
@@ -284,6 +285,7 @@ class FindingRepository extends ServiceEntityRepository
         }
 
         $this->excludeDiscarded($qb);
+        $this->excludeWorkRestricted($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -323,6 +325,7 @@ class FindingRepository extends ServiceEntityRepository
         }
 
         $this->excludeDiscarded($qb);
+        $this->excludeWorkRestricted($qb);
 
         return $qb->getQuery()->getResult();
     }
@@ -341,6 +344,15 @@ class FindingRepository extends ServiceEntityRepository
         $this->excludeDiscarded($qb);
 
         return $qb->getQuery()->getResult();
+    }
+
+    private function excludeWorkRestricted(QueryBuilder $qb): void
+    {
+        if (!\App\Service\FindingWorkPolicy::available($this->getEntityManager()->getConnection())) return;
+        $qb->leftJoin(\App\Entity\FindingFollowUp::class, 'fw', Join::WITH, 'fw.finding = f')
+            ->leftJoin(\App\Entity\DomainWorkRestriction::class, 'dw', Join::WITH, 'dw.hostname = LOWER(d.hostname)')
+            ->andWhere("(fw.pursuit IS NULL OR fw.pursuit <> 'closed') AND (fw.checksBlocked IS NULL OR fw.checksBlocked = false)")
+            ->andWhere('(dw.checksBlocked IS NULL OR dw.checksBlocked = false)');
     }
 
     private function applyReadableStatus(QueryBuilder $qb, ?string $status): void

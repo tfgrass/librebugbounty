@@ -34,12 +34,14 @@ final class RecheckPolicy
 
     public function __construct(
         private readonly ?SettingsService $settings = null,
+        private readonly ?FindingWorkPolicy $workPolicy = null,
     ) {
     }
 
     public function isInScope(Finding $finding): bool
     {
         return !$finding->isDiscarded()
+            && ($this->workPolicy?->checksAllowed($finding) ?? true)
             && $finding->getReviewState() !== ReviewState::MANUAL_CHECKING
             && in_array($finding->getStatus(), self::SCOPE_STATUSES, true);
     }

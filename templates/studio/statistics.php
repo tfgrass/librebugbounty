@@ -253,6 +253,7 @@ $isEmpty = array_sum(array_map(static fn (string $metric): int => $view['kpis'][
             <p class="stat-card-note" data-no-js><a href="<?= $escape($statisticsUrl(['period' => 'year', 'anchor' => $view['calendarYear'].'-01-01', 'granularity' => 'day'])) ?>"><?= $escape($t('Alle Jahreswerte als Tagesdiagramm und Tabelle öffnen ↗')) ?></a></p>
           </section>
 
+          <?php require __DIR__.'/follow-up-statistics.php'; ?>
           <section class="stat-card stat-aging-card" aria-labelledby="statistics-aging-title">
             <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktueller Stand')) ?></p><h2 id="statistics-aging-title"><?= $escape($t('Offene Kontaktarbeit')) ?></h2><p><?= $escape($t('Bestätigte Fälle ohne Kontakt · Alter seit Eingang')) ?></p></div></div>
             <ul class="stat-aging-list"><?php foreach ($view['aging'] as $row): ?><li><a data-aging="<?= $escape($row['key']) ?>" data-count="<?= $escape($row['count']) ?>" href="<?= $escape($row['url']) ?>"><span class="stat-row-label"><?= $escape($t($row['label'])) ?></span><strong class="stat-row-count"><?= $escape($formatNumber($row['count'])) ?></strong></a></li><?php endforeach; ?></ul>

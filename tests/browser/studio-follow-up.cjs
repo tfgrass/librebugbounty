@@ -1,0 +1,134 @@
+/* Administrative follow-up only; run last against the disposable fixture. */
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const { chromium } = require('../../playwright-worker/node_modules/playwright');
+const base = process.env.STUDIO_BROWSER_BASE;
+const output = process.env.STUDIO_BROWSER_OUTPUT;
+assert.ok(base && ['web', '127.0.0.1', 'localhost'].includes(new URL(base).hostname));
+assert.ok(output && path.dirname(path.resolve(output)) === path.resolve(__dirname, '../../var') && /^preferences-acceptance-[a-zA-Z0-9_-]+$/.test(path.basename(output)));
+const origin = new URL(base).origin;
+async function main() {
+  const browser = await chromium.launch({ headless: true });
+  const checks = [], errors = [], external = [], unexpectedWrites = [];
+  const mark = value => { checks.push(value); console.log('PASS ' + value); };
+  const control = await browser.newContext();
+  const state = async () => {
+    const response = await control.request.get(base + '/__studio_acceptance_diagnostics_state');
+    assert.equal(response.status(), 200);
+    return (await response.json()).result.fingerprint;
+  };
+  const goto = async (page, url) => assert.equal((await page.goto(base + url)).status(), 200);
+  const submit = async form => Promise.all([form.page().waitForNavigation(), form.locator('button[type=submit]').first().click()]);
+  try {
+    const before = await state();
+    for (const locale of ['de', 'en']) for (const width of [375, 1440]) for (const javaScriptEnabled of [true, false]) {
+      const context = await browser.newContext({ viewport: { width, height: 1000 }, javaScriptEnabled });
+      await context.addCookies([{ name: 'lbb_locale', value: locale, url: origin }]);
+      await context.route('**/*', route => {
+        const request = route.request(), url = new URL(request.url());
+        if (url.origin !== origin) { external.push(url.href); return route.abort(); }
+        if (request.method() !== 'GET' && !/^\/findings\/[^/]+\/(follow-up|contact-discovery|contact-route)$/.test(url.pathname) && url.pathname !== '/settings/restrictions') unexpectedWrites.push(url.href);
+        return route.continue();
+      });
+      const page = await context.newPage();
+      page.on('pageerror', e => errors.push(e.message));
+      await goto(page, '/findings?assessment=confirmed');
+      const id = await page.locator('[data-finding-id]').first().getAttribute('data-finding-id');
+      const detail = '/findings/' + id;
+      await goto(page, detail);
+      const caseForm = page.locator('[data-follow-up=case]');
+      const domainForm = page.locator('[data-follow-up=domain]');
+      assert.equal(await caseForm.locator('[name=pursuit]').inputValue(), 'active');
+      await submit(page.locator('[data-contact-discovery]'));
+      assert.ok((await page.locator('[data-contact-status=found]').count()) >= 1);
+      assert.ok((await page.locator('[data-contact-history]').innerText()).includes('https://diagnostics.invalid/report'));
+      await submit(page.locator('[data-contact-route-suggestion]').first());
+      assert.ok((await page.locator('[data-selected-contact-route]').innerText()).includes('security@diagnostics.invalid'));
+      await submit(page.locator('[data-contact-route-suggestion]').nth(1));
+      assert.ok((await page.locator('[data-selected-contact-route]').innerText()).includes('https://diagnostics.invalid/report'));
+      const oldRoute = await context.newPage();
+      await goto(oldRoute, detail);
+      await oldRoute.locator('[data-contact-route-manual-fold] > summary').click();
+      await page.locator('[data-contact-route-manual-fold] > summary').click();
+      const manual = page.locator('[data-contact-route-manual]');
+      await manual.locator('[name=channel]').selectOption('email');
+      await manual.locator('[name=destination]').fill('owner@diagnostics.invalid');
+      await manual.locator('[name=person]').fill('Owner <script>not executable</script>');
+      await manual.locator('[name=source]').fill('Manual contact form');
+      await manual.locator('[name=notes]').fill('Ask before sending\nNo automated mail');
+      await submit(manual);
+      assert.equal(new URL(page.url()).searchParams.has('message'), true);
+      const selectedRoute = await page.locator('[data-selected-contact-route]').innerText();
+      assert.ok(selectedRoute.includes('owner@diagnostics.invalid'));
+      assert.ok(selectedRoute.includes('Owner <script>not executable</script>'));
+      assert.equal(await page.locator('[data-selected-contact-route] script').count(), 0);
+      await submit(oldRoute.locator('[data-contact-route-manual]'));
+      assert.equal(new URL(oldRoute.url()).searchParams.has('error'), true, 'Old route form must not replace current selection');
+      await oldRoute.close();
+      await submit(page.locator('[data-contact-discovery]'));
+      assert.equal(await page.locator('[data-selected-contact-route]').innerText(), selectedRoute, 'Lookup cannot replace the chosen route');
+      await caseForm.locator('[name=pursuit]').selectOption('closed');
+      await caseForm.locator('[name=reason]').selectOption('contact_refused');
+      await submit(caseForm);
+      assert.equal(await page.locator('[data-contact-discovery]').count(), 0);
+      assert.equal(await page.locator('[data-studio-retest-action]').count(), 0);
+      assert.equal(await caseForm.locator('[name=contact_blocked]').isChecked(), true);
+      await goto(page, '/findings?scope=all&pursuit=closed&closure_reason=contact_refused');
+      assert.equal(await page.locator('[data-finding-id]').count(), 1);
+      assert.equal(await page.locator('[data-work-status]').count(), 1);
+      await goto(page, '/statistics');
+      const drilldown = page.locator('[data-closure-reason=contact_refused]');
+      assert.equal(await drilldown.getAttribute('data-count'), '1');
+      await drilldown.click();
+      assert.equal(await page.locator('[data-finding-id]').count(), 1);
+      await goto(page, detail);
+      await page.locator('[data-domain-restrictions] > summary').click();
+      await domainForm.locator('[name=checks_blocked]').check();
+      await submit(domainForm);
+      await caseForm.locator('[name=pursuit]').selectOption('active');
+      await caseForm.locator('[name=reason]').selectOption('');
+      await caseForm.locator('[name=contact_blocked]').uncheck();
+      await submit(caseForm);
+      assert.equal(await page.locator('[data-studio-retest-action]').count(), 0, 'Domain restriction survives case reopening');
+      await page.locator('[data-domain-restrictions] > summary').click();
+      await domainForm.locator('[name=checks_blocked]').uncheck();
+      await submit(domainForm);
+      assert.equal(await page.locator('[data-contact-discovery]').count(), 1);
+      assert.equal(await page.locator('[data-studio-retest-action]').count(), 1);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      for (const anchor of ['nachverfolgung', 'kontakte']) {
+        await page.locator(`.studio-detail-sections a[href="#${anchor}"]`).click();
+        await page.waitForFunction(id => document.querySelector('#' + id).getBoundingClientRect().top >= document.querySelector('.studio-detail-sections').getBoundingClientRect().bottom, anchor);
+        await page.screenshot({ path: path.join(output, `follow-up-${locale}-${width}-${javaScriptEnabled ? 'js' : 'native'}-${anchor}.png`) });
+      }
+      const stale = await context.newPage();
+      await goto(stale, detail);
+      await stale.locator('[data-domain-restrictions] > summary').click();
+      await page.locator('[data-domain-restrictions] > summary').click();
+      await domainForm.locator('[name=checks_blocked]').check();
+      await submit(domainForm);
+      await submit(stale.locator('[data-follow-up=domain]'));
+      assert.equal(new URL(stale.url()).searchParams.has('error'), true, 'Old tab must be rejected');
+      await stale.close();
+      await goto(page, '/settings#restrictions');
+      const central = page.locator('[data-restrictions]');
+      assert.equal(await central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]').count(), 1);
+      await page.screenshot({ path: path.join(output, `restrictions-${locale}-${width}-${javaScriptEnabled ? 'js' : 'native'}.png`) });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await submit(central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]'));
+      assert.equal(new URL(page.url()).searchParams.has('message'), true);
+      assert.equal(await central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]').count(), 0);
+      await goto(page, detail);
+      assert.equal(await page.locator('[data-studio-retest-action]').count(), 1);
+      mark(`${locale} ${width}px ${javaScriptEnabled ? 'JS' : 'no JS'}: sourced contacts, close/reopen, case/domain restrictions, manual/suggested contact choice, refresh preservation, statistics drilldown, stale tab rejection and central restriction release`);
+      await context.close();
+    }
+    assert.equal(await state(), before, 'Administrative edits must preserve assessments, contact markers, jobs and stored evidence');
+    assert.deepEqual(errors, []); assert.deepEqual(external, []); assert.deepEqual(unexpectedWrites, []);
+    mark('No target requests, evidence/assessment mutations, new jobs or JavaScript errors');
+    await fs.writeFile(path.join(output, 'follow-up-result.json'), JSON.stringify({ checks, errors, external, unexpectedWrites }, null, 2) + '\n');
+  } finally { await control.close(); await browser.close(); }
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });

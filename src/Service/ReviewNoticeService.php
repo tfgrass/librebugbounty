@@ -18,7 +18,7 @@ final class ReviewNoticeService
         if (!$this->available() || $ids === []) {
             return [];
         }
-        $where = "f.manual_assessment IN ('confirmed', 'fixed') AND f.status NOT IN ('duplicate', 'discarded')";
+        $where = "f.manual_assessment IN ('confirmed', 'fixed') AND f.status NOT IN ('duplicate', 'discarded') AND ".FindingWorkPolicy::pursuitActiveSql($this->connection);
         $parameters = [];
         if ($ids !== null) {
             $where .= ' AND f.id IN ('.implode(',', array_fill(0, count($ids), '?')).')';
