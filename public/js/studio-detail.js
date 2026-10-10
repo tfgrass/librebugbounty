@@ -6,6 +6,16 @@
   const root = document.querySelector('[data-studio-detail]');
   if (!root) return;
 
+  // A file may disappear or fail decoding after the read-only header check.
+  root.querySelectorAll('[data-comparison-image]').forEach((image) => {
+    const unavailable = () => {
+      image.closest('[data-comparison-image-link]').hidden = true;
+      image.closest('[data-comparison-side]').querySelector('[data-comparison-missing]').hidden = false;
+    };
+    image.addEventListener('error', unavailable);
+    if (image.complete && image.naturalWidth === 0) unavailable();
+  });
+
   // Anchors and all figures work without JavaScript. When enhanced, retain one
   // image in the work area without implying it was selected as assessment basis.
   const shots = Array.from(root.querySelectorAll('[data-shot-id]'));

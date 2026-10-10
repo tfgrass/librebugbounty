@@ -38,14 +38,14 @@ web_extra_daemons:
     command: "until [ -f vendor/autoload.php ]; do sleep 1; done; PLAYWRIGHT_WORKER_URL=http://playwright-shot-4:3000 exec php bin/console app:screenshot:worker --sleep=2 --worker-id=shot-4 --no-interaction"
     directory: /var/www/html
   - name: recheck-worker-1
-    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --no-interaction"
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --worker-id=recheck-1 --no-interaction"
     directory: /var/www/html
   - name: recheck-worker-2
-    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --no-interaction"
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --worker-id=recheck-2 --no-interaction"
     directory: /var/www/html
   - name: recheck-worker-3
-    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --no-interaction"
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --worker-id=recheck-3 --no-interaction"
     directory: /var/www/html
   - name: recheck-worker-4
-    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --no-interaction"
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:recheck:worker --sleep=300 --worker-id=recheck-4 --no-interaction"
     directory: /var/www/html

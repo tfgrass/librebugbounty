@@ -19,6 +19,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class ScreenshotWorkerCommand extends Command
 {
     private bool $stop = false;
+    private string $workerId = 'default';
 
     public function __construct(
         private readonly ScreenshotQueueService $queue,
@@ -43,6 +44,7 @@ final class ScreenshotWorkerCommand extends Command
         $workerId = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $input->getOption('worker-id'));
         $workerId = trim($workerId === null ? '' : $workerId, '-');
         $workerId = $workerId === '' ? 'default' : $workerId;
+        $this->workerId = $workerId;
         $lock = fopen(sys_get_temp_dir().'/librebugbounty-screenshot-worker-'.$workerId.'.lock', 'c+');
         if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
             $output->writeln('<error>Another screenshot worker already owns the queue.</error>');
@@ -126,7 +128,7 @@ final class ScreenshotWorkerCommand extends Command
         // Liveness reporting must never take the worker down; a failed
         // heartbeat write is best-effort only.
         try {
-            $this->heartbeats->touchIfDue(WorkerHeartbeatService::SCREENSHOT);
+            $this->heartbeats->touchIfDue(WorkerHeartbeatService::SCREENSHOT, workerId: $this->workerId);
         } catch (\Throwable) {
             // Ignore transient database contention.
         }

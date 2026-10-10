@@ -7,7 +7,7 @@ use Symfony\Component\Uid\Uuid;
 /** Internal list context shared by detail pages and their native forms. */
 final class FindingNavigation
 {
-    public function __construct(private readonly FindingListService $list)
+    public function __construct(private readonly FindingListService $list, private readonly FindingProblemService $problems)
     {
     }
 
@@ -17,12 +17,20 @@ final class FindingNavigation
             return null;
         }
         $parts = parse_url($value);
-        if ($parts === false || !in_array($parts['path'] ?? null, ['/findings', '/review'], true)
+        if ($parts === false || !in_array($parts['path'] ?? null, ['/findings', '/review', '/errors'], true)
             || array_intersect(['scheme', 'host', 'port', 'user', 'pass', 'fragment'], array_keys($parts)) !== []
         ) {
             return null;
         }
         parse_str($parts['query'] ?? '', $query);
+        if ($parts['path'] === '/errors') {
+            try {
+                $filter = $this->problems->parse($query);
+            } catch (\InvalidArgumentException) {
+                return null;
+            }
+            return '/errors'.($query === [] ? '' : '?'.http_build_query($filter, '', '&', PHP_QUERY_RFC3986));
+        }
         if ($parts['path'] === '/review') {
             return $this->reviewReturnPath($query);
         }

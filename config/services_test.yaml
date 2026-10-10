@@ -1,0 +1,9 @@
+services:
+  # The health UI must never contact real sidecars during PHPUnit tests.
+  test.health_http_client:
+    class: Symfony\Component\HttpClient\MockHttpClient
+
+  App\Service\BrowserHealthService:
+    autowire: true
+    arguments:
+      $httpClient: '@test.health_http_client'

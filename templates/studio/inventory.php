@@ -15,7 +15,7 @@ $path = $view->path;
 $listQuery = $view->filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $pagination['page']];
 $returnPath = $path.'?'.http_build_query($listQuery, '', '&', PHP_QUERY_RFC3986);
 $pageUrl = static fn (int $page): string => $path.'?'.http_build_query(array_replace($listQuery, ['page' => $page]), '', '&', PHP_QUERY_RFC3986);
-$scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($listQuery, ['scope' => $scope, 'page' => 1]), '', '&', PHP_QUERY_RFC3986);
+$scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($view->filterQuery, ['scope' => $scope, 'pageSize' => $pagination['pageSize']]), '', '&', PHP_QUERY_RFC3986);
 $resetUrl = $path.'?'.http_build_query(['pageSize' => $pagination['pageSize']], '', '&', PHP_QUERY_RFC3986);
 $exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
@@ -46,11 +46,13 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
     <main class="studio-list-main" id="findings">
       <div class="studio-list-heading">
         <div><p class="studio-eyebrow"><?= $escape($t('Bestand')) ?></p><h1><?= $escape($t('Fälle')) ?></h1></div>
-        <a class="studio-list-button studio-list-button-primary" href="/"><span aria-hidden="true">+</span> <?= $escape($t('URL erfassen')) ?></a>
+        <div class="studio-list-heading-actions"><a class="studio-list-button" href="/errors"><?= $escape($t('Fehlerübersicht')) ?></a><a class="studio-list-button studio-list-button-primary" href="/"><span aria-hidden="true">+</span> <?= $escape($t('URL erfassen')) ?></a></div>
       </div>
 
       <?php if ($message !== null && $message !== ''): ?><p class="studio-list-feedback" data-tone="success" role="status"><?= $escape($message) ?></p><?php endif; ?>
       <?php if ($error !== null && $error !== ''): ?><p class="studio-list-feedback" data-tone="error" role="alert"><?= $escape($error) ?></p><?php endif; ?>
+
+      <?php require __DIR__.'/inventory-views.php'; ?>
 
       <section class="studio-list-tools" aria-label="<?= $escape($t('Suche und Filter')) ?>">
         <nav class="studio-list-scopes" aria-label="<?= $escape($t('Bestand und Archiv')) ?>">
@@ -216,5 +218,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
     <?php $activeWorkspace = 'inventory'; require __DIR__.'/navigation.php'; ?>
   </div>
   <script id="studio-i18n" type="application/json"><?= $i18nJson ?></script>
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/studio-inventory-views.js" defer></script>
 </body>
 </html>

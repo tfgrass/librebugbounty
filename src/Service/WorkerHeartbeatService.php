@@ -2,67 +2,35 @@
 
 namespace App\Service;
 
-use App\Entity\Setting;
-use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\DBAL\Connection;
 
-/**
- * Best-effort liveness signal for the background workers. All worker
- * processes of one kind share one heartbeat row; the settings page only
- * needs to know whether that kind is alive, not which process wrote last.
- */
+/** Per-worker liveness, written independently of the ORM unit of work. */
 final class WorkerHeartbeatService
 {
     public const RECHECK = 'recheck';
     public const SCREENSHOT = 'screenshot';
-
-    private const SETTING_PREFIX = 'worker.heartbeat.';
     private const MIN_TOUCH_SECONDS = 15;
 
-    public function __construct(
-        private readonly EntityManagerInterface $entityManager,
-    ) {
+    public function __construct(private readonly Connection $connection)
+    {
     }
 
-    public function touch(string $kind, ?\DateTimeImmutable $at = null): void
+    public function touch(string $kind, ?\DateTimeImmutable $at = null, string $workerId = 'default'): void
     {
-        $id = self::SETTING_PREFIX.$kind;
-        $setting = $this->entityManager->find(Setting::class, $id);
-        if (!$setting instanceof Setting) {
-            $setting = new Setting();
-            $setting->setId($id);
-            $this->entityManager->persist($setting);
-        }
-
-        $setting->setValue(($at ?? new \DateTimeImmutable())->format('Y-m-d H:i:s'));
-        $this->entityManager->flush();
+        $this->write($kind, $workerId, $at ?? new \DateTimeImmutable(), false);
     }
 
-    /**
-     * Touch the shared heartbeat only when the stored signal is older than
-     * the write limit. With several workers sharing one row this also keeps
-     * SQLite write contention negligible.
-     */
-    public function touchIfDue(string $kind, ?\DateTimeImmutable $at = null): bool
+    public function touchIfDue(string $kind, ?\DateTimeImmutable $at = null, string $workerId = 'default'): bool
     {
-        $at ??= new \DateTimeImmutable();
-        $age = $this->ageSeconds($kind, $at);
-        if ($age !== null && $age < self::MIN_TOUCH_SECONDS) {
-            return false;
-        }
-
-        $this->touch($kind, $at);
-
-        return true;
+        return $this->write($kind, $workerId, $at ?? new \DateTimeImmutable(), true);
     }
 
-    public function lastSeen(string $kind): ?\DateTimeImmutable
+    public function lastSeen(string $kind, string $workerId = 'default'): ?\DateTimeImmutable
     {
-        $setting = $this->entityManager->find(Setting::class, self::SETTING_PREFIX.$kind);
-        $value = $setting?->getValue();
-        if (!is_string($value) || trim($value) === '') {
+        $value = $this->connection->fetchOne('SELECT value FROM setting WHERE id = ?', [$this->key($kind, $workerId)]);
+        if (!is_string($value) || $value === '') {
             return null;
         }
-
         try {
             return new \DateTimeImmutable($value);
         } catch (\Exception) {
@@ -70,13 +38,35 @@ final class WorkerHeartbeatService
         }
     }
 
-    public function ageSeconds(string $kind, ?\DateTimeImmutable $now = null): ?int
+    public function ageSeconds(string $kind, ?\DateTimeImmutable $now = null, string $workerId = 'default'): ?int
     {
-        $seen = $this->lastSeen($kind);
-        if ($seen === null) {
-            return null;
+        $seen = $this->lastSeen($kind, $workerId);
+        return $seen === null ? null : max(0, ($now ?? new \DateTimeImmutable())->getTimestamp() - $seen->getTimestamp());
+    }
+
+    private function write(string $kind, string $workerId, \DateTimeImmutable $at, bool $rateLimited): bool
+    {
+        $at = $at->setTimezone(new \DateTimeZone('UTC'));
+        // Atomic upsert also covers simultaneous first starts. No ORM flush,
+        // cached Setting entity, or unrelated pending changes are involved.
+        $sql = 'INSERT INTO setting (id, value, updated_at) VALUES (:id, :value, :updated)'
+            .' ON CONFLICT (id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at';
+        $parameters = ['id' => $this->key($kind, $workerId), 'value' => $at->format(DATE_ATOM), 'updated' => $at->format('Y-m-d H:i:s')];
+        if ($rateLimited) {
+            $sql .= ' WHERE setting.value IS NULL OR setting.value <= :cutoff';
+            $parameters['cutoff'] = $at->modify('-'.self::MIN_TOUCH_SECONDS.' seconds')->format(DATE_ATOM);
         }
 
-        return max(0, ($now ?? new \DateTimeImmutable())->getTimestamp() - $seen->getTimestamp());
+        return $this->connection->executeStatement($sql, $parameters) > 0;
+    }
+
+    private function key(string $kind, string $workerId): string
+    {
+        if (!in_array($kind, [self::RECHECK, self::SCREENSHOT], true)
+            || preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $workerId) !== 1) {
+            throw new \InvalidArgumentException('Invalid heartbeat worker identity.');
+        }
+
+        return 'worker.heartbeat.'.$kind.'.'.$workerId;
     }
 }

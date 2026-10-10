@@ -115,6 +115,19 @@ the latest technical observation. **Technical data & history** holds previous
 assessments, notice reviews, screenshot jobs, and technical runs. Save notes
 with **Save note**.
 
+**Image comparison** shows two retained screenshots side by side on desktop
+and stacked on small screens. Choose **Left / Before** and **Right / After**,
+then **Compare images**; this native GET form also works without JavaScript.
+The initial pair uses the current assessment's recorded image, when known,
+and the newest different stored image. Missing or invalid images are not
+silently replaced with older successful captures. Capture time, storage time,
+evidence ID and known screenshot-job provenance remain visible. The
+**Assessment evidence** marker refers to the effective assessment record;
+unknown or cancelled bases are not inferred from another image. A later
+notice acknowledgement can have its own export basis. Merely comparing or
+changing images never changes either basis, preselects an assessment control,
+or changes the judgment. A visual layout change alone does not prove a fix.
+
 | Operation | Effect |
 | --- | --- |
 | Queue screenshot | Queues a fresh background image; preserves the assessment and older evidence |
@@ -128,6 +141,62 @@ Contact and sent timestamps are currently separate records. A sent marker does
 not imply a contact marker, and only Contacted appears in the dashboard's
 contact series. Older status and review markers remain visible as historical
 information; they are not presented as newly recorded manual assessments.
+
+### Saved and recent Inventory views
+
+Open **My views** above the Inventory filters. Apply a filter combination first,
+then choose **Save current filters as a view** and give it a name (1–80
+characters). A saved view opens the current matching cases; it is not a snapshot.
+Filters not yet submitted are not saved. Page numbers, rows per page, feedback
+messages and navigation context are excluded. Opening a view starts at page one
+using the current Inventory page-size preference.
+
+**Manage view** lets you rename or delete it. Changing the live filters never
+overwrites a saved view. Deletion removes only the view, not any cases or evidence.
+These native forms work without JavaScript. Names and validated filters are
+stored as individual installation settings in SQLite, included in normal database
+backups and shared between browsers using the same installation. No new database
+migration is required. Damaged or unsupported saved views remain visible for
+deletion rather than silently opening a different selection.
+
+With JavaScript enabled, **Recent views** retains up to ten distinct applied
+combinations in this browser's local storage. Reopening a combination moves it
+to the front. Equivalent normalized filters share an entry; typing, pagination,
+page-size changes, reloads and form feedback do not add entries. The plain active
+Inventory is not added automatically. An invalid filter response is not recorded.
+Choose **Save as a view** beside a recent entry to name and retain that combination
+without applying it first.
+
+**Clear history** removes only this browser's recent combinations; saved views
+remain. The local history is not synchronized between browsers or included in
+database backups. It can contain confidential search terms or URLs, so clear it
+when appropriate, especially in a shared browser profile. If browser storage is
+blocked or full, a notice appears and saved views remain usable. Merely opening
+Inventory writes no preference or case data to the server and starts no work.
+
+### Error overview
+
+Open **Error overview** from Inventory or the Settings health panel. Its
+capture-error and technical-error counters link to the corresponding cases,
+not to the number of historical attempts. Every case appears once, including
+archived cases; one case may have several error types. A newer successful,
+queued or running attempt replaces an earlier capture failure in this current
+overview. Technical errors likewise refer to the latest run. Earlier failures
+remain available in each case's history.
+
+**Image files** inspects all recorded screenshot files when this overview is
+opened. It reports missing/unreadable files, unsupported image headers and
+files larger than the 25 MiB inspection limit. This is not a full pixel decode
+or checksum audit. Old missing evidence remains relevant even if a newer
+capture succeeded. The example's date is its storage date, not an invented
+failure time. Each case links to the affected evidence or history, and its
+detail page preserves the filtered return context.
+
+Search by domain, URL or title and choose 10/25/50/100 rows per page. The type
+counters describe the full affected inventory independently of search.
+These views are read-only: opening, filtering or comparing does not queue
+work, retry jobs, contact target sites, or alter records. Settings reads only
+the latest-attempt metadata; it does not scan image files on every refresh.
 
 ## Statistics
 
@@ -229,13 +298,29 @@ Open the gear icon for **Settings & info**. Eight settings are available:
 - **Retry after errors:** days before an `error` result is rechecked. The
   factory default is 3 days; allowed values are 1 to 30 days.
 
-Above the preferences, **Status & health** shows whether the recheck and
-screenshot workers have sent a recent heartbeat, how many rechecks are due now,
-scheduled, or paused for manual review, when the next slot is due, and the
-current screenshot queue counts. This answers “is the background work running?”
-without opening a terminal. Workers report their liveness while running; after
-a DDEV restart the first signal appears as soon as a worker has started its
-loop.
+Above the preferences, **Status & health** shows active versus expected workers
+and the last signal for each worker ID. Browser-service reachability is checked
+separately using a bounded, read-only `/health` request; this does not start a
+browser or visit a case URL. Green requires all expected worker signals to be
+recent and their browser services to respond. Partial operation appears amber,
+expired signals red, and workers without a signal grey. Recheck signals expire
+after 10 minutes, screenshot signals after 5 minutes; these are recent liveness
+signals, not proof that a particular capture can succeed.
+
+The panel also shows rechecks due now, scheduled or paused for review, the next
+due time, and screenshot job counts. **Completed captures** counts historical
+successful jobs, not unique cases or currently readable image files. The
+current case-error counters are separate and open the Error overview. Use
+**Inspect stored image files** to explicitly inspect retained images. The
+**Refresh status** link reloads the snapshot and works without JavaScript;
+save pending preference changes before refreshing.
+
+Expected IDs and browser URLs live in `app.health_workers` in
+`config/services.yaml`. Keep this roster aligned with `.ddev/config.yaml` and
+the screenshot sidecars when reducing the deployment size. Four recheck workers
+use IDs `recheck-1` through `recheck-4`; screenshot lanes use `shot-1` through
+`shot-4`. Existing daemons adopt these per-worker signals after their next DDEV
+restart. Old shared signals and ad-hoc workers do not count as expected lanes.
 
 The inventory and export defaults are saved for this installation. Explicit
 page or URL selections take precedence for that view or export; they do not

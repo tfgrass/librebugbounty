@@ -24,6 +24,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class RecheckWorkerCommand extends Command
 {
     private bool $stop = false;
+    private string $workerId = 'default';
 
     public function __construct(
         private readonly RecheckService $recheckService,
@@ -41,10 +42,12 @@ final class RecheckWorkerCommand extends Command
             ->addOption('sleep', null, InputOption::VALUE_REQUIRED, 'Idle polling interval in seconds.', '300')
             ->addOption('max-jobs', null, InputOption::VALUE_REQUIRED, 'Exit after this many rechecks; zero means unlimited.', '0')
             ->addOption('timeout', null, InputOption::VALUE_REQUIRED, 'Per-finding browser timeout in milliseconds.', '120000');
+        $this->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Stable identity for the health panel; ad-hoc processes use their PID.');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->workerId = (string) ($input->getOption('worker-id') ?? 'process-'.getmypid());
         // No global lock: several worker processes claim findings atomically
         // in the database (see RecheckService).
         if (function_exists('pcntl_async_signals')) {
@@ -143,7 +146,7 @@ final class RecheckWorkerCommand extends Command
         // Liveness reporting must never take the worker down; a failed
         // heartbeat write is best-effort only.
         try {
-            $this->heartbeats->touchIfDue(WorkerHeartbeatService::RECHECK);
+            $this->heartbeats->touchIfDue(WorkerHeartbeatService::RECHECK, workerId: $this->workerId);
         } catch (\Throwable) {
             // Ignore transient database contention.
         }

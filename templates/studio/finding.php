@@ -73,7 +73,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
           <h1><?= $escape($finding->getDomain()->getHostname()) ?></h1>
           <p class="studio-case-subtitle"><?= $escape($finding->getTitle()) ?></p>
         </div>
-        <a class="studio-detail-back" href="<?= $escape($returnPath ?? '/findings') ?>"><span aria-hidden="true">←</span> <?= $escape($t(str_starts_with($returnPath ?? '', '/review') ? 'Zur Review' : 'Zum Bestand')) ?></a>
+        <a class="studio-detail-back" href="<?= $escape($returnPath ?? '/findings') ?>"><span aria-hidden="true">←</span> <?= $escape($t(str_starts_with($returnPath ?? '', '/errors') ? 'Zur Fehlerübersicht' : (str_starts_with($returnPath ?? '', '/review') ? 'Zur Review' : 'Zum Bestand'))) ?></a>
       </div>
 
       <?php if ($message !== null && $message !== ''): ?>
@@ -85,6 +85,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
 
       <nav class="studio-detail-sections" aria-label="<?= $escape($t('Bereiche dieses Falls')) ?>">
         <a href="#beleg"><?= $escape($t('Beleg')) ?></a>
+        <a href="#vergleich"><?= $escape($t('Bildvergleich')) ?></a>
         <a href="#entscheidung"><?= $escape($t('Entscheidung')) ?></a>
         <a href="#verlauf" data-open-history><?= $escape($t('Verlauf')) ?> <span><?= $escape($formatNumber(count($view->assessments) + count($view->screenshotJobs) + count($view->runs))) ?></span></a>
       </nav>
@@ -126,6 +127,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                     <span><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></span>
                     <small><?= $escape($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt']) : $t('Aufnahmezeit unbekannt')) ?></small>
                     <?php if (!$shot['available']): ?><small class="studio-detail-error"><?= $escape($t('Datei nicht verfügbar')) ?></small><?php endif; ?>
+                    <?php if ($shot['evidence']->getId() === $comparison->basisId()): ?><small data-assessment-basis><?= $escape($t('Beleg der Bewertung')) ?></small><?php endif; ?>
                   </a>
                 <?php endforeach; ?>
               </nav>
@@ -148,6 +150,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                   <figcaption>
                     <div>
                       <strong><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></strong>
+                      <?php if ($shot['evidence']->getId() === $comparison->basisId()): ?><strong data-assessment-basis><?= $escape($t('Beleg der Bewertung')) ?></strong><?php endif; ?>
                       <span><?= $escape($t('Aufnahme')) ?>: <?= $escape($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt']) : $t('unbekannt')) ?></span>
                       <span><?= $escape($t('Ablage')) ?>: <?= $escape($formatTime($shot['evidence']->getCreatedAt())) ?></span>
                     </div>
@@ -302,6 +305,8 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
           </section>
         </aside>
       </div>
+
+      <?php require __DIR__.'/comparison.php'; ?>
 
       <section class="studio-technical-section" id="verlauf" aria-label="<?= $escape($t('Technik und Historie')) ?>" tabindex="-1">
         <details class="studio-technical-history" data-studio-history>

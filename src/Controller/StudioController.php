@@ -8,6 +8,9 @@ use App\Service\FindingListService;
 use App\Service\FindingNavigation;
 use App\Service\StatisticsService;
 use App\Service\UiTranslator;
+use App\Service\ScreenshotComparisonService;
+use App\Service\FindingProblemService;
+use App\Service\InventoryViewService;
 use App\Repository\FindingRepository;
 use App\Entity\Finding;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -28,6 +31,9 @@ final class StudioController
         private readonly FindingNavigation $navigation,
         private readonly StatisticsService $statistics,
         private readonly UiTranslator $i18n,
+        private readonly ScreenshotComparisonService $comparison,
+        private readonly FindingProblemService $problems,
+        private readonly InventoryViewService $inventoryViews,
     ) {
     }
 
@@ -76,6 +82,13 @@ final class StudioController
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
         $languageReturnPath = $request->getRequestUri();
+        $savedViews = $this->inventoryViews->all();
+        $viewQuery = $this->inventoryViews->normalize($view->filterQuery);
+        $viewDescription = $this->inventoryViews->describe($viewQuery);
+        $viewVocabulary = $this->inventoryViews->vocabulary();
+        $recordRecentView = !array_key_exists('page', $query) && $message === null && $error === null
+            && $viewQuery !== ['scope' => 'active'];
+        $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';
         ob_start();
         require dirname(__DIR__, 2).'/templates/studio/inventory.php';
         $html = ob_get_clean();
@@ -104,6 +117,22 @@ final class StudioController
         return new Response($html, Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8', 'Cache-Control' => 'no-store']);
     }
 
+    #[Route(path: '/errors', name: 'studio_errors', methods: ['GET'])]
+    public function errors(Request $request): Response
+    {
+        try {
+            $problems = $this->problems->get($request->query->all());
+        } catch (\InvalidArgumentException $exception) {
+            return new Response($this->i18n->trans($exception->getMessage()), Response::HTTP_BAD_REQUEST, ['Cache-Control' => 'no-store']);
+        }
+        $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
+        $languageReturnPath = $request->getRequestUri();
+        ob_start();
+        require dirname(__DIR__, 2).'/templates/studio/errors.php';
+        return new Response(ob_get_clean(), Response::HTTP_OK, ['Content-Type' => 'text/html; charset=UTF-8', 'Cache-Control' => 'no-store']);
+    }
+
     #[Route(path: '/studio/statistics', name: 'studio_statistics_alias', methods: ['GET'])]
     public function canonicalStatistics(Request $request): RedirectResponse
     {
@@ -130,6 +159,11 @@ final class StudioController
         }
 
         $view = $this->findingDetail->get($id);
+        try {
+            $comparison = $this->comparison->get($view, $request->query->all());
+        } catch (\InvalidArgumentException $exception) {
+            return new Response($this->i18n->trans($exception->getMessage()), Response::HTTP_BAD_REQUEST, ['Cache-Control' => 'no-store']);
+        }
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
         $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';

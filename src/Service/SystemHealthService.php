@@ -4,7 +4,6 @@ namespace App\Service;
 
 use App\Value\FindingStatus;
 use App\Value\ReviewState;
-use App\Value\ScreenshotJobStatus;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 
@@ -21,23 +20,21 @@ final class SystemHealthService
         private readonly Connection $connection,
         private readonly WorkerHeartbeatService $heartbeats,
         private readonly RecheckPolicy $policy,
+        private readonly WorkerHealthRegistry $registry,
+        private readonly BrowserHealthService $browsers,
+        private readonly FindingProblemService $problems,
     ) {
     }
 
-    /**
-     * @return array{
-     *     recheck: array{active: bool, ageSeconds: ?int, dueNow: int, scheduled: int, pausedManual: int, nextDueAt: ?\DateTimeImmutable, intervalDays: int, errorBackoffDays: int},
-     *     screenshot: array{active: bool, ageSeconds: ?int, queued: int, running: int, available: int, failed: int}
-     * }
-     */
+    /** @return array<string, mixed> */
     public function snapshot(?\DateTimeImmutable $now = null): array
     {
         $now ??= new \DateTimeImmutable();
         $nowSql = $now->format('Y-m-d H:i:s');
         $scope = $this->scopeSql();
 
-        $recheckAge = $this->heartbeats->ageSeconds(WorkerHeartbeatService::RECHECK, $now);
-        $screenshotAge = $this->heartbeats->ageSeconds(WorkerHeartbeatService::SCREENSHOT, $now);
+        $browserStatus = $this->browsers->check();
+        $problemCounts = $this->problems->currentCounts();
         $nextDue = $this->connection->fetchOne(
             'SELECT MIN(next_due_at) FROM finding WHERE '.$scope.' AND next_due_at IS NOT NULL',
         );
@@ -53,9 +50,8 @@ final class SystemHealthService
         }
 
         return [
-            'recheck' => [
-                'active' => $recheckAge !== null && $recheckAge <= self::RECHECK_STALE_SECONDS,
-                'ageSeconds' => $recheckAge,
+            'checkedAt' => $now,
+            'recheck' => $this->workerGroup(WorkerHeartbeatService::RECHECK, self::RECHECK_STALE_SECONDS, $browserStatus, $now) + [
                 'dueNow' => (int) $this->connection->fetchOne(
                     'SELECT COUNT(*) FROM finding WHERE '.$scope.' AND next_due_at IS NOT NULL AND next_due_at <= :now',
                     ['now' => $nowSql],
@@ -72,15 +68,45 @@ final class SystemHealthService
                 'nextDueAt' => is_string($nextDue) && $nextDue !== '' ? new \DateTimeImmutable($nextDue) : null,
                 'intervalDays' => $this->policy->intervalDays(),
                 'errorBackoffDays' => $this->policy->errorBackoffDays(),
+                'errorCases' => $problemCounts['technical'],
             ],
-            'screenshot' => [
-                'active' => $screenshotAge !== null && $screenshotAge <= self::SCREENSHOT_STALE_SECONDS,
-                'ageSeconds' => $screenshotAge,
+            'screenshot' => $this->workerGroup(WorkerHeartbeatService::SCREENSHOT, self::SCREENSHOT_STALE_SECONDS, $browserStatus, $now) + [
                 'queued' => $jobs['queued'],
                 'running' => $jobs['running'],
                 'available' => $jobs['available'],
                 'failed' => $jobs['failed'],
+                'errorCases' => $problemCounts['screenshot'],
             ],
+        ];
+    }
+
+    /** @param array<string, bool> $browserStatus
+     *  @return array<string, mixed>
+     */
+    private function workerGroup(string $kind, int $staleSeconds, array $browserStatus, \DateTimeImmutable $now): array
+    {
+        $rows = [];
+        $active = 0;
+        $seen = 0;
+        $expected = $this->registry->forKind($kind);
+        foreach ($expected as $id => $url) {
+            $lastSeen = $this->heartbeats->lastSeen($kind, $id);
+            $age = $lastSeen === null ? null : max(0, $now->getTimestamp() - $lastSeen->getTimestamp());
+            $state = $age === null ? 'unknown' : ($age <= $staleSeconds ? 'ok' : 'stale');
+            $active += $state === 'ok' ? 1 : 0;
+            $seen += $age !== null ? 1 : 0;
+            $rows[] = ['id' => $id, 'state' => $state, 'ageSeconds' => $age, 'lastSeen' => $lastSeen, 'browserReachable' => $browserStatus[$url] ?? false];
+        }
+        $browserUrls = array_unique(array_values($expected));
+        $reachable = count(array_filter($browserUrls, static fn (string $url): bool => $browserStatus[$url] ?? false));
+        $healthy = $expected !== [] && $active === count($expected) && $reachable === count($browserUrls);
+
+        return [
+            'active' => $healthy,
+            'state' => $healthy ? 'ok' : ($seen === 0 ? 'unknown' : ($active === 0 ? 'stale' : 'degraded')),
+            'activeWorkers' => $active, 'expectedWorkers' => count($expected),
+            'reachableBrowsers' => $reachable, 'expectedBrowsers' => count($browserUrls),
+            'workers' => $rows,
         ];
     }
 

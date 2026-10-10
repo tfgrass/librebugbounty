@@ -46,13 +46,23 @@
 .studio-settings-actions a:hover { color: var(--studio-blue); }
 
 .studio-settings-health { scroll-margin-top: 18px; }
-.studio-settings-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
-.studio-settings-health-card { display: grid; gap: 12px; padding: 15px; border: 1px solid #3c4858; border-radius: 6px; background: #171b20; }
+.studio-settings-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 14px; margin-top: 18px; }
+.studio-settings-health-card { display: grid; align-content: start; min-width: 0; gap: 12px; padding: 15px; border: 1px solid #3c4858; border-radius: 6px; background: #171b20; }
 .studio-settings-health-card header { display: flex; align-items: center; gap: 9px; }
 .studio-settings-health-card h3 { margin: 0; color: #e0e6ed; font-size: 13px; font-weight: 650; }
 .studio-settings-health-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 50%; background: #6b7684; box-shadow: 0 0 0 3px #6b768422; }
 .studio-settings-health-dot[data-state="ok"] { background: var(--studio-green); box-shadow: 0 0 0 3px #4bc98a22; }
 .studio-settings-health-dot[data-state="stale"] { background: var(--studio-red); box-shadow: 0 0 0 3px #f0616122; }
+.studio-settings-health-dot[data-state="degraded"] { background: #e2b764; box-shadow: 0 0 0 3px #e2b76422; }
+.studio-health-refresh { color: var(--studio-blue); font-size: 12px; }
+.studio-health-checked { margin-top: 14px; }
+.studio-health-workers { list-style: none; display: grid; gap: 10px; margin: 0; padding: 0; }
+.studio-health-workers li { display: grid; gap: 4px; min-width: 0; padding: 10px 0; border-top: 1px solid #30363e; font-size: 11px; overflow-wrap: anywhere; }
+.studio-health-workers li > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 10px; }
+.studio-health-worker-seen { color: var(--studio-muted); }
+.studio-health-workers [data-worker-state="stale"] .studio-health-worker-state,
+.studio-health-browser[data-state="unavailable"] { color: var(--studio-red); }
+.studio-health-browser[data-state="ok"] { color: var(--studio-green); }
 .studio-settings-health-state { margin: 0; color: #c3ccd7; font-size: 12px; font-weight: 600; }
 .studio-settings-health-card dl { display: grid; gap: 7px; margin: 0; }
 .studio-settings-health-card dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

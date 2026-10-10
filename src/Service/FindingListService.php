@@ -118,7 +118,7 @@ final class FindingListService
     public function parse(array $query): array
     {
         foreach ([...self::LIST_QUERY_FIELDS, 'message', 'error'] as $field) {
-            if (array_key_exists($field, $query) && !is_string($query[$field])) {
+            if (array_key_exists($field, $query) && (!is_string($query[$field]) || !mb_check_encoding($query[$field], 'UTF-8'))) {
                 throw new \InvalidArgumentException('Filterangaben müssen einzelne Textwerte sein.');
             }
         }

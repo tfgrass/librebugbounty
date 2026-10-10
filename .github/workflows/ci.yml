@@ -79,3 +79,36 @@ jobs:
 
       - name: Run backup tests
         run: python -B -m unittest discover -s tests -p 'backup_local_test.py' -v
+
+  browser:
+    name: Studio browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, zip
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: playwright-worker/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: npm ci --prefix playwright-worker --no-audit --no-fund
+      - run: ./playwright-worker/node_modules/.bin/playwright install --with-deps chromium
+      - name: Test Settings, diagnostics and inventory views with isolated fixtures
+        run: python tests/browser/run_preferences.py
+      - name: Keep browser screenshots and fixture logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-browser-smoke
+          path: var/preferences-acceptance-*/
+          if-no-files-found: ignore

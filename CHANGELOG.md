@@ -3,6 +3,42 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
+## Unreleased
+
+### Changed
+
+- Settings health now reports each expected worker separately, with active/total
+  counts and last-signal times. A partial fleet cannot appear fully healthy.
+- Browser-service reachability is checked separately with bounded read-only
+  health requests. Green requires both recent worker signals and reachable
+  services; status refresh also works without JavaScript.
+- Heartbeats use atomic per-worker writes without flushing unrelated ORM
+  changes. Screenshot success counts are labelled as historical completed
+  captures rather than proof of readable evidence files.
+
+### Added
+
+- Named Inventory views with native save, rename, open and delete controls.
+  Views retain validated filters, not page numbers, page sizes or frozen results;
+  they are stored with installation settings and work without JavaScript.
+- Browser-local Recent Views for the last ten applied filter combinations,
+  deduplicated across equivalent URLs, with direct promotion to a named view and
+  a clear-history action. Typing, pagination, reloads and form feedback do not
+  create history; unavailable browser storage does not block saved views.
+- Isolated saved-view and history coverage, including CSRF protection, literal
+  user text, damaged preferences, storage failures, mobile layouts and no-JS use.
+- A native before/after comparison of retained screenshots with capture/storage
+  dates, provenance and the recorded assessment-evidence marker. Selection is
+  read-only and cannot change an assessment or its export basis.
+- A filterable error overview linked from Settings health and Inventory, with
+  one entry per affected case. Latest capture/technical failures are separate
+  from historical job totals; image-file diagnostics run only on explicit views.
+- Isolated PHP and browser coverage for comparison, unavailable/invalid images,
+  deduplicated case errors, recovery from earlier failures, and read-only behavior.
+- A CI Settings browser smoke suite with isolated storage and mocked health
+  services, covering all eight preferences, DE/EN, narrow windows, native
+  forms, validation, and healthy/partial/stale/unreachable/unknown states.
+
 ## 2.0.1 — Moneta (2026-10-08)
 
 ### Added
