@@ -199,3 +199,7 @@
 @media (max-width: 720px) {
   .studio-work-card, .studio-evidence-workspace, .studio-inspector, .studio-technical-section, .studio-comparison, .studio-shot { scroll-margin-top: 125px; }
 }
+/* Seven case sections can wrap to three rows on narrow screens, also without JS. */
+@media (max-width: 480px) {
+  .studio-work-card, .studio-evidence-workspace, .studio-inspector, .studio-technical-section, .studio-comparison, .studio-shot { scroll-margin-top: 185px; }
+}

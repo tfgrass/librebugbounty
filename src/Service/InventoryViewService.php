@@ -131,6 +131,7 @@ final class InventoryViewService
             'event' => ['Ereignis', ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet', 'contacted' => 'Als kontaktiert markiert', 'confirmed' => 'Erstmals manuell bestätigt', 'fixed' => 'Erstmals manuell behoben']],
             'from' => ['Vom Tag', null], 'to' => ['Bis einschließlich', null], 'tld' => ['TLD', null],
             'sent' => ['Versand', ['yes' => 'Versand erfasst', 'no' => 'Kein Versand erfasst']],
+            'reminder' => ['Wiedervorlage', ['today' => 'Heute', 'overdue' => 'Überfällig', 'open' => 'Alle offenen Wiedervorlagen']],
             'contact_work' => ['Kontaktarbeit', ['allowed' => 'Nicht gesperrt', 'blocked' => 'Gesperrt']],
             'pursuit' => ['Nachverfolgung', ['active' => 'Wird weiterverfolgt', 'closed' => 'Nicht weiterverfolgen']],
             'closure_reason' => ['Beendigungsgrund', \App\Value\PursuitStatus::REASONS],

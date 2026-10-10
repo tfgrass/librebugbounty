@@ -124,3 +124,11 @@
   .studio-settings-actions { align-items: stretch; flex-direction: column; }
   .studio-settings-actions a { padding: 8px 0; text-align: center; }
 }
+
+/* Scoped policy controls stay usable without JavaScript. */
+.studio-restriction-list { list-style: none; padding: 0; display: grid; gap: 1rem; }
+.studio-restriction-list > li { border-top: 1px solid var(--studio-line, #34383e); padding-top: 1rem; overflow-wrap: anywhere; }
+.studio-restriction-list a, .studio-restriction-list span { display: block; }
+.studio-restriction-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.studio-restriction-actions button { border: 1px solid #50565e; border-radius: .5rem; padding: .55rem .8rem; background: #202429; color: inherit; cursor: pointer; }
+.studio-restriction-actions button:focus-visible { outline: 2px solid #f8b34b; outline-offset: 3px; }

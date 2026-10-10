@@ -275,3 +275,16 @@
 @media (prefers-reduced-motion: reduce) {
   [data-studio] *, [data-studio] *::before, [data-studio] *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+.studio-contact-route { margin-block: 1.25rem; }
+.studio-contact-route code { overflow-wrap: anywhere; white-space: normal; }
+.studio-contact-route-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+[data-contact-route-manual] { display: grid; gap: .6rem; min-width: 0; }
+[data-contact-route-manual] input, [data-contact-route-manual] textarea, [data-contact-route-manual] select { width: 100%; min-width: 0; box-sizing: border-box; background: #16191d; border: 1px solid #454a52; border-radius: .5rem; color: inherit; padding: .65rem; font: inherit; }
+[data-contact-route-suggestion] { margin-block: .6rem; }
+
+.studio-disclosure-record { width: min(100%, 1720px); box-sizing: border-box; margin: 1.5rem auto; }
+.studio-disclosure-record .studio-follow-up-grid { margin-block: 1rem; }
+[data-disclosure-activity], [data-disclosure-reminder] { display: grid; gap: .6rem; min-width: 0; }
+.studio-disclosure-record input, .studio-disclosure-record textarea, .studio-disclosure-record select { width: 100%; min-width: 0; box-sizing: border-box; background: #16191d; border: 1px solid #454a52; border-radius: .5rem; color: inherit; padding: .65rem; font: inherit; }
+.studio-disclosure-record .studio-record { overflow-wrap: anywhere; }

@@ -234,6 +234,8 @@ final class FindingService
             if (FindingWorkPolicy::available($this->entityManager->getConnection())) {
                 array_unshift($relatedClasses, \App\Entity\FindingFollowUp::class, \App\Entity\ContactDiscovery::class);
             }
+            if (\App\Service\ContactRouteService::available($this->entityManager->getConnection())) { array_unshift($relatedClasses, \App\Entity\FindingContactRoute::class); }
+            if (\App\Service\DisclosureRecordService::available($this->entityManager->getConnection())) { array_unshift($relatedClasses, \App\Entity\DisclosureActivity::class, \App\Entity\DisclosureReminder::class); }
             if ($this->reviewNotices?->available()) { array_unshift($relatedClasses, FindingReviewAcknowledgement::class); }
             if (AssessmentHistoryProjection::available($this->entityManager->getConnection())) {
                 foreach ($this->entityManager->getRepository(FindingAssessmentReset::class)->findBy(['finding' => $finding]) as $reset) {

@@ -14,7 +14,7 @@ final class FindingListService
         'q', 'domain', 'assessment', 'observation', 'contact', 'scope',
         'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket',
         'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain',
-        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review', 'pursuit', 'closure_reason', 'contact_work',
+        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review', 'pursuit', 'closure_reason', 'contact_work', 'reminder',
     ];
 
     public function __construct(
@@ -99,6 +99,7 @@ final class FindingListService
             'pursuit' => $filter->pursuit,
             'closure_reason' => $filter->closureReason,
             'contact_work' => $filter->contactWork,
+            'reminder' => $filter->reminder,
         ], static fn (string $value): bool => $value !== '');
     }
 
@@ -193,6 +194,7 @@ final class FindingListService
             pursuit: $get('pursuit'),
             closureReason: $get('closure_reason'),
             contactWork: $get('contact_work'),
+            reminder: $get('reminder'),
         );
 
         return [$filter, $page, $pageSize];

@@ -29,7 +29,7 @@ async function main() {
       await context.route('**/*', route => {
         const request = route.request(), url = new URL(request.url());
         if (url.origin !== origin) { external.push(url.href); return route.abort(); }
-        if (request.method() !== 'GET' && !/^\/findings\/[^/]+\/(follow-up|contact-discovery)$/.test(url.pathname)) unexpectedWrites.push(url.href);
+        if (request.method() !== 'GET' && !/^\/findings\/[^/]+\/(follow-up|contact-discovery|contact-route)$/.test(url.pathname) && url.pathname !== '/settings/restrictions') unexpectedWrites.push(url.href);
         return route.continue();
       });
       const page = await context.newPage();
@@ -44,6 +44,31 @@ async function main() {
       await submit(page.locator('[data-contact-discovery]'));
       assert.ok((await page.locator('[data-contact-status=found]').count()) >= 1);
       assert.ok((await page.locator('[data-contact-history]').innerText()).includes('https://diagnostics.invalid/report'));
+      await submit(page.locator('[data-contact-route-suggestion]').first());
+      assert.ok((await page.locator('[data-selected-contact-route]').innerText()).includes('security@diagnostics.invalid'));
+      await submit(page.locator('[data-contact-route-suggestion]').nth(1));
+      assert.ok((await page.locator('[data-selected-contact-route]').innerText()).includes('https://diagnostics.invalid/report'));
+      const oldRoute = await context.newPage();
+      await goto(oldRoute, detail);
+      await oldRoute.locator('[data-contact-route-manual-fold] > summary').click();
+      await page.locator('[data-contact-route-manual-fold] > summary').click();
+      const manual = page.locator('[data-contact-route-manual]');
+      await manual.locator('[name=channel]').selectOption('email');
+      await manual.locator('[name=destination]').fill('owner@diagnostics.invalid');
+      await manual.locator('[name=person]').fill('Owner <script>not executable</script>');
+      await manual.locator('[name=source]').fill('Manual contact form');
+      await manual.locator('[name=notes]').fill('Ask before sending\nNo automated mail');
+      await submit(manual);
+      assert.equal(new URL(page.url()).searchParams.has('message'), true);
+      const selectedRoute = await page.locator('[data-selected-contact-route]').innerText();
+      assert.ok(selectedRoute.includes('owner@diagnostics.invalid'));
+      assert.ok(selectedRoute.includes('Owner <script>not executable</script>'));
+      assert.equal(await page.locator('[data-selected-contact-route] script').count(), 0);
+      await submit(oldRoute.locator('[data-contact-route-manual]'));
+      assert.equal(new URL(oldRoute.url()).searchParams.has('error'), true, 'Old route form must not replace current selection');
+      await oldRoute.close();
+      await submit(page.locator('[data-contact-discovery]'));
+      assert.equal(await page.locator('[data-selected-contact-route]').innerText(), selectedRoute, 'Lookup cannot replace the chosen route');
       await caseForm.locator('[name=pursuit]').selectOption('closed');
       await caseForm.locator('[name=reason]').selectOption('contact_refused');
       await submit(caseForm);
@@ -78,7 +103,26 @@ async function main() {
         await page.waitForFunction(id => document.querySelector('#' + id).getBoundingClientRect().top >= document.querySelector('.studio-detail-sections').getBoundingClientRect().bottom, anchor);
         await page.screenshot({ path: path.join(output, `follow-up-${locale}-${width}-${javaScriptEnabled ? 'js' : 'native'}-${anchor}.png`) });
       }
-      mark(`${locale} ${width}px ${javaScriptEnabled ? 'JS' : 'no JS'}: sourced contacts, close/reopen, case/domain restrictions, statistics drilldown`);
+      const stale = await context.newPage();
+      await goto(stale, detail);
+      await stale.locator('[data-domain-restrictions] > summary').click();
+      await page.locator('[data-domain-restrictions] > summary').click();
+      await domainForm.locator('[name=checks_blocked]').check();
+      await submit(domainForm);
+      await submit(stale.locator('[data-follow-up=domain]'));
+      assert.equal(new URL(stale.url()).searchParams.has('error'), true, 'Old tab must be rejected');
+      await stale.close();
+      await goto(page, '/settings#restrictions');
+      const central = page.locator('[data-restrictions]');
+      assert.equal(await central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]').count(), 1);
+      await page.screenshot({ path: path.join(output, `restrictions-${locale}-${width}-${javaScriptEnabled ? 'js' : 'native'}.png`) });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await submit(central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]'));
+      assert.equal(new URL(page.url()).searchParams.has('message'), true);
+      assert.equal(await central.locator('[data-restriction-scope=domain] [data-restriction-action=checks_blocked]').count(), 0);
+      await goto(page, detail);
+      assert.equal(await page.locator('[data-studio-retest-action]').count(), 1);
+      mark(`${locale} ${width}px ${javaScriptEnabled ? 'JS' : 'no JS'}: sourced contacts, close/reopen, case/domain restrictions, manual/suggested contact choice, refresh preservation, statistics drilldown, stale tab rejection and central restriction release`);
       await context.close();
     }
     assert.equal(await state(), before, 'Administrative edits must preserve assessments, contact markers, jobs and stored evidence');

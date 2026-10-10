@@ -102,6 +102,14 @@ final class FindingReadRepository
             'all' => [],
         };
         $parameters = [];
+        if ($filter->reminder !== '') {
+            if (!\App\Service\DisclosureRecordService::available($this->connection)) $conditions[] = '1 = 0';
+            else {
+                $due = match ($filter->reminder) { 'today' => ' AND dr.due_on = :reminder_today', 'overdue' => ' AND dr.due_on < :reminder_today', default => '' };
+                $conditions[] = 'EXISTS (SELECT 1 FROM disclosure_reminder dr WHERE dr.finding_id = f.id AND dr.completed_at IS NULL'.$due.')';
+                if ($due !== '') $parameters['reminder_today'] = \App\Service\DisclosureRecordService::today();
+            }
+        }
         if ($filter->contactWork !== '') $conditions[] = ($filter->contactWork === 'blocked' ? 'NOT (' : '(').\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).')';
         if ($filter->pursuit !== '' || $filter->closureReason !== '') {
             $available = \App\Service\FindingWorkPolicy::available($this->connection);

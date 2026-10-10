@@ -18,6 +18,24 @@ repository's tagged commits.
 
 ### Added
 
+- Local disclosure history for report submissions, responses and notes, with
+  date/channel/recipient and optional ticket/comment; repeated form submissions
+  are deduplicated. One revision-protected manual reminder per case supports
+  replacement and completion, plus Today/Overdue/Open Inventory filters available
+  to saved views. No extra worker, messages or legacy marker changes. Includes an
+  additive migration and explicit case-deletion cleanup.
+
+- One chosen disclosure route per case, from stored email/web suggestions or a
+  manual email/form/portal entry with optional person, source and note. A source
+  snapshot survives lookups and expiry; stale forms and unavailable/foreign
+  suggestions are rejected. No messages, policy changes or historical marker
+  changes. Includes an additive contact-route migration and deletion cleanup.
+
+- Settings restriction centre with retained hostnames even after case deletion,
+  scoped contact/check releases, case reopening and the last 100 policy changes.
+  Native policy forms reject stale revisions, including changes reverted by
+  another tab, without altering another scope or scheduling new rechecks.
+
 - Independent follow-up status and closure reasons, with explicit case or
   exact-hostname contact/check opt-outs, retained restriction history and
   backend execution/queue guards. Reopening does not change an assessment.

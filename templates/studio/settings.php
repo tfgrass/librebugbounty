@@ -203,6 +203,8 @@
             </section>
           </section>
 
+          <?php require __DIR__.'/restrictions.php'; ?>
+
           <section class="studio-settings-panel studio-about-panel" id="about" aria-labelledby="about-title">
             <div class="studio-about-hero" data-about-release>
               <?php $logoSize = 72; $logoClass = 'studio-about-logo'; require __DIR__.'/logo.php'; unset($logoSize, $logoClass); ?>

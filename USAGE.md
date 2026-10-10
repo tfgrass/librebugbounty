@@ -47,6 +47,18 @@ undone. Assessments, evidence and historical contact/sent markers are preserved.
 Case deletion removes its policy and contact attempts, but exact-domain opt-outs
 and restriction audit history (including case ID and hostname) are retained.
 
+**Settings → Restriction centre** lists case restrictions and retained domain
+policies, including hostnames without remaining cases. Lift contact or check
+restrictions individually; reopening a case leaves its explicit restrictions
+unchanged. A closed case remains effectively blocked until reopened, even after
+an individual flag is lifted. The last 100 policy changes are available in the
+log. Released domain policies remain visible with their history.
+
+Policy forms carry a scope-specific revision. If another tab or another case on
+the same hostname changes that scope, reload before saving; the older form cannot
+overwrite it, including when the other tab changed and reverted the flags.
+These controls use native forms and work without JavaScript.
+
 **Contact suggestions** fetches security.txt only when you press its button.
 It never sends a message. Read the source, fetch time, expiry, warnings and
 published policy before using a suggestion. Email and form/disclosure-portal
@@ -56,12 +68,52 @@ currently supported. Failed lookups retain earlier results; repeat clicks within
 one minute are coalesced. Closed/discarded or contact/check-blocked cases cannot
 start a lookup.
 
+**Chosen disclosure route** stores one local choice per case. Choose an email or
+form/portal suggestion using **Choose as disclosure route**, or use **Add contact
+manually**, also when no security.txt exists. Manual entries accept an email or
+HTTP(S) form/portal URL (HTTPS recommended), plus optional contact person, source
+and note. Saving replaces the previous route; it sends nothing, lifts no policy
+restrictions and does not change historical contact or sent markers.
+
+Suggestions are resolved from that case's stored lookup on the server. Expired,
+failed or foreign suggestions cannot be chosen. The chosen address and source
+snapshot are independent of further lookups; even a later failure or expiry
+does not erase the choice. An expired chosen source is shown with a warning.
+Reload before changing a route from an older tab. Contact selection needs the
+additive `Version20261010010000` migration (`ddev exec php bin/console app:db:init`
+after backing up); it creates no jobs and needs no additional worker.
+
 Inventory filters and saved/recent views support follow-up status, closure reason
 and contact-work restrictions. Statistics show current closure reasons and the
 median from recorded confirmation to the **documented contact marker**, together
 with sample size and missing/invalid dates. This is not measured first contact or
 a response rate. These cards use retained all-time records and the selected TLD,
 independently of the chart period; reason links open matching Inventory cases.
+
+## Disclosure record and reminders (Unreleased)
+
+**Disclosure & history** in a case records **Report submitted**, **Response
+received** or **Note**. Supply a calendar date, channel and recipient/participant
+(for internal notes, choose Internal and identify the participant). Ticket number
+and comment are optional. The selected disclosure route prefills channel and
+recipient, but you can change them for the activity. Records are ordered by the
+activity date; the separate recorded-on timestamp documents entry time.
+Submitting the same form twice does not duplicate the activity.
+
+One open manual reminder per case stores a date and next step. Saving replaces
+that reminder; **Complete reminder** closes it. Saving again opens a new current
+reminder, without creating additional open reminders. Older tabs cannot overwrite
+or complete newer reminders. **Today**, **Overdue** and **All open reminders** are
+Inventory filters under More filters and can be saved as custom views. Today is
+the Europe/Berlin calendar day; Overdue means strictly before today. Completed
+reminders do not match. Other Inventory filters and archive scopes still apply.
+
+Recording an activity does not send a message, modify historical contact/sent
+markers, change an assessment or create checks/jobs. Reminders need no worker
+and do not send notifications. Case deletion removes its disclosure record and
+reminder. This feature needs additive `Version20261010020000`; back up first,
+then run `ddev exec php bin/console app:db:init`. No historical activities or
+reminders are inferred from old markers.
 
 ## Manual review
 

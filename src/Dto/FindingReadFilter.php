@@ -30,7 +30,9 @@ final readonly class FindingReadFilter
         public string $pursuit = '',
         public string $closureReason = '',
         public string $contactWork = '',
+        public string $reminder = '',
     ) {
+        self::validate('reminder', $reminder, ['', 'today', 'overdue', 'open']);
         self::validate('contact work', $contactWork, ['', 'allowed', 'blocked']);
         self::validate('pursuit', $pursuit, ['', 'active', 'closed']);
         self::validate('closure reason', $closureReason, ['', ...array_keys(\App\Value\PursuitStatus::REASONS)]);

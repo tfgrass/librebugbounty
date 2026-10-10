@@ -88,6 +88,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
         <a href="#vergleich"><?= $escape($t('Bildvergleich')) ?></a>
         <a href="#nachverfolgung"><?= $escape($t('Nachverfolgung')) ?></a>
         <a href="#kontakte"><?= $escape($t('Kontaktvorschläge')) ?></a>
+        <a href="#meldung"><?= $escape($t('Meldung & Verlauf')) ?></a>
         <a href="#entscheidung"><?= $escape($t('Entscheidung')) ?></a>
         <a href="#verlauf" data-open-history><?= $escape($t('Verlauf')) ?> <span><?= $escape($formatNumber(count($view->assessments) + count($view->screenshotJobs) + count($view->runs))) ?></span></a>
       </nav>
@@ -310,6 +311,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
       </div>
 
       <?php require __DIR__.'/follow-up.php'; ?>
+      <?php require __DIR__.'/disclosure-record.php'; ?>
       <?php require __DIR__.'/comparison.php'; ?>
 
       <section class="studio-technical-section" id="verlauf" aria-label="<?= $escape($t('Technik und Historie')) ?>" tabindex="-1">

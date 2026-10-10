@@ -36,6 +36,8 @@ final class StudioController
         private readonly InventoryViewService $inventoryViews,
         private readonly \App\Service\FollowUpService $followUp,
         private readonly \App\Service\ContactDiscoveryService $contacts,
+        private readonly \App\Service\ContactRouteService $contactRoutes,
+        private readonly \App\Service\DisclosureRecordService $disclosureRecords,
         private readonly \App\Service\FollowUpStatisticsService $followUpStatistics,
     ) {
     }
@@ -167,6 +169,8 @@ final class StudioController
         $workHistory = $this->followUp->history($view->finding);
         $contactProviders = $this->contacts->providers();
         $contactHistory = $this->contacts->history($view->finding);
+        $contactRoute = $this->contactRoutes->state($view->finding);
+        $disclosureRecord = $this->disclosureRecords->state($view->finding);
         try {
             $comparison = $this->comparison->get($view, $request->query->all());
         } catch (\InvalidArgumentException $exception) {

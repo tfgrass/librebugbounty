@@ -41,6 +41,7 @@ final class FindingWorkController
                 $this->contacts->discover($finding, $input['provider']);
                 $message = 'Kontaktvorschläge aktualisiert. Wiederholte Anfragen innerhalb einer Minute werden zusammengefasst.';
             } else {
+                if (!is_string($input['revision'] ?? null)) throw new \InvalidArgumentException('Ungültige Formularrevision. Bitte lade die Seite neu.');
                 $this->followUp->save($finding, $input);
                 $message = 'Nachverfolgung gespeichert. Die fachliche Bewertung bleibt unverändert.';
             }

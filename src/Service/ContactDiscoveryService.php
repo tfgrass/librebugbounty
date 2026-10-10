@@ -21,7 +21,7 @@ final class ContactDiscoveryService
     public function history(Finding $finding): array
     {
         if (!FindingWorkPolicy::available($this->connection)) return [];
-        $rows = $this->connection->fetchAllAssociative('SELECT provider, result, fetched_at FROM contact_discovery WHERE finding_id = ? ORDER BY fetched_at DESC, rowid DESC LIMIT 10', [$finding->getId()]);
+        $rows = $this->connection->fetchAllAssociative('SELECT id, provider, result, fetched_at FROM contact_discovery WHERE finding_id = ? ORDER BY fetched_at DESC, rowid DESC LIMIT 10', [$finding->getId()]);
         foreach ($rows as &$row) $row['result'] = json_decode($row['result'], true, 32, JSON_THROW_ON_ERROR);
         return $rows;
     }

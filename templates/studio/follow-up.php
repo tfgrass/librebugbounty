@@ -12,7 +12,7 @@ $statusLabels = ['pending' => 'Abruf vorgemerkt', 'found' => 'Kontaktvorschläge
       <p class="studio-work-effective" data-effective-policy><?= $escape($t($workState['checksBlocked'] ? 'Prüfungen gesperrt' : 'Prüfungen nicht gesperrt')) ?> · <?= $escape($t($workState['contactBlocked'] ? 'Kontakt gesperrt' : 'Kontakt nicht gesperrt')) ?></p>
       <form method="post" action="<?= $escape($findingPath) ?>/follow-up" data-follow-up="case">
         <?= $csrfField('finding_follow_up_'.$finding->getId()) ?><?= $returnField ?>
-        <input type="hidden" name="scope" value="case">
+        <input type="hidden" name="scope" value="case"><input type="hidden" name="revision" value="<?= $escape($workState['revisions']['case']) ?>">
         <label for="follow-up-pursuit"><?= $escape($t('Dieser Fall')) ?></label>
         <select id="follow-up-pursuit" name="pursuit"><?php foreach (['active' => 'Wird weiterverfolgt', 'closed' => 'Nicht weiterverfolgen'] as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $workState['case']['pursuit'] === $value ? ' selected' : '' ?>><?= $escape($t($label)) ?></option><?php endforeach; ?></select>
         <label for="follow-up-reason"><?= $escape($t('Beendigungsgrund')) ?></label>
@@ -28,7 +28,7 @@ $statusLabels = ['pending' => 'Abruf vorgemerkt', 'found' => 'Kontaktvorschläge
         <p><?= $escape($t('Gilt für alle Fälle dieses exakten Hostnamens, auch bei erneutem Import. Subdomains sind nicht eingeschlossen.')) ?></p>
         <p><?= $escape($t($workState['domain']['checks_blocked'] ? 'Prüfungen gesperrt' : 'Prüfungen nicht gesperrt')) ?> · <?= $escape($t($workState['domain']['contact_blocked'] ? 'Kontakt gesperrt' : 'Kontakt nicht gesperrt')) ?></p>
         <form method="post" action="<?= $escape($findingPath) ?>/follow-up" data-follow-up="domain">
-          <?= $csrfField('finding_follow_up_'.$finding->getId()) ?><?= $returnField ?><input type="hidden" name="scope" value="domain">
+          <?= $csrfField('finding_follow_up_'.$finding->getId()) ?><?= $returnField ?><input type="hidden" name="scope" value="domain"><input type="hidden" name="revision" value="<?= $escape($workState['revisions']['domain']) ?>">
           <?php foreach (['contact_blocked' => 'Keine weiteren Kontakte', 'checks_blocked' => 'Keine weiteren Prüfungen'] as $flag => $label): ?><label class="studio-work-check"><input type="checkbox" name="<?= $escape($flag) ?>" value="1"<?= $workState['domain'][$flag] ? ' checked' : '' ?>> <span><?= $escape($t($label)) ?></span></label><?php endforeach; ?>
           <button class="studio-detail-button" type="submit"><?= $escape($t('Domainsperren speichern')) ?></button>
         </form>
@@ -53,6 +53,7 @@ $statusLabels = ['pending' => 'Abruf vorgemerkt', 'found' => 'Kontaktvorschläge
       </form>
     <?php else: ?><p data-contact-discovery-blocked><?= $escape($t('Kontaktermittlung ist für diesen Fall nicht verfügbar oder gesperrt.')) ?></p><?php endif; ?>
     <?php if ($contactHistory === []): ?><p><?= $escape($t('Noch keine Kontaktabfrage gespeichert.')) ?></p><?php endif; ?>
+    <?php require __DIR__.'/contact-route.php'; ?>
     <ol class="studio-record-list" data-contact-history>
       <?php foreach ($contactHistory as $attempt): $result = $attempt['result']; ?>
         <li class="studio-record" data-contact-status="<?= $escape($result['status']) ?>">
@@ -61,7 +62,16 @@ $statusLabels = ['pending' => 'Abruf vorgemerkt', 'found' => 'Kontaktvorschläge
           <?php if ($result['source'] !== ''): ?><p><?= $escape($t('Quelle')) ?>: <code><?= $escape($result['source']) ?></code></p><?php endif; ?>
           <?php if ($result['expires'] !== null): ?><p><?= $escape($t('Veröffentlichtes Ablaufdatum')) ?>: <?= $escape($storedTime($result['expires'])) ?></p><?php endif; ?>
           <?php if ($result['status'] !== 'found' && $result['contacts'] !== []): ?><p class="studio-detail-hint"><?= $escape($t('Nicht als aktuelle Kontaktfreigabe verwenden.')) ?></p><?php endif; ?>
-          <ul><?php foreach ($result['contacts'] as $contact): ?><li><?= $escape($t($contact['channel'] === 'email' ? 'E-Mail' : 'Formular oder Meldeportal')) ?>: <code><?= $escape($contact['value']) ?></code></li><?php endforeach; ?></ul>
+          <ul><?php foreach ($result['contacts'] as $contactIndex => $contact): ?><li><?= $escape($t($contact['channel'] === 'email' ? 'E-Mail' : 'Formular oder Meldeportal')) ?>: <code><?= $escape($contact['value']) ?></code>
+            <?php if ($contactRoute['available'] && \App\Service\ContactRouteService::suggestionCurrent($result)): ?>
+              <form method="post" action="<?= $escape($findingPath) ?>/contact-route" data-contact-route-suggestion>
+                <?= $csrfField('finding_contact_route_'.$finding->getId()) ?><?= $returnField ?>
+                <input type="hidden" name="mode" value="suggestion"><input type="hidden" name="revision" value="<?= $escape($contactRoute['revision']) ?>">
+                <input type="hidden" name="attempt_id" value="<?= $escape($attempt['id']) ?>"><input type="hidden" name="contact_index" value="<?= (int) $contactIndex ?>">
+                <button class="studio-detail-button" type="submit"><?= $escape($t('Als Meldeweg wählen')) ?></button>
+              </form>
+            <?php endif; ?>
+          </li><?php endforeach; ?></ul>
           <?php foreach ($result['policies'] as $policyUrl): ?><p><?= $escape($t('Melderichtlinie')) ?>: <code><?= $escape($policyUrl) ?></code></p><?php endforeach; ?>
           <?php if ($result['languages'] !== []): ?><p><?= $escape($t('Bevorzugte Sprachen')) ?>: <?= $escape(implode(', ', $result['languages'])) ?></p><?php endif; ?>
           <?php foreach ($result['warnings'] as $warning): ?><p class="studio-detail-hint"><?= $escape($t($warning)) ?></p><?php endforeach; ?>
