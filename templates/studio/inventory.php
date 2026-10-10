@@ -19,7 +19,7 @@ $scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(arra
 $resetUrl = $path.'?'.http_build_query(['pageSize' => $pagination['pageSize']], '', '&', PHP_QUERY_RFC3986);
 $exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
-$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '';
+$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '' || $filter->pursuit !== '' || $filter->closureReason !== '' || $filter->contactWork !== '';
 $hasSelectionFilters = $hasAdditionalFilters || $filter->q !== '' || $filter->assessment !== '' || $filter->observation !== '' || $filter->contact !== '';
 $isFirstStart = $view->stats['active']['count'] + $view->stats['discarded']['count'] === 0;
 $isArchivedOnly = !$isFirstStart && $view->stats['active']['count'] === 0 && $filter->scope === 'active' && !$hasSelectionFilters;
@@ -102,6 +102,9 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
             <details class="studio-list-additional"<?= $hasAdditionalFilters ? ' open' : '' ?>>
               <summary><?= $escape($t('Weitere Filter')) ?><?= $hasAdditionalFilters ? $escape($t(' · aktiv')) : '' ?></summary>
               <div class="studio-list-additional-fields">
+                <?php foreach (['pursuit' => ['Nachverfolgung', $filter->pursuit, ['active' => 'Wird weiterverfolgt', 'closed' => 'Nicht weiterverfolgen']], 'closure_reason' => ['Beendigungsgrund', $filter->closureReason, \App\Value\PursuitStatus::REASONS], 'contact_work' => ['Kontaktarbeit', $filter->contactWork, ['allowed' => 'Nicht gesperrt', 'blocked' => 'Gesperrt']]] as $name => [$label, $selected, $choices]): ?>
+                  <label><?= $escape($t($label)) ?><select name="<?= $escape($name) ?>"><option value=""><?= $escape($t('Alle')) ?></option><?php foreach ($choices as $value => $choice): ?><option value="<?= $escape($value) ?>"<?= $selected === $value ? ' selected' : '' ?>><?= $escape($t($choice)) ?></option><?php endforeach; ?></select></label>
+                <?php endforeach; ?>
                 <label>Domain <input name="domain" value="<?= $escape($filter->domain) ?>" placeholder="example.com" autocomplete="off"></label>
                 <label><?= $escape($t('Domainvergleich')) ?> <select name="exact_domain"><option value="0"<?= !$filter->exactDomain ? ' selected' : '' ?>><?= $escape($t('Enthält den Domainfilter')) ?></option><option value="1"<?= $filter->exactDomain ? ' selected' : '' ?>><?= $escape($t('Entspricht dem Domainfilter exakt')) ?></option></select></label>
                 <label><?= $escape($t('Ereignis')) ?> <select name="event"><option value=""><?= $escape($t('Kein Ereignisfilter')) ?></option><?php foreach ($eventLabels as $value => $label): ?><option value="<?= $escape($value) ?>"<?= $filter->event === $value ? ' selected' : '' ?>><?= $escape($t($label)) ?></option><?php endforeach; ?></select></label>
@@ -153,6 +156,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
               <article class="studio-finding-row" data-finding-id="<?= $escape($finding->id) ?>">
                 <div class="studio-finding-identity">
                   <a class="studio-finding-domain" href="<?= $escape($detailUrl) ?>"><?= $escape($finding->domain) ?></a>
+                  <?php if ($finding->pursuit === 'closed' || $finding->checksBlocked || $finding->contactBlocked): ?><p class="studio-finding-record-meta" data-work-status><?php if ($finding->pursuit === 'closed'): ?><span><?= $escape($t('Nicht weiterverfolgen')) ?></span><?php endif; ?><?php if ($finding->checksBlocked): ?><span><?= $escape($t('Prüfungen gesperrt')) ?></span><?php endif; ?><?php if ($finding->contactBlocked): ?><span><?= $escape($t('Kontakt gesperrt')) ?></span><?php endif; ?></p><?php endif; ?>
                   <p class="studio-finding-title"><?= $escape($finding->title) ?></p>
                   <p class="studio-finding-url" title="<?= $escape($finding->url) ?>"><?= $escape($finding->url) ?></p>
                   <p class="studio-finding-record-meta"><code><?= $escape(substr($finding->id, 0, 8)) ?></code><span><?= $escape($finding->type) ?></span><span><?= $escape($finding->severity) ?></span></p>

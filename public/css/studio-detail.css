@@ -182,3 +182,20 @@
   .studio-comparison-shot .studio-shot-image-link { min-height: 220px; height: 320px; }
   .studio-detail-sections { gap: 16px; flex-wrap: wrap; }
 }
+
+/* Administrative state is deliberately separate from factual assessment. */
+.studio-follow-up-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0; }
+.studio-work-card { min-width: 0; padding: 1.4rem; border: 1px solid var(--studio-border, #363b40); border-radius: 12px; overflow-wrap: anywhere; }
+.studio-work-card h2 { margin-top: 0; }
+.studio-work-card form { display: grid; gap: .75rem; margin: 1rem 0; }
+.studio-work-card select { box-sizing: border-box; width: 100%; min-width: 0; padding: .65rem; color: inherit; background: #181c20; border: 1px solid #525962; border-radius: 6px; }
+.studio-work-check { display: flex; align-items: start; gap: .65rem; }
+.studio-work-check input { flex: 0 0 auto; margin-top: .25rem; }
+.studio-work-effective { border-left: 3px solid #93b4d0; padding-left: .7rem; }
+.studio-work-card code { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .studio-follow-up-grid { grid-template-columns: 1fr; } }
+.studio-follow-up-grid { width: min(100%, 1720px); margin-inline: auto; }
+.studio-work-card { scroll-margin-top: 60px; }
+@media (max-width: 720px) {
+  .studio-work-card, .studio-evidence-workspace, .studio-inspector, .studio-technical-section, .studio-comparison, .studio-shot { scroll-margin-top: 125px; }
+}

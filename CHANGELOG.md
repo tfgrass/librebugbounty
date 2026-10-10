@@ -18,6 +18,21 @@ repository's tagged commits.
 
 ### Added
 
+- Independent follow-up status and closure reasons, with explicit case or
+  exact-hostname contact/check opt-outs, retained restriction history and
+  backend execution/queue guards. Reopening does not change an assessment.
+- Follow-up filters and badges, available to saved/recent views, plus current
+  closure-reason counts and confirmation-to-contact-marker median with sample
+  size, missing dates and consistent inventory drilldowns.
+- Manually triggered security.txt contact suggestions with source, retrieval
+  time, expiry, email/web channels, policies and distinct invalid/error states.
+  Repeated requests coalesce; previous attempts remain stored. Private-network
+  requests, redirects and oversized responses are blocked.
+- A trusted-code contact-provider interface as a future extension seam, not an
+  arbitrary plugin loader or automatic enrichment/messaging system.
+- Additive migration `Version20261010000000`; see `ENRICHMENT.md` for deployment,
+  retained opt-outs/audit data, limitations and rollback considerations.
+
 - Named Inventory views with native save, rename, open and delete controls.
   Views retain validated filters, not page numbers, page sizes or frozen results;
   they are stored with installation settings and work without JavaScript.

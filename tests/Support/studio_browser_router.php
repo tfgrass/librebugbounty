@@ -27,6 +27,10 @@ $kernel = new class('dev', false) extends App\Kernel {
     protected function configureContainer(Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator $container): void
     {
         parent::configureContainer($container);
+        $container->services()->set(App\Tests\Support\StudioContactFixture::class);
+        $container->services()->set(App\Service\ContactDiscoveryService::class)->autowire()
+            ->arg('$providers', [Symfony\Component\DependencyInjection\Loader\Configurator\service(App\Tests\Support\StudioContactFixture::class)]);
+
         $container->services()->set('studio.health_http_client', Symfony\Component\HttpClient\MockHttpClient::class)
             ->factory([App\Tests\Support\StudioHealthFixture::class, 'httpClient']);
         $container->services()->set(App\Service\BrowserHealthService::class)->autowire()

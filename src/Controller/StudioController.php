@@ -34,6 +34,9 @@ final class StudioController
         private readonly ScreenshotComparisonService $comparison,
         private readonly FindingProblemService $problems,
         private readonly InventoryViewService $inventoryViews,
+        private readonly \App\Service\FollowUpService $followUp,
+        private readonly \App\Service\ContactDiscoveryService $contacts,
+        private readonly \App\Service\FollowUpStatisticsService $followUpStatistics,
     ) {
     }
 
@@ -106,6 +109,7 @@ final class StudioController
                 'Content-Type' => 'text/plain; charset=UTF-8', 'Cache-Control' => 'no-store',
             ]);
         }
+        $followUpStats = $this->followUpStatistics->get($view['filters']['tld'] ?? '');
         $isFirstStart = $this->findings->count([]) === 0;
         $languageReturnPath = $request->getRequestUri();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -159,6 +163,10 @@ final class StudioController
         }
 
         $view = $this->findingDetail->get($id);
+        $workState = $this->followUp->state($view->finding);
+        $workHistory = $this->followUp->history($view->finding);
+        $contactProviders = $this->contacts->providers();
+        $contactHistory = $this->contacts->history($view->finding);
         try {
             $comparison = $this->comparison->get($view, $request->query->all());
         } catch (\InvalidArgumentException $exception) {

@@ -305,7 +305,7 @@ final class StatisticsServiceTest extends DatabaseTestCase
         self::assertSame(2, $aging['old']['count'], 'Historical delivery markers no longer exclude uncontacted cases.');
         self::assertStringContainsString('from=2026-09-03&to=2026-09-25', $aging['waiting']['url']);
         self::assertStringContainsString('to=2026-09-02', $aging['old']['url']);
-        self::assertStringContainsString('contact=no&event=reported', $aging['old']['url']);
+        self::assertStringContainsString('contact=no&contact_work=allowed&event=reported', $aging['old']['url']);
         self::assertStringNotContainsString('sent=', $aging['old']['url']);
         $this->assertHistoryLinksMatch($view['aging']);
     }

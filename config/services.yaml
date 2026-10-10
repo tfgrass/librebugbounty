@@ -50,3 +50,17 @@ services:
   App\Service\PlaywrightBrowserScreenshotClient:
     arguments:
       $workerUrl: '%app.playwright_worker_url%'
+
+  app.security_txt_transport:
+    class: Symfony\Contracts\HttpClient\HttpClientInterface
+    factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
+    arguments:
+      - { proxy: '', max_redirects: 0, verify_peer: true, verify_host: true }
+
+  app.security_txt_public_client:
+    class: Symfony\Component\HttpClient\NoPrivateNetworkHttpClient
+    arguments: ['@app.security_txt_transport']
+
+  App\Service\SecurityTxtProvider:
+    arguments:
+      $client: '@app.security_txt_public_client'

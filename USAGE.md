@@ -31,6 +31,38 @@ An empty active inventory can also mean that all cases are archived. Use the
 archive selection to find them. If filters have no matches, clear the filters
 instead of creating a new case.
 
+## Follow-up and contact suggestions (Unreleased)
+
+In a case, **Follow-up → Do not pursue** records a closure reason independently
+of the assessment. Explicit **No further contact** and **No further checks**
+flags remain separate. A second form applies opt-outs to the exact hostname,
+including future imports; it does not include subdomains. Reopening one case
+cannot lift a domain restriction. Previously discarded cases are not converted
+into objections automatically.
+
+Closing/check-blocking prevents new checks and parks queued screenshot jobs.
+Lifting the restriction may release those old screenshot jobs. Recheck dates are
+cleared and are not recreated by reopening. Already-started requests cannot be
+undone. Assessments, evidence and historical contact/sent markers are preserved.
+Case deletion removes its policy and contact attempts, but exact-domain opt-outs
+and restriction audit history (including case ID and hostname) are retained.
+
+**Contact suggestions** fetches security.txt only when you press its button.
+It never sends a message. Read the source, fetch time, expiry, warnings and
+published policy before using a suggestion. Email and form/disclosure-portal
+channels are shown equally. A channel is not authorization to test or a promise
+of a bounty. Redirects, PGP-signed documents and non-HTTPS web channels are not
+currently supported. Failed lookups retain earlier results; repeat clicks within
+one minute are coalesced. Closed/discarded or contact/check-blocked cases cannot
+start a lookup.
+
+Inventory filters and saved/recent views support follow-up status, closure reason
+and contact-work restrictions. Statistics show current closure reasons and the
+median from recorded confirmation to the **documented contact marker**, together
+with sample size and missing/invalid dates. This is not measured first contact or
+a response rate. These cards use retained all-time records and the selected TLD,
+independently of the chart period; reason links open matching Inventory cases.
+
 ## Manual review
 
 Review prioritizes cases with readable images. Change the review selection to

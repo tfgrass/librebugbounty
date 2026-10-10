@@ -86,6 +86,8 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
       <nav class="studio-detail-sections" aria-label="<?= $escape($t('Bereiche dieses Falls')) ?>">
         <a href="#beleg"><?= $escape($t('Beleg')) ?></a>
         <a href="#vergleich"><?= $escape($t('Bildvergleich')) ?></a>
+        <a href="#nachverfolgung"><?= $escape($t('Nachverfolgung')) ?></a>
+        <a href="#kontakte"><?= $escape($t('Kontaktvorschläge')) ?></a>
         <a href="#entscheidung"><?= $escape($t('Entscheidung')) ?></a>
         <a href="#verlauf" data-open-history><?= $escape($t('Verlauf')) ?> <span><?= $escape($formatNumber(count($view->assessments) + count($view->screenshotJobs) + count($view->runs))) ?></span></a>
       </nav>
@@ -271,7 +273,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
               </form>
             <?php endif; ?>
           </section>
-          <?php if (!$finding->isDiscarded()): ?>
+          <?php if (!$finding->isDiscarded() && !$workState['checksBlocked']): ?>
             <section class="studio-inspector-section" aria-labelledby="studio-technical-actions-title">
               <h2 id="studio-technical-actions-title"><?= $escape($t('Technische Aktionen')) ?></h2>
               <div class="studio-technical-actions">
@@ -292,6 +294,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
             <h2 id="studio-maintenance-title"><?= $escape($t('Fallverwaltung')) ?></h2>
             <details class="studio-detail-fold studio-delete" data-studio-delete-section>
               <summary><?= $escape($t('Fall endgültig löschen')) ?></summary>
+              <p class="studio-detail-hint"><?= $escape($t('Domainsperren und das Sperrprotokoll bleiben auch nach dem Löschen erhalten.')) ?></p>
               <p class="studio-detail-hint"><?= $escape($t('Dieser Fall, seine Bewertungen, technischen Beobachtungen, Screenshot-Aufträge und Belege werden dauerhaft entfernt.')) ?></p>
               <form method="post" action="<?= $escape($findingPath) ?>/delete" data-studio-delete>
                 <?= $returnField ?>
@@ -306,6 +309,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
         </aside>
       </div>
 
+      <?php require __DIR__.'/follow-up.php'; ?>
       <?php require __DIR__.'/comparison.php'; ?>
 
       <section class="studio-technical-section" id="verlauf" aria-label="<?= $escape($t('Technik und Historie')) ?>" tabindex="-1">

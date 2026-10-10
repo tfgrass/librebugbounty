@@ -56,7 +56,7 @@ final class RecheckScheduleService
             FindingStatus::WONTFIX,
         ]);
 
-        return "status IN ('".$statuses."')"
+        return FindingWorkPolicy::checksAllowedSql($this->connection, 'finding')." AND status IN ('".$statuses."')"
             ." AND manual_assessment IS NULL"
             ." AND (review_state IS NULL OR review_state NOT IN ('"
             .ReviewState::MANUAL_CHECKING."', '".ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";

@@ -76,6 +76,14 @@ An optional decision pause helps prevent accidental classifications.
 notes and completed contacts, and request rechecks or new screenshots.
 Opening a case never starts browser work.
 
+**Follow-up** (Unreleased) separates “Do not pursue” and explicit case/domain
+contact/check opt-outs from the factual assessment. Manual **security.txt contact
+discovery** retains sourced email and disclosure-portal suggestions; it never
+sends messages. Follow-up statistics expose sample sizes and missing dates.
+See [usage](USAGE.md#follow-up-and-contact-suggestions-unreleased) and the
+[internal provider/deployment notes](ENRICHMENT.md). Hunter.io, AI and arbitrary
+plugins are not implemented.
+
 **My views** saves named filter combinations for quick access to the current
 matching cases. **Recent views** keeps the last ten applied combinations in your
 browser; promote one to a saved view or clear the local history at any time.

@@ -41,6 +41,7 @@ try:
         subprocess.run(["node", "tests/browser/studio-preferences.cjs"], cwd=project, env=env, check=True, timeout=180)
         subprocess.run(["node", "tests/browser/studio-diagnostics.cjs"], cwd=project, env=env, check=True, timeout=180)
         subprocess.run(["node", "tests/browser/studio-inventory-views.cjs"], cwd=project, env=env, check=True, timeout=180)
+        subprocess.run(["node", "tests/browser/studio-follow-up.cjs"], cwd=project, env=env, check=True, timeout=180)
     print(f"Settings smoke artifacts: {output}", flush=True)
 finally:
     if server is not None:

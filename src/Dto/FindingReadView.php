@@ -27,6 +27,9 @@ final readonly class FindingReadView
         public ?\DateTimeImmutable $sentAt = null,
         public bool $reviewNotice = false,
         public array $noticeReasons = [],
+        public string $pursuit = 'active',
+        public bool $checksBlocked = false,
+        public bool $contactBlocked = false,
     ) {
     }
 }

@@ -7,3 +7,12 @@ services:
     autowire: true
     arguments:
       $httpClient: '@test.health_http_client'
+
+  # Contact lookups in tests cannot make DNS or network requests.
+  test.security_txt_http_client:
+    class: Symfony\Component\HttpClient\MockHttpClient
+
+  App\Service\SecurityTxtProvider:
+    autowire: true
+    arguments:
+      $client: '@test.security_txt_http_client'

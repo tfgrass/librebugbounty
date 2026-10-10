@@ -44,7 +44,7 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
             $id = $connection->fetchOne(
                 // UUIDs are random and requested_at only has second precision. This is a
                 // SQLite rowid table, so rowid is the durable insertion-order tie-breaker.
-                'SELECT j.id FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id WHERE j.status = :status AND '.self::normalFindingSql().' ORDER BY j.requested_at ASC, j.rowid ASC LIMIT 1',
+                'SELECT j.id FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id WHERE j.status = :status AND '.$this->normalFindingSql().' ORDER BY j.requested_at ASC, j.rowid ASC LIMIT 1',
                 ['status' => ScreenshotJobStatus::QUEUED] + self::normalFindingParameters(),
             );
             if (!is_string($id) || $id === '') {
@@ -55,7 +55,7 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
             $updated = $connection->executeStatement(
                 // Recheck the persisted finding when claiming: it may have been
                 // discarded after selection, even if a managed entity is stale.
-                'UPDATE screenshot_job SET status = :running, started_at = :now, attempts = attempts + 1, updated_at = :now WHERE id = :id AND status = :queued AND EXISTS (SELECT 1 FROM finding f WHERE f.id = screenshot_job.finding_id AND '.self::normalFindingSql().')',
+                'UPDATE screenshot_job SET status = :running, started_at = :now, attempts = attempts + 1, updated_at = :now WHERE id = :id AND status = :queued AND EXISTS (SELECT 1 FROM finding f WHERE f.id = screenshot_job.finding_id AND '.$this->normalFindingSql().')',
                 [
                     'running' => ScreenshotJobStatus::RUNNING,
                     'queued' => ScreenshotJobStatus::QUEUED,
@@ -120,7 +120,7 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
     public function countByStatus(string $status): int
     {
         return (int) $this->getEntityManager()->getConnection()->fetchOne(
-            'SELECT COUNT(j.id) FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id WHERE j.status = :status AND '.self::normalFindingSql(),
+            'SELECT COUNT(j.id) FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id WHERE j.status = :status AND '.$this->normalFindingSql(),
             ['status' => $status] + self::normalFindingParameters(),
         );
     }
@@ -131,7 +131,7 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
         $counts = [ScreenshotJobStatus::QUEUED => 0, ScreenshotJobStatus::RUNNING => 0, ScreenshotJobStatus::FAILED => 0];
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
             'SELECT j.status, COUNT(j.id) AS total FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id'
-            .' WHERE j.status IN (:queued, :running, :failed) AND '.self::normalFindingSql().' GROUP BY j.status',
+            .' WHERE j.status IN (:queued, :running, :failed) AND '.$this->normalFindingSql().' GROUP BY j.status',
             ['queued' => ScreenshotJobStatus::QUEUED, 'running' => ScreenshotJobStatus::RUNNING, 'failed' => ScreenshotJobStatus::FAILED] + self::normalFindingParameters(),
         );
         foreach ($rows as $row) {
@@ -141,9 +141,9 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
         return $counts;
     }
 
-    private static function normalFindingSql(): string
+    private function normalFindingSql(): string
     {
-        return '(f.manual_assessment IS NULL OR f.manual_assessment <> :discarded) AND f.status NOT IN (:duplicate, :discarded)';
+        return '(f.manual_assessment IS NULL OR f.manual_assessment <> :discarded) AND f.status NOT IN (:duplicate, :discarded) AND '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->getEntityManager()->getConnection());
     }
 
     /** @return array<string, string> */

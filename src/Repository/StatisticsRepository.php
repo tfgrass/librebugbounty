@@ -44,6 +44,7 @@ final class StatisticsRepository
             .'COALESCE(f.submitted_at, f.created_at) AS reported_at, '
             .'f.contacted_at, '
             .'a.confirmed_at, a.fixed_at, '
+            .'CASE WHEN '.\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).' THEN 1 ELSE 0 END AS contact_work_allowed, '
             .'CASE WHEN '.FindingReadRepository::ACTIVE.' THEN 1 ELSE 0 END AS active, '
             .'CASE WHEN '.FindingReadRepository::DUPLICATES.' THEN 1 ELSE 0 END AS duplicate '
             .'FROM finding f INNER JOIN domain d ON d.id = f.domain_id '

@@ -1,0 +1,10 @@
+<section class="stat-card stat-aging-card" aria-labelledby="statistics-follow-up-title" data-follow-up-statistics>
+  <div class="stat-card-heading"><div><p class="stat-card-eyebrow"><?= $escape($t('Aktueller Gesamtbestand')) ?></p><h2 id="statistics-follow-up-title"><?= $escape($t('Nachverfolgung')) ?></h2><p><?= $escape($t('Unabhängig vom Diagrammzeitraum; der TLD-Filter gilt auch hier.')) ?></p></div></div>
+  <p class="stat-card-note"><?= $escape($t('Median: Bestätigung bis dokumentierte Kontaktmarkierung')) ?>: <strong data-contact-median><?= $followUpStats['medianDays'] === null ? '—' : $escape($t('{days} Tage', ['days' => $formatNumber($followUpStats['medianDays'], 1)])) ?></strong> · <?= $escape($t('Auswertbare Fälle: {count}', ['count' => $formatNumber($followUpStats['sampleSize'])])) ?></p>
+  <p class="stat-card-note"><?= $escape($t('Kein gemessener Erstkontakt und keine Antwortquote. Grundlage sind erhaltene Fälle mit aufgezeichneter oder aktueller manueller Bestätigung.')) ?></p>
+  <ul class="stat-aging-list">
+    <?php foreach (['cohort' => 'Fälle in der Grundgesamtheit', 'missingConfirmation' => 'Bestätigungsdatum fehlt', 'missingContact' => 'Kontaktmarkierung fehlt', 'invalidOrder' => 'Kontakt liegt vor der Bestätigung'] as $key => $label): ?><li><span class="stat-row-label"><?= $escape($t($label)) ?></span> <strong class="stat-row-count"><?= $escape($formatNumber($followUpStats['coverage'][$key])) ?></strong></li><?php endforeach; ?>
+  </ul>
+  <h3><?= $escape($t('Nicht weiterverfolgen')) ?> · <?= $escape($formatNumber($followUpStats['closed'])) ?></h3>
+  <ul class="stat-aging-list"><?php foreach ($followUpStats['reasons'] as $row): ?><li><a data-closure-reason="<?= $escape($row['reason']) ?>" data-count="<?= $escape($row['count']) ?>" href="<?= $escape($row['url']) ?>"><span class="stat-row-label"><?= $escape($t($row['label'])) ?></span><strong class="stat-row-count"><?= $escape($formatNumber($row['count'])) ?></strong></a></li><?php endforeach; ?></ul>
+</section>

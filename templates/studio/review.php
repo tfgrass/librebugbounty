@@ -56,7 +56,7 @@ $canAssess = $finding !== null && $view->eligible;
 $pocUrl = $finding?->getUrl();
 $pocUrl = is_string($pocUrl) ? str_replace(' ', '%20', $pocUrl) : $pocUrl;
 $pocParts = is_string($pocUrl) ? parse_url($pocUrl) : false;
-$canOpenPoc = is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x1f\x7f]/', $pocUrl);
+$canOpenPoc = $checksAllowed && is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x1f\x7f]/', $pocUrl);
 $hasError = $error !== null && $error !== '';
 $waitingForImages = $view->total === 0 && $view->images === 'ready' && $view->counts[$view->kind] > 0;
 $evidenceLabels = [];
@@ -192,6 +192,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
               </section>
             <?php endif; ?>
                 <div class="review-section-heading"><h3 id="review-source-title"><?= $escape($t('PoC & Angaben')) ?></h3><span class="review-method"><?= $escape($finding->getMethod()) ?></span></div>
+                <?php if (!$checksAllowed): ?><p class="review-muted" data-review-checks-blocked><?= $escape($t('Prüfungen gesperrt')) ?> · <a href="/findings/<?= $escape($finding->getId()) ?>#nachverfolgung"><?= $escape($t('Nachverfolgung')) ?></a></p><?php endif; ?>
                 <section class="review-source-block"><div class="review-source-label"><h4><?= $escape($t('Gemeldete URL')) ?></h4><span class="review-url-actions"><?php if ($canOpenPoc): ?><a class="review-text-link" href="<?= $escape($pocUrl) ?>" target="_blank" rel="noopener noreferrer" data-review-poc-open><?= $escape($t('Öffnen')) ?> ↗</a><?php endif; ?><button class="review-copy" type="button" data-review-copy="review-url" hidden><?= $escape($t('Kopieren')) ?></button></span></div><code id="review-url" class="review-code"><?= $escape($finding->getUrl()) ?></code></section>
                 <?php if ($canOpenPoc && strtoupper($finding->getMethod()) !== 'GET'): ?><p class="review-muted"><?= $escape($t('Öffnen ruft nur die URL auf; Methode und Request-Parameter werden nicht nachgebildet.')) ?></p><?php endif; ?>
                 <section class="review-source-block"><h4><?= $escape($t('Erwartetes Kennzeichen')) ?></h4><?php if ($finding->getExpectedEvidence() !== null && $finding->getExpectedEvidence() !== ''): ?><code class="review-code"><?= $escape($finding->getExpectedEvidence()) ?></code><?php else: ?><p class="review-absent"><?= $escape($t('Kein Kennzeichen gespeichert.')) ?></p><?php endif; ?></section>
