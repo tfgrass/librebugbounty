@@ -357,6 +357,68 @@ final class StudioReviewTest extends DatabaseTestCase
         self::assertCount(1, $this->history($finding));
     }
 
+    public function testPreloadHintsAreBoundedFilteredAndMatchTheNextCardsWithoutWrites(): void
+    {
+        $first = $this->finding('preload-first');
+        $this->image($first);
+        $second = $this->finding('preload-second');
+        $a = $this->image($second)->setSha256(str_repeat('a', 64));
+        $b = $this->image($second)->setSha256(str_repeat('b', 64));
+        // Same timestamp needs the same deterministic tie-breaker as details.
+        $expected = strcmp($a->getId(), $b->getId()) > 0 ? $a : $b;
+        $missing = (new Evidence())->setFinding($second)->setKind('screenshot')->setFilePath('storage/artifacts/missing-newest.png');
+        $unsafe = (new Evidence())->setFinding($second)->setKind('screenshot')->setFilePath('../outside.png');
+        $this->entityManager->persist($missing);
+        $this->entityManager->persist($unsafe);
+        $third = $this->finding('preload-third');
+        $thirdImage = $this->image($third);
+        $this->observation($third, 'error');
+        $fourth = $this->finding('preload-fourth');
+        $fourthImage = $this->image($fourth);
+        $this->observation($fourth, 'error');
+        $this->finding('preload-missing');
+        $this->finding('preload-no-evidence');
+        $this->entityManager->flush();
+        $connection = $this->entityManager->getConnection();
+        foreach ([$a, $b, $missing, $unsafe] as $item) {
+            $connection->executeStatement('UPDATE evidence SET created_at = ? WHERE id = ?', [
+                in_array($item, [$a, $b], true) ? '2026-01-01 12:00:00' : '2026-02-01 12:00:00', $item->getId(),
+            ]);
+        }
+        $before = $this->snapshot();
+        $queue = self::getContainer()->get(ReviewQueueService::class);
+        $view = $queue->get([]);
+        self::assertSame([$expected->getId(), $thirdImage->getId()], array_column($view->preloadImages, 'evidenceId'));
+        self::assertSame($expected->getSha256(), $view->preloadImages[0]['sha256']);
+        self::assertSame($expected->getId(), $queue->get(['after' => $first->getId()])->selectedEvidenceId);
+        self::assertSame([$fourthImage->getId()], array_column($queue->get(['kind' => 'error'])->preloadImages, 'evidenceId'));
+        self::assertSame([], $queue->get(['images' => 'missing'])->preloadImages);
+        self::assertSame([], $queue->get(['after' => $fourth->getId()])->preloadImages);
+        // Back/explicit card uses its own cursor, not the old forward cursor.
+        self::assertSame([$thirdImage->getId(), $fourthImage->getId()], array_column(
+            $queue->get(['after' => $third->getId()], $second->getId(), true)->preloadImages, 'evidenceId',
+        ));
+        self::assertSame([], $queue->get(['images' => 'all', 'after' => $fourth->getId()])->preloadImages);
+
+        $html = $this->request('/review')->getContent();
+        $hints = json_decode($this->xpath($html)->evaluate('string(//*[@data-review-preloads]/@data-review-preloads)'), true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($view->preloadImages, $hints);
+        $session = $this->session->all();
+        foreach ($hints as $hint) {
+            self::assertStringStartsWith('/artifacts/', $hint['url']);
+            $response = $this->request($hint['url']);
+            self::assertSame(200, $response->getStatusCode());
+            self::assertSame(base64_decode(self::PNG, true), $response->getContent());
+        }
+        self::assertSame($session, $this->session->all(), 'Reading upcoming images cannot advance the review trail');
+        self::assertSame($before, $this->snapshot());
+
+        $findings = self::getContainer()->get(FindingService::class);
+        $findings->assess($findings->getFindingOrFail($second->getId()), 'confirmed');
+        $queue = self::getContainer()->get(ReviewQueueService::class);
+        self::assertSame([$thirdImage->getId(), $fourthImage->getId()], array_column($queue->get([])->preloadImages, 'evidenceId'));
+    }
+
     private function finding(string $label): Finding
     {
         $domain = $this->entityManager->getRepository(Domain::class)->findOneBy(['hostname' => 'localhost']);

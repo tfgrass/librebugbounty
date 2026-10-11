@@ -80,21 +80,28 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
   <title><?= $escape($t('Review')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
   <link rel="stylesheet" href="/css/studio.css">
   <link rel="stylesheet" href="/css/studio-review.css">
+  <link rel="stylesheet" href="/css/studio-review-focus.css">
   <script src="/js/i18n.js" defer></script>
+  <script src="/js/studio-review-viewer.js" defer></script>
+  <script src="/js/studio-review-preload.js" defer></script>
   <script src="/js/studio-review.js" defer></script>
 </head>
 <body data-studio data-studio-review data-review-trail="<?= $escape($reviewTrailId) ?>" data-review-decision-delay="<?= $reviewDecisionDelaySeconds ?>" data-total="<?= $view->total ?>" data-remaining="<?= $view->remaining ?>" data-current-id="<?= $escape($finding?->getId() ?? '') ?>">
-  <div class="studio-shell studio-review-shell<?= $finding !== null || $reviewBackAvailable ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
+  <div data-review-preloads="<?= $escape(json_encode($view->preloadImages, JSON_THROW_ON_ERROR)) ?>" class="studio-shell studio-review-shell<?= $finding !== null || $reviewBackAvailable ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
     <header class="studio-header">
       <?php require __DIR__.'/brand.php'; ?>
       <div class="studio-header-tools">
+        <button type="button" class="review-focus-toggle review-button" data-review-focus-toggle aria-pressed="false" aria-keyshortcuts="f" aria-controls="review-main" hidden><span data-review-focus-label><?= $escape($t('Fokusmodus')) ?></span><kbd>F</kbd></button>
         <a class="studio-header-link" href="/findings"><?= $escape($t('Zum Bestand')) ?> <span aria-hidden="true">↗</span></a>
         <?php require __DIR__.'/language.php'; ?>
       </div>
     </header>
 
-    <main class="review-workspace" id="review-main">
+    <main class="review-workspace" id="review-main" tabindex="-1">
       <div class="review-content">
+        <div class="review-overview">
+          <details class="review-queue-panel" open data-review-queue>
+            <summary>Review <span>· <?= $formatNumber($view->remaining) ?> <?= $escape($t('noch in dieser Runde')) ?></span></summary>
         <div class="review-heading">
           <div><p class="studio-eyebrow"><?= $escape($t('Manuelle Prüfung')) ?></p><h1>Review</h1><p><?= $escape($t('Bild ansehen. Angaben prüfen. Entscheiden.')) ?></p></div>
           <div class="review-supply" aria-label="<?= $escape($t('Gesamter Review-Vorrat')) ?>">
@@ -115,15 +122,17 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
         </form>
         </details>
 
-        <?php if ($message !== null && $message !== ''): ?>
-          <div class="review-feedback" data-tone="success" role="status"><span><?= $escape($message) ?></span><?php if ($lastReviewedLink !== null): ?><a href="<?= $escape($lastReviewedLink) ?>" data-review-return-link><?= $escape($t('Letzten Fall öffnen')) ?> <span aria-hidden="true">↗</span></a><?php endif; ?></div>
-        <?php endif; ?>
-        <?php if ($hasError): ?><p class="review-feedback" data-tone="error" role="alert" tabindex="-1" data-review-error><?= $escape($error) ?></p><?php endif; ?>
-
         <div class="review-round">
           <p><strong><?= $formatNumber($view->remaining) ?></strong> <?= $escape($t('noch in dieser Runde')) ?> <span>· <?= $formatNumber($view->total) ?> <?= $escape($t('offene Fälle in der Auswahl')) ?></span><?php if ($reviewTrailTruncated ?? false): ?><small class="review-trail-limit"><?= $escape($t('Der Verlauf enthält die letzten {count} Schritte.', ['count' => $formatNumber($reviewTrailLimit ?? 200)])) ?></small><?php endif; ?></p>
           <div class="review-round-links"><a href="<?= $escape($view->currentPath) ?>"><?= $escape($t('Aktualisieren')) ?> <span aria-hidden="true">↻</span></a><?php if ($view->after !== null): ?><a href="<?= $escape($view->restartPath) ?>"><?= $escape($t('Runde von vorn')) ?></a><?php endif; ?></div>
         </div>
+
+          </details>
+        </div>
+        <?php if ($message !== null && $message !== ''): ?>
+          <div class="review-feedback" data-tone="success" role="status"><span><?= $escape($message) ?></span><?php if ($lastReviewedLink !== null): ?><a href="<?= $escape($lastReviewedLink) ?>" data-review-return-link><?= $escape($t('Letzten Fall öffnen')) ?> <span aria-hidden="true">↗</span></a><?php endif; ?></div>
+        <?php endif; ?>
+        <?php if ($hasError): ?><p class="review-feedback" data-tone="error" role="alert" tabindex="-1" data-review-error><?= $escape($error) ?></p><?php endif; ?>
 
         <?php if ($finding === null): ?>
           <section class="review-empty" aria-labelledby="review-empty-title"<?= $isFirstStart ? ' data-first-start' : '' ?>>
@@ -140,7 +149,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
               <a class="review-text-link" href="<?= $escape($findingLink) ?>" data-review-return-link><?= $escape($t('Fall öffnen')) ?> <span aria-hidden="true">↗</span></a>
             </header>
             <div class="review-card-layout">
-              <section class="review-evidence" aria-labelledby="review-evidence-title">
+              <section class="review-evidence" aria-label="<?= $escape($t('Bildbeleg')) ?>">
                 <div class="review-section-heading"><h3 id="review-evidence-title"><?= $escape($t('Bildbeleg')) ?></h3><span><?= $escape($t('{count} gespeichert', ['count' => $formatNumber(count($detail->screenshots))])) ?></span></div>
                 <?php if ($latestJob !== null): ?>
                   <div class="review-capture-state" data-tone="<?= $escape($jobTone($latestJob->getStatus())) ?>">
@@ -165,7 +174,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                     <?php $localImage = $shot['available'] && is_string($shot['url']) && str_starts_with($shot['url'], '/artifacts/'); ?>
                     <figure class="review-shot" data-review-shot="<?= $escape($shot['evidence']->getId()) ?>"<?= $selectedEvidenceId !== $shot['evidence']->getId() ? ' hidden' : '' ?>>
                       <?php if ($localImage): ?>
-                        <a class="review-image-link" href="<?= $escape($shot['url']) ?>" target="_blank" rel="noopener noreferrer" aria-label="<?= $escape($t('Bild {number} in Originalgröße öffnen', ['number' => $formatNumber($index + 1)])) ?>"><img src="<?= $escape($shot['url']) ?>" alt="<?= $escape($t('Gespeicherter Screenshot {number} für {host}', ['number' => $formatNumber($index + 1), 'host' => $finding->getDomain()->getHostname()])) ?>" loading="<?= $selectedEvidenceId === $shot['evidence']->getId() ? 'eager' : 'lazy' ?>" decoding="async" data-review-image></a>
+                        <a class="review-image-link" href="<?= $escape($shot['url']) ?>" target="_blank" rel="noopener noreferrer" aria-label="<?= $escape($t('Bild {number} in Originalgröße öffnen', ['number' => $formatNumber($index + 1)])) ?>"><img src="<?= $escape($shot['url']) ?>" alt="<?= $escape($t('Gespeicherter Screenshot {number} für {host}', ['number' => $formatNumber($index + 1), 'host' => $finding->getDomain()->getHostname()])) ?>" loading="<?= $selectedEvidenceId === $shot['evidence']->getId() ? 'eager' : 'lazy' ?>" decoding="async" data-review-image data-review-sha256="<?= $escape($shot['evidence']->getSha256() ?? '') ?>"></a>
                       <?php else: ?>
                         <div class="review-image-empty"><span class="review-missing-symbol" aria-hidden="true">⊘</span><h4><?= $escape($t('Bilddatei nicht verfügbar')) ?></h4><p><?= $escape($t('Ein Bildbeleg ist gespeichert, aber seine Datei fehlt oder kann nicht gelesen werden.')) ?></p></div>
                       <?php endif; ?>
@@ -177,6 +186,8 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
 
               <details class="review-inspector" open data-review-inspector><summary><?= $escape($t('Angaben & Optionen')) ?></summary>
               <aside class="review-source" aria-labelledby="review-source-title" data-review-poc>
+                <button type="button" class="review-button review-pin" data-review-pin aria-pressed="false" hidden><?= $escape($t('Seitenleiste anheften')) ?></button>
+
             <?php if ($isNotice): ?>
               <section class="review-notice" aria-labelledby="review-notice-title" data-review-notice>
                 <div class="review-notice-heading"><div><p class="studio-eyebrow"><?= $escape($t('Erneut prüfen')) ?></p><h3 id="review-notice-title"><?= $escape($t('Neue Hinweise nach deinem Urteil')) ?></h3></div><span class="studio-status" data-tone="warning"><?= $escape($t(FindingReadLabels::assessment($finding->getManualAssessment(), $finding->getDiscardReason()))) ?></span></div>
@@ -261,7 +272,29 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
         <input type="hidden" name="_token" value="<?= $escape($reviewSkipToken) ?>"><input type="hidden" name="trail_id" value="<?= $escape($reviewTrailId) ?>"><input type="hidden" name="trail_version" value="<?= $reviewTrailVersion ?>"><input type="hidden" name="context_token" value="<?= $escape($contextToken) ?>"><input type="hidden" name="displayed_evidence_id" value="<?= $escape($selectedEvidenceId ?? '') ?>" data-review-displayed-evidence>
       </form><?php endif; ?>
     <?php endif; ?>
-    <?php $activeWorkspace = 'review'; require __DIR__.'/navigation.php'; ?>
+    <details class="review-navigation" open data-review-navigation>
+      <summary><?= $escape($t('Navigation')) ?></summary>
+      <?php $activeWorkspace = 'review'; require __DIR__.'/navigation.php'; ?>
+    </details>
+    <button type="button" class="review-chrome-toggle review-button" data-review-chrome-toggle aria-pressed="false" hidden><?= $escape($t('Bedienelemente ausblenden')) ?></button>
+    <?php if ($finding !== null): ?>
+    <div class="review-viewer-tools" role="group" aria-label="<?= $escape($t('Bildansicht')) ?>" data-review-viewer-tools hidden>
+      <button type="button" class="review-button" data-review-zoom="out" aria-label="<?= $escape($t('Verkleinern')) ?>">−</button>
+      <output data-review-zoom-value aria-live="off">100%</output>
+      <button type="button" class="review-button" data-review-zoom="in" aria-label="<?= $escape($t('Vergrößern')) ?>">+</button>
+      <button type="button" class="review-button" data-review-zoom="actual" aria-label="<?= $escape($t('Originalgröße 1:1')) ?>">1:1</button>
+      <button type="button" class="review-button" data-review-zoom="fit"><?= $escape($t('Einpassen')) ?></button>
+    </div>
+    <div class="review-alerts" aria-label="<?= $escape($t('Review-Hinweise')) ?>">
+      <?php if ($isNotice): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Neue Hinweise nach deinem Urteil')) ?></button><?php endif; ?>
+      <?php if (!$checksAllowed): ?><span class="review-alert-chip"><?= $escape($t('Prüfungen gesperrt')) ?></span><?php endif; ?>
+      <?php if ($latestRun?->getResult() === 'error'): ?><button type="button" class="review-alert-chip" data-review-open-details data-review-technical-error><?= $escape($t('Technischer Fehler')) ?></button><?php endif; ?>
+      <?php if ($latestJob?->getStatus() === 'failed'): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Letzte Aufnahme fehlgeschlagen')) ?></button><?php endif; ?>
+      <?php if (($latestJob?->getCaptureMetadata()['challengeDetected'] ?? false) && !($latestJob?->getCaptureMetadata()['challengeCleared'] ?? false)): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Browser-Schutz blieb aktiv; die Aufnahme kann eine Schutzseite zeigen.')) ?></button><?php endif; ?>
+      <span class="review-alert-chip" data-review-image-warning hidden><?= $escape($t('Bilddatei nicht verfügbar')) ?></span>
+    </div>
+    <?php endif; ?>
+    <div class="review-network-status" role="status" tabindex="-1" data-review-network hidden><span data-review-network-message></span> <a href="<?= $escape('/review?'.http_build_query(['trail' => $reviewTrailId, 'kind' => $view->kind, 'images' => $view->images], '', '&', PHP_QUERY_RFC3986)) ?>" data-review-recover hidden><?= $escape($t('Aktualisieren')) ?> ↻</a></div>
   </div>
   <script id="studio-i18n" type="application/json"><?= $i18nJson ?></script>
 </body>

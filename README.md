@@ -1,4 +1,4 @@
-# LibreBugBounty 2.0.2 “Moneta”
+# LibreBugBounty 2.0.3 “Moneta”
 
 **A self-hosted bug bounty workspace for reflected XSS research — an
 open-source, local-first OpenBugBounty alternative.**
@@ -61,10 +61,14 @@ begins, and earlier evidence stays available.
 
 ### Review screenshots
 
-**Review** puts the evidence first: the image fits the window, details scroll
-separately, and the arrow-key controls stay visible. Choose **Vulnerable** or
-**Not vulnerable**, skip, open the stored PoC URL, or go back and reset a decision.
-An optional decision pause helps prevent accidental classifications.
+**Review** keeps the classic layout by default. Press **F** or choose **Focus
+mode** for a window-filling screenshot with compact overlay controls, collapsible
+details, zoom, 1:1 and pan. Hide the controls to inspect covered evidence.
+Choose **Vulnerable** or **Not vulnerable**, skip, open the stored PoC URL, or go
+back and reset a decision. Confirmed saves use overlapping card transitions;
+the next two stored screenshots preload quietly to avoid a second download on
+arrival. An optional decision pause helps prevent accidental classifications.
+See the [review guide](USAGE.md#manual-review) for shortcuts and fallback behavior.
 
 <p>
   <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="Review shows the stored screenshot beside details and keyboard actions" width="680"></a>

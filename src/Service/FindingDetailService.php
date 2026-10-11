@@ -43,7 +43,7 @@ final class FindingDetailService
         if ($refresh) {
             $this->entityManager->refresh($finding);
         }
-        $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC']);
+        $evidence = $this->evidenceRepository->findBy(['finding' => $finding], ['createdAt' => 'DESC', 'id' => 'DESC']);
         $runs = $this->retestRunRepository->findRecentByFinding($finding, 20);
         $screenshotJobs = $this->screenshotJobRepository->findRecentByFinding($finding, null);
         $assessments = $this->assessmentRepository->findBy(['finding' => $finding], ['assessedAt' => 'DESC', 'id' => 'DESC']);

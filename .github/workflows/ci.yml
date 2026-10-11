@@ -105,10 +105,14 @@ jobs:
       - run: ./playwright-worker/node_modules/.bin/playwright install --with-deps chromium
       - name: Test Settings, diagnostics and inventory views with isolated fixtures
         run: python tests/browser/run_preferences.py
+      - name: Test Review focus and assessment transitions with isolated fixtures
+        run: python tests/browser/run_review.py
       - name: Keep browser screenshots and fixture logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: settings-browser-smoke
-          path: var/preferences-acceptance-*/
+          path: |
+            var/preferences-acceptance-*/
+            var/review-focus-acceptance-*/
           if-no-files-found: ignore

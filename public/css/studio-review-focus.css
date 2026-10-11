@@ -1,0 +1,188 @@
+/* Native forms keep the conventional layout when JavaScript is unavailable. */
+.review-queue-panel > summary, .review-navigation > summary { cursor: pointer; }
+.review-navigation > summary, .review-alerts { display: none; }
+/* Without focus mode these wrappers consume no space: keep the original header,
+   queue rows, image/sidebar and footer layout, including without JavaScript. */
+[data-studio-review]:not([data-review-focus-mode="true"]) .review-overview,
+[data-studio-review]:not([data-review-focus-mode="true"]) .review-queue-panel,
+[data-studio-review]:not([data-review-focus-mode="true"]) .review-queue-panel::details-content { display: contents; }
+[data-studio-review]:not([data-review-focus-mode="true"]) .review-queue-panel > summary { display: none; }
+.review-focus-toggle { min-height: 30px; padding: 4px 9px; gap: 7px; font-size: 11px !important; white-space: nowrap; }
+.review-focus-toggle kbd { border: 1px solid #71829a; border-radius: 3px; padding: 0 4px; font: inherit; }
+[data-studio-review] .review-workspace:focus, [data-studio-review] [data-review-focus]:focus { outline: none; }
+/* Saving/recovery feedback must not add an implicit grid row in classic mode. */
+.review-network-status { position: fixed; z-index: 15; top: 65px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 24px); }
+.review-overview { flex: 0 0 auto; }
+.review-queue-panel > summary { padding: 6px 12px; }
+.review-queue-panel > summary > span { color: var(--studio-muted); font-size: 11px; }
+.review-network-status { padding: 10px 14px; border: 1px solid #65758a; background: #18212bf5; border-radius: 10px; }
+
+[data-review-focus-mode="true"] { --review-glass: #151d28ed; --review-edge: #7a91b344; }
+[data-review-focus-mode="true"] .studio-review-shell { display: block; position: relative; min-height: 0; height: 100dvh; overflow: hidden; }
+[data-review-focus-mode="true"] .review-workspace { position: absolute; inset: 0; overflow: hidden; }
+[data-review-focus-mode="true"] .review-content { display: block; width: 100%; max-width: none; height: 100%; padding: 0; }
+[data-review-focus-mode="true"] .review-card { position: absolute; inset: 0; margin: 0; border: 0; border-radius: 0; background: #080d13; }
+[data-review-focus-mode="true"] .review-card-layout { display: block; position: static; width: 100%; height: 100%; overflow: visible; }
+[data-review-focus-mode="true"] .review-evidence { position: absolute; inset: 0; padding: 0; background: #080d13; }
+[data-review-focus-mode="true"] .review-shot { position: absolute; inset: 0; border: 0; border-radius: 0; margin: 0; overflow: visible; }
+[data-review-focus-mode="true"] .review-image-link { position: absolute; inset: 0; display: block; height: auto; min-height: 0; padding: 0; overflow: hidden; background: #080d13; cursor: default; touch-action: none; user-select: none; }
+[data-review-focus-mode="true"] .review-image-link img { position: absolute; left: 50%; top: 50%; width: auto; height: auto; max-width: none; max-height: none; object-fit: fill; pointer-events: none; }
+[data-review-focus-mode="true"] .review-image-link[data-zoomed="true"] { cursor: grab; }
+[data-review-focus-mode="true"] .review-image-link[data-dragging="true"][data-zoomed="true"] { cursor: grabbing; }
+[data-review-focus-mode="true"] .review-image-empty { position: absolute; inset: 0; border: 0; padding: 100px 20px 180px; background: #080d13; }
+
+/* Short-lived compositor layers, clipped without creating document overflow.
+   The old image covers the DOM swap; both cards then move on the same timeline. */
+.review-transition-layer { position: fixed; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
+.review-transition-image { position: absolute; overflow: hidden; background: #080d13; will-change: transform, opacity; }
+.review-transition-image > img { position: absolute; left: 50%; top: 50%; max-width: none; max-height: none; pointer-events: none; }
+.review-image-arriving { will-change: transform, opacity; }
+
+/* Small islands above a full-window image, without reserved bars. */
+[data-review-focus-mode="true"] .review-overview,
+[data-review-focus-mode="true"] .review-action-dock,
+[data-review-focus-mode="true"] .review-navigation,
+[data-review-focus-mode="true"] .review-viewer-tools,
+[data-review-focus-mode="true"] .review-inspector,
+[data-review-focus-mode="true"] .review-chrome-toggle,
+[data-review-focus-mode="true"] .review-focus-toggle { background: var(--review-glass); border: 1px solid var(--review-edge); box-shadow: 0 6px 28px #0004; backdrop-filter: blur(12px); border-radius: 12px; }
+/* Avoid sampling a moving full-window image for every glass island each frame. */
+[data-review-focus-mode="true"][data-review-transition] :is(.review-overview, .review-action-dock, .review-navigation, .review-viewer-tools, .review-inspector, .review-chrome-toggle, .review-focus-toggle) { backdrop-filter: none; }
+[data-review-focus-mode="true"] .review-overview { position: absolute; z-index: 6; top: 12px; left: 12px; width: min(390px, calc(100% - 270px)); max-height: calc(100dvh - 195px); overflow: auto; scrollbar-width: thin; }
+[data-review-focus-mode="true"] .review-case-heading { padding: 10px 12px 4px; border: 0; background: transparent; align-items: center; }
+[data-review-focus-mode="true"] .review-case-title { display: block; min-width: 0; }
+[data-review-focus-mode="true"] .review-case-title .studio-eyebrow,
+[data-review-focus-mode="true"] .review-case-title > p:last-child { display: none; }
+[data-review-focus-mode="true"] .review-case-title h2:focus, [data-review-focus-mode="true"] .review-workspace:focus { outline: none; }
+[data-review-focus-mode="true"] .review-case-title h2 { margin: 0; font-size: 16px; overflow-wrap: anywhere; }
+[data-review-focus-mode="true"] .review-case-heading > a { flex-shrink: 0; font-size: 10px; }
+[data-review-focus-mode="true"] .review-queue-panel > summary { padding: 5px 12px 9px; font-size: 11px; }
+[data-review-focus-mode="true"] .review-queue-panel[open] > summary { border-bottom: 1px solid var(--review-edge); }
+[data-review-focus-mode="true"] .review-heading { display: block; padding: 10px; }
+[data-review-focus-mode="true"] .review-heading > div:first-child { display: none; }
+[data-review-focus-mode="true"] .review-supply { gap: 7px 12px; padding: 0; border: 0; background: none; }
+[data-review-focus-mode="true"] .review-filter-panel { margin: 0 10px 10px; }
+[data-review-focus-mode="true"] .review-filter-panel > summary { display: block; }
+[data-review-focus-mode="true"] .review-filter-panel > summary > span { display: block; }
+[data-review-focus-mode="true"] .review-filters { position: static; display: flex; flex-direction: column; align-items: stretch; border: 0; box-shadow: none; padding: 10px; }
+[data-review-focus-mode="true"] .review-round { padding: 0 12px 12px; display: block; }
+[data-review-focus-mode="true"] .review-round > p { margin: 0 0 5px; }
+[data-review-focus-mode="true"] .review-round-links { flex-direction: row; flex-wrap: wrap; }
+
+[data-review-focus-mode="true"] .review-action-dock { position: absolute; z-index: 6; inset: auto auto 12px 12px; width: 368px; padding: 9px; }
+[data-review-focus-mode="true"] .review-dock-inner { display: flex; flex-direction: column; align-items: stretch; gap: 5px; width: 100%; }
+[data-review-focus-mode="true"] .review-dock-case { display: block; flex: none; }
+[data-review-focus-mode="true"] .review-dock-case > strong,
+[data-review-focus-mode="true"] .review-dock-case > span { display: none; }
+[data-review-focus-mode="true"] .review-keypad { flex: none; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, 40px); gap: 5px; }
+[data-review-focus-mode="true"] .review-keypad .review-button { font-size: 11px !important; padding: 5px; gap: 5px; border-radius: 7px; }
+[data-review-focus-mode="true"] .review-submit-status { display: none; }
+[data-review-focus-mode="true"] .review-delay-status { margin: 0; }
+[data-review-focus-mode="true"] .review-delay-progress { margin-top: 3px; width: 100%; }
+[data-review-focus-mode="true"] .review-dock-case .review-button-keep { margin: 0; width: 100%; min-height: 32px; }
+
+/* Compact top-right menu: no second footer competing with the image tools. */
+[data-review-focus-mode="true"] .review-navigation { position: absolute; z-index: 7; top: 138px; right: 12px; width: 166px; max-width: calc(100% - 24px); max-height: calc(100dvh - 205px); overflow: auto; scrollbar-width: thin; }
+[data-review-focus-mode="true"] .review-navigation[open] { width: 340px; }
+[data-review-focus-mode="true"] .review-navigation > summary { display: block; padding: 9px 12px; font-size: 11px; color: var(--studio-text); text-align: center; list-style: none; }
+[data-review-focus-mode="true"] .review-navigation > summary::before { content: '☰ '; }
+[data-review-focus-mode="true"] .studio-workspace-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); position: static; gap: 4px; padding: 8px; height: auto; min-height: 0; border: 0; background: transparent; }
+[data-review-focus-mode="true"] .studio-workspace-link { min-width: 0; padding: 7px; gap: 4px; font-size: 10px; border-radius: 6px; }
+[data-review-focus-mode="true"] .studio-workspace-link svg { width: 18px; height: 18px; }
+[data-review-focus-mode="true"] .studio-settings-link { position: static; width: auto; height: 42px; padding: 8px; }
+[data-review-focus-mode="true"] .studio-header { position: static; min-height: 0; padding: 8px 12px; gap: 8px; border: 0; background: none; }
+[data-review-focus-mode="true"] .studio-brand-mark, [data-review-focus-mode="true"] .studio-brand-tag,
+[data-review-focus-mode="true"] .studio-header-link { display: none; }
+[data-review-focus-mode="true"] .studio-brand-name { font-size: 10px; }
+[data-review-focus-mode="true"] .studio-brand-version { font-size: 9px; }
+[data-review-focus-mode="true"] .studio-header-tools { margin-left: auto; }
+
+[data-review-focus-mode="true"] .review-focus-toggle,
+[data-review-focus-mode="true"] .review-chrome-toggle { position: absolute; z-index: 12; right: 12px; width: 166px; min-height: 34px; padding: 7px 9px; font-size: 11px !important; }
+[data-review-focus-mode="true"] .review-focus-toggle { top: 12px; }
+[data-review-focus-mode="true"] .review-chrome-toggle { top: 54px; }
+[data-review-focus-mode="true"] .review-viewer-tools { position: absolute; z-index: 6; bottom: 12px; right: 12px; display: flex; align-items: center; gap: 4px; padding: 5px; }
+[data-review-focus-mode="true"] .review-viewer-tools .review-button { min-height: 34px; min-width: 34px; padding: 4px 9px; font-size: 11px !important; border: 0; background: transparent; }
+[data-review-focus-mode="true"] .review-viewer-tools output { min-width: 43px; text-align: center; color: var(--studio-muted); font-size: 11px; }
+[data-review-focus-mode="true"] .review-shot figcaption { position: absolute; z-index: 3; top: 96px; left: 12px; width: auto; max-width: min(390px, calc(100% - 24px)); border: 1px solid var(--review-edge); border-radius: 8px; background: #151d28db; padding: 5px 8px; font-size: 9px; }
+[data-review-focus-mode="true"] .review-shot figcaption > div > span:last-child { display: none; }
+[data-review-focus-mode="true"] .review-shot figcaption > div { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+
+[data-review-focus-mode="true"] .review-inspector { position: fixed; z-index: 8; top: 96px; right: 12px; bottom: auto; width: 166px; height: auto; overflow: hidden; border: 1px solid var(--review-edge); }
+[data-review-focus-mode="true"] .review-inspector > summary { display: block; padding: 9px 12px; border: 0; font-size: 11px; color: var(--studio-text); cursor: pointer; }
+[data-review-focus-mode="true"] .review-inspector > summary::before { content: '+ '; }
+[data-review-focus-mode="true"] .review-inspector[open] { bottom: 70px; width: min(390px, calc(100% - 24px)); background: #18212bf5; }
+[data-review-focus-mode="true"] .review-inspector[open] > summary { border-bottom: 1px solid var(--review-edge); }
+[data-review-focus-mode="true"] .review-inspector[open] > summary::before { content: '− '; }
+[data-review-focus-mode="true"] .review-inspector:not([open])::details-content { display: none; }
+[data-review-focus-mode="true"] .review-source { display: block; padding: 12px; overflow: auto; overscroll-behavior: contain; }
+[data-review-focus-mode="true"] .review-source .review-capture-state { max-height: none; }
+[data-review-focus-mode="true"] .review-pin { min-height: 32px; font-size: 11px !important; width: 100%; margin-bottom: 12px; }
+[data-review-focus-mode="true"] .review-shot-picker { overflow-x: auto; }
+[data-review-focus-mode="true"] .review-shot-picker a { min-width: 115px; }
+
+/* Critical notices remain visible even with the interface hidden. */
+[data-review-focus-mode="true"] .review-alerts { position: absolute; z-index: 9; top: 12px; left: 50%; transform: translateX(-50%); max-width: min(460px, calc(100% - 860px)); display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+[data-review-focus-mode="true"] .review-alert-chip { max-width: 100%; padding: 6px 9px; border: 1px solid #a48754; border-radius: 8px; background: #28251aef; color: #efd09c; font-size: 11px; cursor: pointer; }
+[data-review-focus-mode="true"] .review-feedback,
+[data-review-focus-mode="true"] .review-network-status { position: absolute; z-index: 11; left: 50%; top: 74px; transform: translateX(-50%); max-width: min(520px, calc(100% - 24px)); width: max-content; box-shadow: 0 4px 24px #0006; font-size: 12px; }
+[data-review-focus-mode="true"] .review-feedback[data-tone="success"] { top: auto; bottom: 140px; }
+[data-review-focus-mode="true"] .review-network-status a { text-decoration: underline; font-weight: 600; }
+[data-review-focus-mode="true"] .review-empty { position: absolute; inset: 150px 12px 175px; margin: 0; min-height: 0; overflow: auto; padding: 20px; }
+[data-review-focus-mode="true"] .review-verdict-stamp { position: absolute; z-index: 4; top: 35%; left: 50%; transform: translate(-50%, -50%) rotate(-8deg); padding: 12px 22px; border: 3px solid #9fecbe; border-radius: 10px; color: #c1ffd7; background: #193b2df2; font-size: clamp(20px, 4vw, 48px); font-weight: 700; white-space: nowrap; }
+[data-review-focus-mode="true"] .review-verdict-stamp[data-verdict="fixed"] { color: #cee4ff; border-color: #a0c7fa; background: #1c304df2; transform: translate(-50%, -50%) rotate(8deg); }
+[data-review-chrome-hidden="true"] .review-overview,
+[data-review-chrome-hidden="true"] .review-action-dock,
+[data-review-chrome-hidden="true"] .review-navigation,
+[data-review-chrome-hidden="true"] .review-viewer-tools,
+[data-review-chrome-hidden="true"] .review-shot figcaption,
+[data-review-chrome-hidden="true"] .review-inspector,
+[data-review-chrome-hidden="true"] .review-feedback[data-tone="success"] { visibility: hidden; pointer-events: none; }
+
+@media (min-width: 1100px) {
+  [data-review-pinned="true"]:not([data-review-chrome-hidden="true"]) .review-evidence { right: 414px; }
+}
+@media (max-width: 1199px) {
+  [data-review-focus-mode="true"] .review-alerts { top: 185px; left: 12px; transform: none; max-width: min(390px, calc(100% - 24px)); justify-content: flex-start; }
+}
+@media (max-width: 760px) {
+  [data-studio-review]:not([data-review-focus-mode="true"]) .studio-header-tools { flex-direction: row; align-items: center; gap: 8px; }
+  [data-studio-review]:not([data-review-focus-mode="true"]) .studio-header-link { display: none; }
+  [data-studio-review]:not([data-review-focus-mode="true"]) .review-focus-toggle > span { display: none; }
+  [data-studio-review]:not([data-review-focus-mode="true"]) .review-focus-toggle::before { content: '⛶'; }
+  [data-review-focus-mode="true"] .review-overview { top: 8px; left: 8px; width: calc(100% - 156px); max-height: calc(100dvh - 175px); }
+  [data-review-focus-mode="true"] .review-case-heading { padding: 8px 9px 2px; }
+  [data-review-focus-mode="true"] .review-case-title h2 { font-size: 13px; }
+  [data-review-focus-mode="true"] .review-case-heading > a { display: none; }
+  [data-review-focus-mode="true"] .review-queue-panel > summary { padding: 4px 9px 7px; font-size: 10px; }
+  [data-review-focus-mode="true"] .review-queue-panel > summary > span { font-size: 9px; }
+  .review-focus-toggle { font-size: 10px !important; padding-inline: 5px; }
+  [data-review-focus-mode="true"] .review-focus-toggle,
+  [data-review-focus-mode="true"] .review-chrome-toggle { right: 8px; width: 132px; min-height: 36px; padding: 5px; font-size: 10px !important; }
+  [data-review-focus-mode="true"] .review-focus-toggle { top: 8px; }
+  [data-review-focus-mode="true"] .review-chrome-toggle { top: 52px; }
+  [data-review-focus-mode="true"] .review-inspector { top: 96px; right: 8px; width: 132px; }
+  [data-review-focus-mode="true"] .review-inspector > summary { padding: 7px; font-size: 10px; }
+  [data-review-focus-mode="true"] .review-inspector[open] { width: calc(100% - 16px); bottom: 8px; z-index: 10; }
+  [data-review-focus-mode="true"] .review-pin { display: none; }
+  [data-review-focus-mode="true"] .review-shot figcaption { top: 88px; left: 8px; max-width: calc(100% - 156px); font-size: 8px; }
+  [data-review-focus-mode="true"] .review-alerts { top: 176px; left: 8px; max-width: calc(100% - 16px); }
+  [data-review-focus-mode="true"] .review-alert-chip { font-size: 10px; padding: 4px 7px; }
+  [data-review-focus-mode="true"] .review-action-dock { width: calc(100% - 16px); left: 8px; bottom: 58px; padding: 7px; }
+  [data-review-focus-mode="true"] .review-keypad { grid-template-rows: repeat(2, 38px); gap: 4px; }
+  [data-review-focus-mode="true"] .review-dock-case { flex: none; }
+  [data-review-focus-mode="true"] .review-navigation { top: 132px; right: 8px; width: 132px; max-width: calc(100% - 16px); }
+  [data-review-focus-mode="true"] .review-navigation[open] ~ .review-alerts { top: auto; bottom: 180px; }
+  [data-review-focus-mode="true"] .review-navigation > summary { min-height: 32px; padding: 7px 8px; font-size: 10px; }
+  [data-review-focus-mode="true"] .review-viewer-tools { bottom: 8px; left: 8px; right: auto; padding: 3px; gap: 1px; }
+  [data-review-focus-mode="true"] .review-viewer-tools .review-button { padding: 4px 6px; min-width: 30px; }
+  [data-review-focus-mode="true"] .review-viewer-tools output { min-width: 34px; font-size: 10px; }
+  [data-review-focus-mode="true"] .review-feedback[data-tone="success"] { bottom: 178px; }
+}
+@media (max-height: 500px) and (min-width: 761px) {
+  [data-review-focus-mode="true"] .review-overview { width: 320px; }
+  [data-review-focus-mode="true"] .review-action-dock { width: 340px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-review-focus-mode="true"] *, [data-review-focus-mode="true"] *::before, [data-review-focus-mode="true"] *::after { animation: none !important; transition: none !important; }
+}

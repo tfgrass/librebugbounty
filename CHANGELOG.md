@@ -3,6 +3,34 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
+## Unreleased
+
+## 2.0.3 — Moneta (2026-10-12)
+
+### Changed
+
+- Review retains its classic layout by default. An explicit Focus mode button
+  with the F shortcut toggles a window-filling image view, remembered per tab.
+  Focus mode has compact floating controls, a top-right navigation menu, a
+  collapsible/pinnable detail sidebar and hide/show controls. Critical notices,
+  errors and the focus-mode exit remain reachable when controls are hidden.
+- Closing navigation, queue or details restores review keyboard focus immediately;
+  F respects editable fields and repeated keys cannot repeatedly toggle the mode.
+- Focus-mode evidence supports fit, 1:1, zoom, mouse/touch panning and pinch zoom. Image
+  gestures never record an assessment; native forms remain usable without JS.
+- In focus mode, confirmed assessments animate the card left/right while the review shell stays
+  in place. Skip and Back have distinct transitions; reduced motion is respected.
+  Transitions overlap with a pre-decoded next image, gentler movement and temporary
+  compositor layers; background blur is suspended during motion. Slow images and
+  interrupted effects fall back without leaving the next card locked.
+  Failed saves retain the case, and uncertain network outcomes require an
+  explicit reload rather than retrying a possibly committed assessment.
+- Both review layouts preload the next two stored screenshots in the selected
+  queue at low priority, reusing decoded images (or an in-flight download) on
+  arrival. Speculation is bounded, pauses in hidden tabs/on constrained
+  connections, and never advances the review trail or creates checks/jobs.
+  Fresh response evidence IDs, paths and hashes must match before reuse.
+
 ## 2.0.2 — Moneta (2026-10-10)
 
 ### Changed

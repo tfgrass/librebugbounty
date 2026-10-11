@@ -67,12 +67,12 @@ final class ReviewQueueService
         // its full entity/detail projection; job status cannot prove file presence.
         $candidateIds = array_column($candidates, 'id');
         $paths = $candidateIds === [] ? [] : $connection->fetchAllAssociative(
-            'SELECT finding_id, file_path FROM evidence WHERE kind = ? AND file_path IS NOT NULL AND file_path <> ? AND finding_id IN ('.implode(',', array_fill(0, count($candidateIds), '?')).')',
+            'SELECT id, finding_id, file_path, sha256 FROM evidence WHERE kind = ? AND file_path IS NOT NULL AND file_path <> ? AND finding_id IN ('.implode(',', array_fill(0, count($candidateIds), '?')).') ORDER BY created_at DESC, id DESC',
             ['screenshot', '', ...$candidateIds],
         );
         foreach ($paths as $path) {
             if (!isset($ready[$path['finding_id']]) && $this->storage->exists($path['file_path'])) {
-                $ready[$path['finding_id']] = true;
+                $ready[$path['finding_id']] = $path;
             }
         }
 
@@ -125,6 +125,29 @@ final class ReviewQueueService
             $selectedEvidenceId ??= $firstScreenshot === null ? null : $firstScreenshot['evidence']->getId();
         }
 
+        // Advisory only: use the SAME cursor as the next action, including a
+        // card reopened via Back. Never hydrate upcoming cases or open a trail.
+        $preloadImages = [];
+        if ($currentDetail !== null) {
+            $cursor = [$currentDetail->finding->getCreatedAt()->format('Y-m-d H:i:s'), $id];
+            $upcoming = array_slice(array_values(array_filter($filtered,
+                static fn (array $candidate): bool => [$candidate['created_at'], $candidate['id']] > $cursor,
+            )), 0, 2);
+            foreach ($upcoming as $candidate) {
+                $shot = $ready[$candidate['id']] ?? null;
+                if ($shot === null) { continue; }
+                $path = str_replace('\\', '/', $shot['file_path']);
+                if (str_starts_with($path, 'storage/artifacts/')) {
+                    $path = substr($path, strlen('storage/artifacts/'));
+                }
+                $preloadImages[] = [
+                    'evidenceId' => $shot['id'],
+                    'url' => '/artifacts/'.implode('/', array_map('rawurlencode', explode('/', $path))),
+                    'sha256' => $shot['sha256'] ?? '',
+                ];
+            }
+        }
+
         return new ReviewQueueView(
             detail: $currentDetail,
             kind: $kind,
@@ -145,6 +168,7 @@ final class ReviewQueueService
             lastAcknowledgedAt: $currentNotice?->lastAcknowledgedAt,
             baselineKnown: $currentNotice?->baselineKnown ?? true,
             noticesAvailable: $noticesAvailable,
+            preloadImages: $preloadImages,
         );
     }
 

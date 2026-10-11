@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.0.2 “Moneta”. Start with the
+This guide describes LibreBugBounty 2.0.3 “Moneta”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the default English UI; German is available
@@ -130,16 +130,55 @@ technical errors, or cases without a technical observation.
 | **Open PoC** / up arrow | Opens the stored URL in another tab; the review remains on the same case |
 | **Discard case** | Preserves the case in the archive and removes it from normal review |
 
-The image fits the available workspace height, with details scrolling separately.
-The fixed controls follow the arrow-key layout: Open PoC above Back, with Skip
-beside Open PoC and above Vulnerable. Open the original image for closer inspection.
+Review starts in the classic layout. **Focus mode** (or **F**) switches to an
+image view filling the browser window; the same button or F returns to the
+classic layout. This is an in-page focus mode, not browser fullscreen. The chosen
+mode persists within the tab, including across cards and reloads. F does not
+intercept typing or selection in form fields.
+
+In focus mode, case/queue information and assessment controls float over the
+image. Navigation is a compact, initially closed menu at the top right, not an
+additional footer. Open **Details & options** for the scrolling sidebar; on wide
+screens, **Pin sidebar** reserves space beside the image. The controls retain the
+arrow-key layout: Open PoC above Back, with Skip beside Open PoC and above Vulnerable.
+
+**Hide controls** clears the overlays for inspecting covered areas. **Show controls**
+or Escape restores them; review shortcuts remain available while controls are
+hidden. The focus-mode exit button, critical notices and errors remain visible.
+These display preferences are remembered within the browser tab. Closing
+navigation, queue information or details restores review keyboard focus without
+an extra mouse assessment. Escape closes an open panel before restoring controls.
+
+In focus mode, use **Fit** to see the whole screenshot, **1:1** for one image pixel per CSS pixel,
+and +/− or the mouse wheel to zoom. Drag or pinch the image to inspect details.
+When the image viewer has keyboard focus, +/− zoom, 0 fits, 1 selects original
+size, and the arrow keys pan an enlarged image. Image gestures never assess a
+case. **Open original** still opens the saved image separately.
+
+After a confirmed save in focus mode, the image card exits right for Vulnerable or left for
+Not vulnerable. Skip uses a neutral transition; Back brings the previous case
+back into view. The next stored image is decoded before the old and new cards
+crossfade together, avoiding an empty gap between animations. Slow or broken
+images fall back without motion rather than blocking review. Leaving focus mode,
+resizing or enabling reduced motion cancels the effect cleanly.
+The browser's reduced-motion preference disables these movements.
+In both layouts, Review quietly preloads and decodes the stored screenshots for
+the next two cards in the selected queue, one at a time after the current image
+loads. A matching image is reused directly on arrival, not downloaded again.
+These short-lived hints never preload review pages, change the review trail,
+create screenshot jobs or run checks; the fresh server response still determines
+the next case and evidence. Background tabs, Save-Data and very slow connections
+pause new preloads. Missing or failed images retain the normal loading fallback.
+If a response is interrupted, Review blocks further assessments and offers a
+reload to reconcile the saved state instead of resubmitting the action.
 
 The shortcuts work when focus is outside editable fields and other controls.
 Enter still activates a deliberately focused button or link normally. Holding
 a key does not repeatedly assess, skip, reset, or open tabs.
 On touch devices, the dedicated gesture strip supports the same left/right
-decisions; the screenshot itself remains available for ordinary scrolling and
-zooming. The buttons also work without JavaScript.
+decisions; the screenshot itself supports panning and zooming. Without JavaScript,
+Review uses the conventional layout and normal form navigation with the same
+save and reset checks.
 
 Back follows the review round one case at a time, including skipped cases, and
 can be used repeatedly. Each returned case becomes unassessed; it does not regain
