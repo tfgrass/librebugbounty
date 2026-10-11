@@ -399,21 +399,36 @@ assert.ok(['web', 'localhost', '127.0.0.1'].includes(new URL(base).hostname));
     assert.equal(await page.evaluate(()=>window.__animations.length),0);
     nextImageRelease();
     await page.waitForFunction(()=>document.body.dataset.reviewArriving==='true' && window.__liveAnimations?.length===2);
-    await page.evaluate(()=>{
+    const overlap=await page.evaluate(()=>{
       window.__liveAnimations.forEach(a=>a.pause());
       window.__liveAnimations.forEach(a=>a.currentTime=120);
+      const layer=document.querySelector('.review-transition-layer');
+      // Check the lock in the same browser task as the paused animation. A
+      // screenshot/runner round-trip may legitimately exceed the 1s safety
+      // timeout; the application must not stay locked forever for a paused test.
+      const state={
+        arriving:document.body.dataset.reviewArriving,
+        layers:document.querySelectorAll('.review-transition-layer').length,
+        hidden:layer?.getAttribute('aria-hidden'),
+        controls:layer?.querySelectorAll('a, button, [data-review-image]').length,
+        blur:getComputedStyle(document.querySelector('[data-review-dock]')).backdropFilter,
+        mid:window.__liveAnimations.map(a=>({progress:a.effect.getComputedTiming().progress,time:a.currentTime}))
+      };
+      document.querySelector('#review-main').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}));
+      document.querySelector('[data-review-confirm]').click();
+      return {...state,submitting:document.body.dataset.reviewSubmitting};
     });
-    assert.equal(await page.locator('.review-transition-layer').count(),1);
-    assert.equal(await page.locator('.review-transition-layer').getAttribute('aria-hidden'),'true');
-    assert.equal(await page.locator('.review-transition-layer a, .review-transition-layer button, .review-transition-layer [data-review-image]').count(),0);
-    assert.equal(await page.locator('[data-review-dock]').evaluate(e=>getComputedStyle(e).backdropFilter),'none','Moving evidence is not re-blurred by the overlays');
-    const mid=await page.evaluate(()=>window.__liveAnimations.map(a=>({progress:a.effect.getComputedTiming().progress,time:a.currentTime})));
-    assert.ok(mid.every(a=>a.progress>0&&a.progress<1),'Exit and arrival overlap instead of a blank gap');
+    assert.equal(overlap.arriving,'true');
+    assert.notEqual(overlap.submitting,'true','Neither keyboard nor button starts a save during the overlap');
+    assert.equal(overlap.layers,1);
+    assert.equal(overlap.hidden,'true');
+    assert.equal(overlap.controls,0);
+    assert.equal(overlap.blur,'none','Moving evidence is not re-blurred by the overlays');
+    assert.ok(overlap.mid.every(a=>a.progress>0&&a.progress<1),'Exit and arrival overlap instead of a blank gap');
     await page.screenshot({path:path.join(output,'transition-overlap.png')});
-    await page.keyboard.press('ArrowRight'); await page.locator('[data-review-confirm]').click();
-    assert.equal(posts,1,'Next card stays locked throughout the overlapping animation');
-    await page.evaluate(()=>window.__liveAnimations.forEach(a=>a.play()));
+    await page.evaluate(()=>{if(document.body.dataset.reviewArriving==='true')window.__liveAnimations.forEach(a=>a.play());});
     await page.waitForFunction(previous=>document.body.dataset.currentId!==previous,f.main.id); await idle(page);
+    assert.equal(posts,1,'Next card stays locked throughout the overlapping animation');
     assert.equal(await id(page),f.readyError.id);
     assert.equal(await page.locator('[data-review-technical-error]').isVisible(),true);
     assert.equal(await page.evaluate(()=>window.__documentIdentity),'retained','Document stays mounted');
