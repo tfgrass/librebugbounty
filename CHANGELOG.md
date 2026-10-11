@@ -16,6 +16,8 @@ repository's tagged commits.
   errors and the focus-mode exit remain reachable when controls are hidden.
 - Closing navigation, queue or details restores review keyboard focus immediately;
   F respects editable fields and repeated keys cannot repeatedly toggle the mode.
+  Delayed close events retain focus on a reselected menu summary, preventing its
+  next Enter from accidentally skipping a case.
 - Focus-mode evidence supports fit, 1:1, zoom, mouse/touch panning and pinch zoom. Image
   gestures never record an assessment; native forms remain usable without JS.
 - In focus mode, confirmed assessments animate the card left/right while the review shell stays

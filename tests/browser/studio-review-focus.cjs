@@ -71,8 +71,14 @@ assert.ok(['web', 'localhost', '127.0.0.1'].includes(new URL(base).hostname));
         const summary=page.locator(selector+' > summary');
         await summary.click(); await summary.click();
         assert.equal(await page.locator('[data-review-focus]').evaluate(el=>el===document.activeElement), true, 'Closing by mouse restores review keys immediately');
+        assert.equal(await summary.evaluate(el=>new Promise(resolve=>{
+          const panel=el.parentElement;
+          panel.addEventListener('toggle',()=>resolve(document.activeElement===el),{once:true});
+          panel.open=true; panel.open=false; el.focus();
+        })),true,'A queued panel close must not steal focus from its visible summary');
         await summary.focus(); await page.keyboard.press('Enter'); await page.keyboard.press('Enter');
         assert.equal(await page.locator(selector).evaluate(el=>el.open), false, 'Enter closes the focused summary, not skips the case');
+        assert.notEqual(await page.locator('body').getAttribute('data-review-submitting'),'true','Summary keys never start an asynchronous Skip');
         assert.equal(await id(page),f.main.id);
         await summary.click(); await page.keyboard.press('Escape');
         assert.equal(await page.locator('[data-review-focus]').evaluate(el=>el===document.activeElement), true, 'Escape restores review focus');

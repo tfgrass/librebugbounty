@@ -124,7 +124,8 @@
     // very next review key works. Async toggle events must never steal focus
     // from a different field/control or from a newly installed card.
     [navigation, queuePanel, inspector].filter(Boolean).forEach(panel => {
-      on(panel.querySelector('summary'), 'click', (event) => {
+      const summary = panel.querySelector('summary');
+      on(summary, 'click', (event) => {
         if (!panel.open || (!preferences.active && panel !== inspector)) return;
         event.preventDefault(); panel.open = false; focusCard();
       });
@@ -132,7 +133,9 @@
         if (panel === inspector && preferences.active && !panel.open && preferences.pinned) {
           preferences.pinned = false; applyPreferences(); savePreferences();
         }
-        if (!panel.open && panel.contains(document.activeElement)) focusCard();
+        // A queued close may arrive after the user has focused the still-visible
+        // summary again. Keep that focus: otherwise its next Enter becomes Skip.
+        if (!panel.open && panel.contains(document.activeElement) && !summary?.contains(document.activeElement)) focusCard();
       });
     });
     root.querySelectorAll('[data-review-open-details]').forEach((button) => on(button, 'click', () => {
