@@ -6,6 +6,7 @@ final readonly class ReviewQueueView
 {
     /**
      * @param array{all: int, inconclusive: int, error: int, unchecked: int, changed: int, ready: int, missing: int} $counts Global candidate counts, before filters/cursor.
+     * @param list<array{evidenceId: string, url: string, sha256: string}> $preloadImages Stored images for at most the next two cards; never authoritative navigation.
      * @param list<array<string, mixed>> $triggeringObservations Unresolved stored runs including their review reason.
      */
     public function __construct(
@@ -28,6 +29,7 @@ final readonly class ReviewQueueView
         public ?\DateTimeImmutable $lastAcknowledgedAt = null,
         public bool $baselineKnown = true,
         public bool $noticesAvailable = false,
+        public array $preloadImages = [],
     ) {
     }
 }
