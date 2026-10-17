@@ -12,6 +12,7 @@ const {
   MAX_BODY_BYTES,
   MAX_INTERACTIVE_SESSIONS,
   createWorkerServer,
+  createInteractiveRuntime,
   startInteractiveSession,
   sweepExpiredSessions,
   getInteractiveStatus,
@@ -180,6 +181,28 @@ function createInteractiveHarness(options = {}) {
     },
   };
   return harness;
+}
+
+function createVncHarness(options = {}) {
+  const harness = createInteractiveHarness(options);
+  harness.dependencies.mode = 'interactive';
+  harness.dependencies.runtime = createInteractiveRuntime(harness.dependencies);
+  return harness;
+}
+
+// Exercise the server/runtime contract without requiring P4's optional ws
+// dependency or starting a real VNC endpoint in the offline worker suite.
+function gatewayHarness(handleControl = () => false) {
+  let options;
+  let closes = 0;
+  return {
+    factory: (_server, supplied) => {
+      options = supplied;
+      return { handleControl, close: () => { closes += 1; } };
+    },
+    options: () => options,
+    closes: () => closes,
+  };
 }
 
 async function startHarness(harness, payload = { url: URL }) {
@@ -1184,4 +1207,388 @@ test('navigation during initial or capture inspection does not claim a cleared c
   assert.equal(result.metadata.currentChallengeState, 'unknown');
   assert.equal(result.metadata.challengeCleared, null);
   assert.equal(result.sourceURL, 'https://fixture.test/new-document');
+});
+
+test('explicit retest and shot modes never construct the gateway or expose interactive routes', async (t) => {
+  for (const mode of ['retest', 'shot']) {
+    await t.test(mode, async (t) => {
+      const harness = createInteractiveHarness();
+      const base = await serve(t, {
+        ...harness.dependencies, mode, workerToken: 'worker-secret',
+        createGateway: () => { throw new Error('Gateway must not load.'); },
+      });
+      for (const endpoint of ['/interactive-sessions', `/interactive-sessions/${'a'.repeat(48)}/status`, '/vnc-control/fence', '/vnc-control/state']) {
+        assert.equal((await request(base, endpoint)).status, 404);
+        assert.equal((await request(base, endpoint, {}, 'invalid')).status, 404);
+      }
+      assert.equal((await request(base, '/screenshot', {}, 'invalid')).status, 401);
+      assert.equal((await request(base, '/retest', {}, 'invalid')).status, 401);
+      assert.equal((await request(base, '/health')).status, 200);
+      assert.equal(harness.calls.length, 0);
+    });
+  }
+  assert.throws(() => createWorkerServer({ mode: 'typo' }), /PLAYWRIGHT_WORKER_MODE/);
+});
+
+test('interactive mode wires runtime hooks and delegates gateway control before worker authentication', async (t) => {
+  const harness = createVncHarness();
+  const gateway = gatewayHarness((req, res) => {
+    if (req.url !== '/vnc-control/state') return false;
+    res.writeHead(req.headers.authorization === 'Bearer gateway-secret' ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ gateway: true }));
+    return true;
+  });
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gateway.factory });
+  const hooks = gateway.options();
+  assert.deepEqual(hooks.upstream, { host: '127.0.0.1', port: 6080 });
+  assert.deepEqual(hooks.getSessionState(), { active: false, expiresAt: null, captureLocked: false });
+  for (const name of ['onQuiesce', 'onResume', 'advanceGeneration']) assert.equal(typeof hooks[name], 'function');
+  for (const endpoint of ['/screenshot', '/retest']) {
+    assert.equal((await request(base, endpoint, { url: URL }, 'invalid')).status, 404);
+  }
+  assert.equal((await request(base, '/vnc-control/state', undefined, 'gateway-secret')).status, 200);
+  assert.equal((await request(base, '/vnc-control/state', undefined, 'worker-secret')).status, 401);
+  assert.equal((await request(base, '/health')).status, 200);
+  assert.equal(harness.calls.length, 0);
+  await hooks.advanceGeneration(3);
+  assert.equal(harness.dependencies.runtime.generation, 3);
+  assert.equal((await request(base, '/interactive-sessions', { url: URL, generation: 2 })).status, 409);
+  assert.equal(harness.calls.length, 0);
+  assert.equal((await request(base, '/interactive-sessions', { url: URL, generation: 3 })).status, 201);
+  assert.equal(hooks.getSessionState().active, true);
+});
+
+test('explicit start validates generation and reserved ID before launching', async (t) => {
+  const harness = createVncHarness();
+  const gateway = gatewayHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gateway.factory });
+  for (const generation of [undefined, null, 0, -1, 1.5, '1', true, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal((await request(base, '/interactive-sessions', { url: URL, generation })).status, 400);
+  }
+  for (const sessionId of [null, 42, [], 'a'.repeat(47), 'a'.repeat(49), 'A'.repeat(48), 'x'.repeat(48), 'a'.repeat(48) + '\n', 'a'.repeat(10000)]) {
+    assert.equal((await request(base, '/interactive-sessions', { url: URL, generation: 1, sessionId })).status, 400);
+  }
+  assert.equal((await request(base, '/interactive-sessions', { url: URL, generation: 1, sessionId: 'b'.repeat(48) }, 'gateway-secret')).status, 401);
+  assert.equal(harness.calls.length, 0);
+  const created = await (await request(base, '/interactive-sessions', { url: URL, generation: 1 })).json();
+  assert.match(created.id, /^[a-f0-9]{48}$/);
+  assert.equal(created.generation, 1);
+  assert.equal(created.captureLocked, false);
+  assert.equal(created.captureId, null);
+  assert.equal(created.captureGeneration, null);
+});
+
+test('reserved start ID recovers a lost response idempotently and rejects changed bindings', async () => {
+  const harness = createVncHarness();
+  const payload = { url: URL, generation: 5, sessionId: 'c'.repeat(48) };
+  const [first, retry] = await Promise.all([startHarness(harness, payload), startHarness(harness, payload)]);
+  assert.deepEqual(retry, first);
+  assert.equal(first.id, payload.sessionId);
+  assert.equal(harness.calls.filter(([call]) => call === 'goto').length, 1);
+  assert.equal(harness.calls.filter(([call]) => call === 'context').length, 1);
+  harness.navigate('https://fixture.test/later');
+  const recovered = await startHarness(harness, payload);
+  assert.equal(recovered.finalUrl, 'https://fixture.test/later');
+  assert.equal(recovered.expiresAt, first.expiresAt);
+  const calls = harness.calls.length;
+  for (const changed of [{ ...payload, url: `${URL}?changed=1` }, { ...payload, generation: 6 }]) {
+    await assert.rejects(startHarness(harness, changed), { statusCode: 409 });
+  }
+  assert.equal(harness.calls.length, calls);
+  await closeInteractiveSessionById(first.id, harness.dependencies, { generation: 5 });
+  await assert.rejects(startHarness(harness, payload), { statusCode: 409 });
+  assert.equal(harness.calls.filter(([call]) => call === 'goto').length, 1);
+});
+
+test('interactive mutation RPCs require the current generation before any page side effects', async (t) => {
+  const harness = createVncHarness();
+  const gateway = gatewayHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gateway.factory });
+  const view = await (await request(base, '/interactive-sessions', { url: URL, generation: 7 })).json();
+  const calls = harness.calls.length;
+  for (const generation of [undefined, null, '7', 0, 6, 8]) {
+    for (const operation of ['capture', 'close', 'input']) {
+      const response = await request(base, `/interactive-sessions/${view.id}/${operation}`, { generation, action: 'key', key: 'Tab' });
+      assert.equal(response.status, typeof generation === 'number' && generation > 0 ? 409 : 400);
+    }
+  }
+  assert.equal(harness.calls.length, calls);
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/input`, { generation: 7, action: 'key', key: 'Tab' })).status, 200);
+  const captured = await request(base, `/interactive-sessions/${view.id}/capture`, { generation: 7 });
+  assert.equal(captured.status, 200);
+  assert.equal((await captured.json()).generation, 7);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, { generation: 7 })).status, 200);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, { generation: 7 })).status, 200);
+  await gateway.options().advanceGeneration(8);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, { generation: 7 })).status, 409);
+});
+
+test('fence rejects queued old capture, input, close and start before their FIFO side effects', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const blocker = deferred();
+  const lease = withDisplayLease(() => blocker.promise);
+  const calls = harness.calls.length;
+  const queued = Promise.allSettled([
+    captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }),
+    runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Escape' }, harness.dependencies),
+    closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 }),
+    startHarness(harness, { url: URL, generation: 1 }),
+  ]);
+  const fence = harness.dependencies.runtime.advanceGeneration(2);
+  assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+  blocker.resolve();
+  await lease;
+  for (const result of await queued) {
+    assert.equal(result.status, 'rejected');
+    assert.equal(result.reason.statusCode, 409);
+  }
+  await fence;
+  assert.equal(harness.calls.length, calls);
+  assert.equal(harness.contextClosed(), 0);
+  const current = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(current.generation, 2);
+  assert.equal(current.expiresAt, view.expiresAt);
+  assert.equal(current.captureLocked, false);
+  await assert.rejects(harness.dependencies.runtime.advanceGeneration(1), { statusCode: 409 });
+  await harness.dependencies.runtime.advanceGeneration(2);
+});
+
+test('fence settles an accepted capture and transfers immutable cached proof to the new owner', async () => {
+  const harness = createVncHarness();
+  const runtime = harness.dependencies.runtime;
+  const view = await startHarness(harness, { url: URL, generation: 4 });
+  const entered = deferred();
+  const image = deferred();
+  let resumes = 0;
+  runtime.onResume(() => { resumes += 1; });
+  harness.dependencies.captureDesktopScreenshot = async () => { entered.resolve(); return image.promise; };
+  const capture = captureInteractiveSession(view.id, harness.dependencies, { generation: 4 });
+  await entered.promise;
+  let acknowledged = false;
+  const fence = runtime.advanceGeneration(5).then(() => { acknowledged = true; });
+  const staleClose = assert.rejects(closeInteractiveSessionById(view.id, harness.dependencies, { generation: 4 }), { statusCode: 409 });
+  await Promise.resolve();
+  assert.equal(acknowledged, false);
+  assert.equal(runtime.getSessionState().captureLocked, true);
+  image.resolve(PNG.toString('base64'));
+  const original = await capture;
+  const originalCopy = structuredClone(original);
+  await fence;
+  await staleClose;
+  harness.setNow('2026-10-02T12:05:00.000Z');
+  harness.navigate('https://fixture.test/after-capture');
+  const transferred = await captureInteractiveSession(view.id, harness.dependencies, { generation: 5 });
+  assert.equal(original.generation, 4);
+  assert.equal(transferred.generation, 5);
+  assert.equal(transferred.metadata.captureGeneration, 4);
+  assert.match(transferred.metadata.captureId, /^[a-f0-9]{48}$/);
+  assert.deepEqual({ ...transferred, generation: 4 }, originalCopy);
+  assert.deepEqual(original, originalCopy);
+  assert.equal(transferred.metadata.inputMethod, 'vnc');
+  assert.equal(transferred.metadata.manualInteraction, null);
+  assert.equal(transferred.metadata.manualActionCount, null);
+  const current = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(current.generation, 5);
+  assert.equal(current.captureLocked, true);
+  assert.equal(current.captureId, original.metadata.captureId);
+  assert.equal(current.captureGeneration, 4);
+  assert.equal(current.expiresAt, view.expiresAt);
+  assert.equal(runtime.getSessionState().captureLocked, true);
+  assert.equal(resumes, 0);
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 4 }), { statusCode: 409 });
+  await assert.rejects(runInteractiveInput(view.id, { generation: 5, action: 'reload' }, harness.dependencies), { statusCode: 409 });
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal(harness.calls.filter(([call]) => call === 'goto').length, 1);
+});
+
+test('failed capture resumes only after its input gate releases and remains retryable', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const runtime = harness.dependencies.runtime;
+  const events = [];
+  runtime.onQuiesce(() => {
+    assert.equal(runtime.getSessionState().captureLocked, true);
+    events.push('quiesce');
+  });
+  runtime.onResume(() => {
+    assert.equal(runtime.getSessionState().captureLocked, false);
+    events.push('resume');
+  });
+  const desktop = harness.dependencies.captureDesktopScreenshot;
+  harness.dependencies.captureDesktopScreenshot = async () => { events.push('capture'); throw new Error('fixture failure'); };
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }), /fixture failure/);
+  assert.deepEqual(events, ['quiesce', 'capture', 'resume']);
+  assert.equal(runtime.getSessionState().active, true);
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).captureId, null);
+  harness.dependencies.captureDesktopScreenshot = desktop;
+  await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  assert.deepEqual(events, ['quiesce', 'capture', 'resume', 'quiesce']);
+});
+
+test('context dialog listener and input quiesce precede first navigation and pre-dismiss capture', async () => {
+  const dialog = createDialog('navigation proof');
+  let harness;
+  harness = createVncHarness({ goto: async (page, response) => {
+    assert.equal(harness.context.listenerCount('dialog'), 1);
+    assert.equal(page.listenerCount('dialog'), 1);
+    page.emit('dialog', dialog);
+    return response(200);
+  } });
+  const events = [];
+  harness.dependencies.dialogRenderDelayMs = 0;
+  harness.dependencies.runtime.onQuiesce(() => events.push('quiesce'));
+  const dismiss = dialog.dismiss;
+  dialog.dismiss = async () => { events.push('dismiss'); await dismiss(); };
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    events.push('capture');
+    assert.equal(dialog.isDismissed(), false);
+    assert.equal(events[0], 'quiesce');
+    return PNG.toString('base64');
+  };
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  assert.deepEqual(events, ['quiesce', 'capture', 'dismiss']);
+  const capture = await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  assert.equal(capture.captureMethod, 'desktop-dialog');
+  assert.equal(capture.metadata.dialogImageCaptured, true);
+});
+
+test('background popup dialog gates synchronously while capture and takeover wait for the retained frame', async () => {
+  const harness = createVncHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const runtime = harness.dependencies.runtime;
+  let quiesced = 0;
+  let resumed = 0;
+  runtime.onQuiesce(() => { quiesced += 1; });
+  runtime.onResume(() => { resumed += 1; });
+  const blocker = deferred();
+  const owner = withDisplayLease(() => blocker.promise);
+  const popup = new EventEmitter();
+  popup.url = () => 'https://fixture.test/popup-proof';
+  popup.mainFrame = () => ({});
+  popup.bringToFront = async () => {};
+  const dialog = { ...createDialog('popup proof'), page: () => popup };
+  harness.context.emit('dialog', dialog);
+  assert.equal(quiesced, 1);
+  assert.equal(runtime.getSessionState().captureLocked, true);
+  assert.equal(dialog.isDismissed(), false);
+  const rejectedCapture = assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }), { statusCode: 409 });
+  const fence = runtime.advanceGeneration(2);
+  blocker.resolve();
+  await owner;
+  await fence;
+  await rejectedCapture;
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(resumed, 1);
+  const saved = await captureInteractiveSession(view.id, harness.dependencies, { generation: 2 });
+  assert.equal(saved.sourceURL, popup.url());
+  assert.equal(saved.captureMethod, 'desktop-dialog');
+  assert.equal(harness.captureCount(), 1);
+});
+
+test('quiesce failure never claims dialog-image proof and keeps input fail-closed', async () => {
+  const harness = createVncHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const unsubscribe = harness.dependencies.runtime.onQuiesce(() => { throw new Error('purge failed'); });
+  const dialog = createDialog();
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.dialogObservation.captureSucceeded, false);
+  assert.equal(status.dialogObservation.captureError, 'purge failed');
+  assert.equal(status.dialogObservation.dismissed, true);
+  assert.equal(status.dialogFrameCapturedAt, null);
+  assert.equal(status.captureLocked, true);
+  assert.equal(harness.captureCount(), 0);
+  await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Escape' }, harness.dependencies), { statusCode: 409 });
+  unsubscribe();
+});
+
+test('worker-local expiry bypasses owner generation and quiesces before bounded teardown', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  let quiesced = 0;
+  harness.dependencies.runtime.onQuiesce(() => { quiesced += 1; });
+  await harness.dependencies.runtime.advanceGeneration(2);
+  quiesced = 0;
+  harness.setNow(new Date(Date.parse(view.expiresAt) + 1));
+  await sweepExpiredSessions(harness.dependencies);
+  assert.equal(quiesced, 1);
+  assert.equal(harness.contextClosed(), 1);
+  assert.equal(harness.dependencies.runtime.getSessionState().active, false);
+  await assert.rejects(closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 }), { statusCode: 409 });
+  assert.equal((await closeInteractiveSessionById(view.id, harness.dependencies, { generation: 2 })).closed, true);
+});
+
+test('reserved ID permits HTTP status and close recovery after the start client disconnects', async (t) => {
+  const entered = deferred();
+  const navigation = deferred();
+  const harness = createVncHarness({ goto: async (_page, response) => {
+    entered.resolve();
+    await navigation.promise;
+    return response(200);
+  } });
+  const gateway = gatewayHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gateway.factory });
+  const payload = { sessionId: 'd'.repeat(48), url: URL, generation: 1 };
+  const client = http.request(base + '/interactive-sessions', {
+    method: 'POST', headers: { Authorization: 'Bearer worker-secret', 'Content-Type': 'application/json' },
+  });
+  const disconnected = new Promise((resolve) => client.once('error', resolve));
+  client.end(JSON.stringify(payload));
+  await entered.promise;
+  client.destroy(new Error('Lost start response.'));
+  await disconnected;
+  navigation.resolve();
+  await withDisplayLease(async () => {});
+  const status = await request(base, `/interactive-sessions/${payload.sessionId}/status`);
+  assert.equal(status.status, 200);
+  assert.equal((await status.json()).id, payload.sessionId);
+  const retry = await request(base, '/interactive-sessions', payload);
+  assert.equal(retry.status, 201);
+  assert.equal((await retry.json()).id, payload.sessionId);
+  assert.equal(harness.calls.filter(([call]) => call === 'goto').length, 1);
+  assert.equal((await request(base, `/interactive-sessions/${payload.sessionId}/close`, { generation: 1 })).status, 200);
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('already cached dialog proof keeps original identity, timestamp and URL after takeover', async () => {
+  const harness = createVncHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const dialog = createDialog('retained before takeover');
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  const first = await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  const snapshot = structuredClone(first);
+  harness.setNow('2026-10-02T12:01:00.000Z');
+  harness.navigate('https://fixture.test/new-page');
+  await harness.dependencies.runtime.advanceGeneration(2);
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('Must replay the cached proof.'); };
+  const second = await captureInteractiveSession(view.id, harness.dependencies, { generation: 2 });
+  assert.deepEqual(second, { ...snapshot, generation: 2 });
+  assert.equal(second.captureMethod, 'desktop-dialog');
+  assert.equal(second.sourceURL, URL);
+  assert.equal(second.capturedAt, '2026-10-02T12:00:00.000Z');
+  assert.equal(second.metadata.captureGeneration, 1);
+  assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+  assert.equal(harness.captureCount(), 1);
+});
+
+test('a newer fence during expired-session cleanup prevents stale start from launching', async () => {
+  let fence;
+  let harness;
+  harness = createVncHarness({ closeContext: async () => {
+    fence = harness.dependencies.runtime.advanceGeneration(2);
+  } });
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  harness.setNow(new Date(Date.parse(view.expiresAt) + 1));
+  await assert.rejects(startHarness(harness, { url: URL, generation: 1 }), { statusCode: 409 });
+  await fence;
+  assert.equal(harness.dependencies.runtime.generation, 2);
+  assert.equal(harness.calls.filter(([call]) => call === 'context').length, 1);
+  assert.equal(interactiveSessions.size, 0);
 });

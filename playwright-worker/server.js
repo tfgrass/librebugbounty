@@ -220,6 +220,98 @@ function withDisplayLease(operation) {
   return current;
 }
 
+function workerMode(dependencies = {}) {
+  const mode = dependencies.mode ?? process.env.PLAYWRIGHT_WORKER_MODE ?? 'legacy';
+  if (!['legacy', 'retest', 'shot', 'interactive'].includes(mode)) {
+    throw new Error(`Invalid PLAYWRIGHT_WORKER_MODE: ${mode}`);
+  }
+  return mode;
+}
+
+function requireGeneration(generation) {
+  if (!Number.isSafeInteger(generation) || generation < 1) {
+    throw httpError(400, 'generation must be a positive safe integer.');
+  }
+}
+
+// The gateway owns sockets; this object owns browser state and the synchronous
+// input gate. Generation announcements happen before entering the display FIFO,
+// so an already queued old request cannot run ahead of the fence acknowledgement.
+function createInteractiveRuntime(dependencies = {}) {
+  const quiesceListeners = new Set();
+  const resumeListeners = new Set();
+  const gates = new Set();
+  let generation = 0;
+  const sessions = () => [...interactiveSessions.values()].filter((session) => session.runtime === runtime);
+  const runtime = {
+    get generation() { return generation; },
+    getSessionState() {
+      const session = sessions().find((candidate) => !candidate.closed);
+      return {
+        active: Boolean(session && session.expiresAt.getTime() > currentTime(dependencies)),
+        expiresAt: session ? session.expiresAt.getTime() : null,
+        captureLocked: Boolean(gates.size || session?.inputGates || session?.gateFailed || session?.captureResult),
+      };
+    },
+    onQuiesce(fn) { quiesceListeners.add(fn); return () => quiesceListeners.delete(fn); },
+    onResume(fn) { resumeListeners.add(fn); return () => resumeListeners.delete(fn); },
+    resume() {
+      const state = runtime.getSessionState();
+      if (state.active && !state.captureLocked) {
+        for (const fn of resumeListeners) fn();
+      }
+    },
+    quiesce(session) {
+      const gate = {};
+      if (session) session.inputGates = (session.inputGates || 0) + 1;
+      else gates.add(gate);
+      let failure;
+      for (const fn of quiesceListeners) {
+        try { fn(); } catch (error) { failure ||= error; }
+      }
+      if (failure) {
+        // A failed socket purge cannot be treated as reliable dialog proof.
+        if (session) session.gateFailed = true;
+        throw failure;
+      }
+      return () => {
+        if (session) session.inputGates -= 1;
+        else gates.delete(gate);
+        runtime.resume();
+      };
+    },
+    checkStart(expected) {
+      requireGeneration(expected);
+      if (expected < generation) throw httpError(409, 'Stale interactive generation.');
+    },
+    acceptStart(expected) { runtime.checkStart(expected); generation = expected; },
+    checkMutation(session, expected) {
+      requireGeneration(expected);
+      if (expected !== generation || (session && expected !== session.generation)) {
+        throw httpError(409, 'Stale interactive generation.');
+      }
+    },
+    advanceGeneration(expected) {
+      try {
+        runtime.checkStart(expected);
+        generation = expected;
+        const release = runtime.quiesce();
+        return withDisplayLease(async () => {
+          for (const session of sessions()) session.generation = expected;
+        }).finally(release);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    },
+  };
+  return runtime;
+}
+
+// Keep legacy/offline workers independent of the optional gateway dependency.
+function createGateway(server, options) {
+  return require('./vnc-gateway').createGateway(server, options);
+}
+
 async function fetchHttpFallback(url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.min(timeoutMs, 10000));
@@ -347,6 +439,10 @@ function currentTime(dependencies = {}) {
 function interactiveSessionView(session) {
   return {
     id: session.id,
+    generation: session.generation,
+    captureLocked: Boolean(session.captureResult || session.inputGates || session.gateFailed),
+    captureId: session.captureResult?.metadata.captureId || null,
+    captureGeneration: session.captureResult?.metadata.captureGeneration ?? null,
     createdAt: session.createdAt.toISOString(),
     expiresAt: session.expiresAt.toISOString(),
     initialUrl: session.initialUrl,
@@ -411,6 +507,8 @@ function terminateBrowserServer(server) {
 function closeInteractiveSession(session, dependencies = {}) {
   if (session.closeTask) return session.closeTask;
   session.closed = true;
+  // Notify before any asynchronous teardown; close/expiry must purge input too.
+  try { session.runtime?.quiesce(session); } catch { /* Teardown remains mandatory. */ }
   session.closeTask = (async () => {
     const graceMs = dependencies.cleanupTimeoutMs ?? 2000;
     try {
@@ -499,6 +597,10 @@ async function inspectInteractiveChallenge(session, dependencies = {}) {
 }
 
 function validateInteractiveStart(payload) {
+  if (payload.sessionId !== undefined && (typeof payload.sessionId !== 'string'
+      || payload.sessionId.length !== 48 || !SESSION_ID_PATTERN.test(payload.sessionId))) {
+    throw httpError(400, 'sessionId must contain exactly 48 lowercase hex characters.');
+  }
   let url;
   try {
     if (typeof payload.url !== 'string' || payload.url.length > 8192) throw new Error();
@@ -518,7 +620,9 @@ async function launchInteractiveSession(payload, dependencies = {}) {
   const launch = dependencies.launchBrowser || launchScreenshotBrowser;
   const createdAt = new Date(currentTime(dependencies));
   const record = {
-    id: (dependencies.randomId || (() => randomBytes(24).toString('hex')))(),
+    id: payload.sessionId ?? (dependencies.randomId || (() => randomBytes(24).toString('hex')))(),
+    generation: payload.generation ?? 0,
+    runtime: dependencies.runtime || null, inputGates: 0, gateFailed: false,
     createdAt,
     expiresAt: new Date(createdAt.getTime() + INTERACTIVE_SESSION_TTL_MS),
     initialUrl: payload.url,
@@ -594,10 +698,15 @@ async function launchInteractiveSession(payload, dependencies = {}) {
             dismissed: false, capturedAt: null, captureSucceeded: false, captureError: null,
           };
           record.dialogInfo = info;
+          let releaseInput;
+          let gateError;
+          try { releaseInput = record.runtime?.quiesce(record); }
+          catch (error) { gateError = error; }
           const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
           const handle = async () => {
             try {
               if (record.closed) return;
+              if (gateError) throw gateError;
               if (record.dialogCaptureAttempts < MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS) {
                 record.dialogCaptureAttempts += 1;
                 // A popup can own the native dialog while the opener remains
@@ -622,6 +731,7 @@ async function launchInteractiveSession(payload, dependencies = {}) {
             } finally {
               try { await dialog.dismiss(); info.dismissed = true; }
               catch { /* The page may have closed during capture. */ }
+              releaseInput?.();
             }
           };
           // Dialogs triggered by navigation or input already own the display.
@@ -746,7 +856,13 @@ async function sweepExpiredSessions(dependencies = {}) {
 
 async function startInteractiveSession(payload, dependencies = {}) {
   validateInteractiveStart(payload);
+  const explicit = workerMode(dependencies) === 'interactive';
+  if (explicit) {
+    requireGeneration(payload.generation);
+    dependencies.runtime ||= createInteractiveRuntime(dependencies);
+  }
   return withDisplayLease(async () => {
+    if (explicit) dependencies.runtime.checkStart(payload.generation);
     // The count and insertion share the lease; concurrent starts cannot exceed one.
     for (const [id, session] of interactiveSessions) {
       if (session.expiresAt.getTime() <= currentTime(dependencies)) {
@@ -755,15 +871,30 @@ async function startInteractiveSession(payload, dependencies = {}) {
         await closeInteractiveSession(session, dependencies);
       }
     }
+    // Expiry teardown can await browser cleanup while a newer fence arrives.
+    if (explicit) dependencies.runtime.checkStart(payload.generation);
+    const existing = payload.sessionId && interactiveSessions.get(payload.sessionId);
+    if (existing) {
+      if (existing.runtime !== (dependencies.runtime || null) || existing.generation !== (payload.generation ?? 0)
+          || existing.initialUrl !== payload.url) {
+        throw httpError(409, 'Interactive session ID is bound to a different start.');
+      }
+      return interactiveSessionView(existing);
+    }
+    if (payload.sessionId && interactiveTombstones.has(payload.sessionId)) {
+      throw httpError(409, 'Interactive session ID has already been closed.');
+    }
     if (interactiveSessions.size >= MAX_INTERACTIVE_SESSIONS) {
       throw httpError(409, 'Interactive browser capacity reached (maximum one session).');
     }
+    if (explicit) dependencies.runtime.acceptStart(payload.generation);
     const session = await launchInteractiveSession(payload, dependencies);
     if (interactiveSessions.has(session.id) || interactiveTombstones.has(session.id)) {
       await closeInteractiveSession(session, dependencies);
       throw new Error('Interactive session ID collision.');
     }
     interactiveSessions.set(session.id, session);
+    session.runtime?.resume();
     return interactiveSessionView(session);
   });
 }
@@ -788,34 +919,41 @@ async function getInteractiveSession(sessionId, dependencies) {
   return session;
 }
 
-function withInteractiveSession(sessionId, operation, dependencies = {}, timeoutMs = INTERACTIVE_OPERATION_TIMEOUT_MS) {
+function withInteractiveSession(sessionId, operation, dependencies = {}, timeoutMs = INTERACTIVE_OPERATION_TIMEOUT_MS, mutation = null) {
   return withDisplayLease(async () => {
+    if (mutation && dependencies.runtime) dependencies.runtime.checkMutation(null, mutation.generation);
     // Resolve inside the lease: a queued request may have expired or been closed.
     const session = await getInteractiveSession(sessionId, dependencies);
-    return interactiveWatchdog(session, async () => {
-      // A dialog may have queued after this request but before its lease was
-      // entered. Capture/dismiss it here so a page API cannot wait on it.
-      await processPendingDialogs(session);
-      await session.page.bringToFront();
-      if (session.expiresAt.getTime() <= currentTime(dependencies)) {
-        interactiveSessions.delete(session.id);
-        rememberSession(session.id, 'expired', currentTime(dependencies));
-        await closeInteractiveSession(session, dependencies);
-        throw httpError(410, 'Interactive browser session expired.');
-      }
-      if (session.closed) throw httpError(410, 'Interactive browser session closed.');
-      const result = await operation(session);
-      // A dialog may have arrived at the end of an input operation. Keep the
-      // desktop lease until its before-dismiss capture has finished.
-      await drainActiveDialogs(session);
-      if (session.expiresAt.getTime() <= currentTime(dependencies)) {
-        interactiveSessions.delete(session.id);
-        rememberSession(session.id, 'expired', currentTime(dependencies));
-        await closeInteractiveSession(session, dependencies);
-        throw httpError(410, 'Interactive browser session expired.');
-      }
-      return result;
-    }, dependencies.operationTimeoutMs ?? timeoutMs, dependencies);
+    if (mutation && session.runtime) session.runtime.checkMutation(session, mutation.generation);
+    const releaseInput = mutation?.capture ? session.runtime?.quiesce(session) : null;
+    try {
+      return await interactiveWatchdog(session, async () => {
+        // A dialog may have queued after this request but before its lease was
+        // entered. Capture/dismiss it here so a page API cannot wait on it.
+        await processPendingDialogs(session);
+        await session.page.bringToFront();
+        if (session.expiresAt.getTime() <= currentTime(dependencies)) {
+          interactiveSessions.delete(session.id);
+          rememberSession(session.id, 'expired', currentTime(dependencies));
+          await closeInteractiveSession(session, dependencies);
+          throw httpError(410, 'Interactive browser session expired.');
+        }
+        if (session.closed) throw httpError(410, 'Interactive browser session closed.');
+        const result = await operation(session);
+        // A dialog may have arrived at the end of an input operation. Keep the
+        // desktop lease until its before-dismiss capture has finished.
+        await drainActiveDialogs(session);
+        if (session.expiresAt.getTime() <= currentTime(dependencies)) {
+          interactiveSessions.delete(session.id);
+          rememberSession(session.id, 'expired', currentTime(dependencies));
+          await closeInteractiveSession(session, dependencies);
+          throw httpError(410, 'Interactive browser session expired.');
+        }
+        return result;
+      }, dependencies.operationTimeoutMs ?? timeoutMs, dependencies);
+    } finally {
+      releaseInput?.();
+    }
   });
 }
 
@@ -849,7 +987,7 @@ async function runInteractiveInput(sessionId, payload, dependencies = {}) {
   const input = validateInteractiveInput(payload);
   const wait = dependencies.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   return withInteractiveSession(sessionId, async (session) => {
-    if (session.captureResult) throw httpError(409, 'Session already captured; retry capture or close it.');
+    if (session.captureResult || session.gateFailed) throw httpError(409, 'Session input is locked; retry capture or close it.');
     const page = session.page;
     switch (input.action) {
       case 'click':
@@ -868,7 +1006,7 @@ async function runInteractiveInput(sessionId, payload, dependencies = {}) {
     session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     await drainActiveDialogs(session);
     return interactiveSessionView(session);
-  }, dependencies, ['reload', 'back'].includes(input.action) ? 50000 : INTERACTIVE_OPERATION_TIMEOUT_MS);
+  }, dependencies, ['reload', 'back'].includes(input.action) ? 50000 : INTERACTIVE_OPERATION_TIMEOUT_MS, payload);
 }
 
 async function getInteractiveStatus(sessionId, dependencies = {}) {
@@ -894,12 +1032,13 @@ async function getInteractiveFrame(sessionId, dependencies = {}) {
   }, dependencies);
 }
 
-async function captureInteractiveSession(sessionId, dependencies = {}) {
+async function captureInteractiveSession(sessionId, dependencies = {}, payload = {}) {
   const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
   return withInteractiveSession(sessionId, async (session) => {
     // Returning the exact bytes/timestamp lets persistence retry without creating
     // different evidence. Manual input is locked after this first capture.
-    if (session.captureResult) return session.captureResult;
+    if (session.captureResult) return { ...session.captureResult, generation: session.generation };
+    await drainActiveDialogs(session);
     session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     const captureInspectionAt = new Date(currentTime(dependencies)).toISOString();
     const inspectionSequence = session.pageNavigationSequence.get(session.page);
@@ -922,6 +1061,7 @@ async function captureInteractiveSession(sessionId, dependencies = {}) {
       : view.challenge;
     const captureSelection = useDialogFrame ? 'retained-dialog' : 'current-page';
     session.captureResult = {
+      generation: session.generation,
       screenshotBase64,
       capturedAt: useDialogFrame ? session.dialogFrame.capturedAt : new Date(currentTime(dependencies)).toISOString(),
       dialogCapturedAt: useDialogFrame ? session.dialogFrame.capturedAt : null,
@@ -934,6 +1074,9 @@ async function captureInteractiveSession(sessionId, dependencies = {}) {
       dialogText: (useDialogFrame ? session.dialogFrame : session.dialogInfo)?.message || null,
       captureMethod: useDialogFrame ? 'desktop-dialog' : 'interactive-desktop-page',
       metadata: {
+        captureId: randomBytes(24).toString('hex'),
+        captureGeneration: session.generation,
+        ...(session.runtime ? { inputMethod: 'vnc', manualInteraction: null, manualActionCount: null } : {}),
         interactive: true,
         manual: true,
         contextMode: 'fresh-retry',
@@ -971,11 +1114,12 @@ async function captureInteractiveSession(sessionId, dependencies = {}) {
       },
     };
     return session.captureResult;
-  }, dependencies);
+  }, dependencies, INTERACTIVE_OPERATION_TIMEOUT_MS, { ...payload, capture: true });
 }
 
-async function closeInteractiveSessionById(sessionId, dependencies = {}) {
+async function closeInteractiveSessionById(sessionId, dependencies = {}, payload = {}) {
   return withDisplayLease(async () => {
+    if (dependencies.runtime) dependencies.runtime.checkMutation(null, payload.generation);
     if (!SESSION_ID_PATTERN.test(sessionId)) throw httpError(404, 'Interactive browser session not found.');
     const session = interactiveSessions.get(sessionId);
     if (!session) {
@@ -983,6 +1127,7 @@ async function closeInteractiveSessionById(sessionId, dependencies = {}) {
       if (tombstone && tombstone.until > currentTime(dependencies)) return { closed: true, id: sessionId };
       throw httpError(404, 'Interactive browser session not found.');
     }
+    if (session.runtime && dependencies.runtime) session.runtime.checkMutation(session, payload.generation);
     // Removal and teardown both own the FIFO. A racing input/frame/capture
     // resolves the ID only after this teardown, and cannot revive the session.
     interactiveSessions.delete(sessionId);
@@ -1482,13 +1627,26 @@ function requireWorkerToken(req, token) {
 }
 
 function createWorkerServer(dependencies = {}) {
+  const mode = workerMode(dependencies);
+  dependencies = { ...dependencies, mode };
+  if (mode === 'interactive') dependencies.runtime ||= createInteractiveRuntime(dependencies);
   const workerToken = dependencies.workerToken ?? process.env.PLAYWRIGHT_WORKER_TOKEN;
+  let gateway;
   const worker = http.createServer(async (req, res) => {
     let pathname;
     try {
       const requestUrl = new URL(req.url, 'http://localhost');
       pathname = requestUrl.pathname;
       if (req.method === 'GET' && pathname === '/health') return sendJson(res, 200, { ok: true });
+      const interactiveRoute = pathname === '/interactive-sessions' || pathname.startsWith('/interactive-sessions/');
+      const controlRoute = pathname === '/vnc-control' || pathname.startsWith('/vnc-control/');
+      if ((mode !== 'legacy' && mode !== 'interactive' && (interactiveRoute || controlRoute))
+          || (mode === 'interactive' && ['/retest', '/screenshot'].includes(pathname))) {
+        return sendJson(res, 404, { errorMessage: 'Not found.' });
+      }
+      // Gateway control uses its own service token, never the worker credential.
+      if (gateway && await gateway.handleControl(req, res)) return;
+      if (controlRoute) return sendJson(res, 404, { errorMessage: 'Not found.' });
       // This covers existing screenshot/retest mutations as well as interactive
       // routes. An internal network is still required; the app has no user login.
       if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) requireWorkerToken(req, workerToken);
@@ -1512,8 +1670,8 @@ function createWorkerServer(dependencies = {}) {
           // Even empty-body operations must enforce the global transport limit.
           const payload = await readJson(req);
           const result = operation === 'input' ? await runInteractiveInput(sessionId, payload, dependencies)
-            : operation === 'capture' ? await captureInteractiveSession(sessionId, dependencies)
-              : await closeInteractiveSessionById(sessionId, dependencies);
+            : operation === 'capture' ? await captureInteractiveSession(sessionId, dependencies, payload)
+              : await closeInteractiveSessionById(sessionId, dependencies, payload);
           return sendJson(res, 200, result);
         }
         return sendJson(res, 405, { errorMessage: 'Method not allowed.' });
@@ -1541,6 +1699,17 @@ function createWorkerServer(dependencies = {}) {
       }
     }
   });
+  if (mode === 'interactive') {
+    const runtime = dependencies.runtime;
+    gateway = (dependencies.createGateway || createGateway)(worker, {
+      upstream: { host: '127.0.0.1', port: 6080 },
+      getSessionState: () => runtime.getSessionState(),
+      onQuiesce: (fn) => runtime.onQuiesce(fn),
+      onResume: (fn) => runtime.onResume(fn),
+      advanceGeneration: (generation) => runtime.advanceGeneration(generation),
+      ...(dependencies.authorize ? { authorize: dependencies.authorize } : {}),
+    });
+  }
   worker.requestTimeout = 15000;
   worker.headersTimeout = 10000;
   let sweepTimer;
@@ -1550,6 +1719,7 @@ function createWorkerServer(dependencies = {}) {
   });
   worker.on('close', () => {
     clearInterval(sweepTimer);
+    gateway?.close();
     void withDisplayLease(async () => {
       for (const [id, session] of interactiveSessions) {
         interactiveSessions.delete(id);
@@ -1558,15 +1728,17 @@ function createWorkerServer(dependencies = {}) {
       }
     }).catch(() => {});
   });
+  worker.once('worker-shutdown', () => gateway?.close());
   return worker;
 }
 
-const server = createWorkerServer();
-
 if (require.main === module) {
+  const server = createWorkerServer();
   const shutdown = () => {
     // Closing the HTTP server drains active requests, then its close handler
     // stops sweeping and tears down the remaining sessions under the FIFO.
+    // Upgraded sockets otherwise keep HTTP close waiting indefinitely.
+    server.emit('worker-shutdown');
     server.close();
     server.closeIdleConnections();
   };
@@ -1597,4 +1769,6 @@ module.exports = {
   runScreenshot,
   interactiveSessions,
   withDisplayLease,
+  createInteractiveRuntime,
+  createGateway,
 };
