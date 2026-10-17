@@ -455,5 +455,6 @@
 .review-vnc-primary .novnc-viewport { height: auto; min-height: 220px; flex: 1 0 220px; }
 [data-review-focus-mode="true"] .review-vnc-primary { position: absolute; inset: 104px 194px 132px 12px; width: auto; z-index: 2; background: #080d13; border-radius: 12px; }
 [data-review-focus-mode="true"] .review-vnc-primary .novnc-panel { min-height: 100%; }
+.review-vnc-primary:has(.novnc-panel[data-fullscreen="true"]) { z-index: 40; overflow: visible; }
 @media (max-width: 760px) { [data-review-focus-mode="true"] .review-vnc-primary { inset: 176px 8px 180px; } }
 @media (max-width: 640px) { .review-case-heading { flex-wrap: wrap; } .review-interactive-entry { font-size: 10px !important; padding: 5px 8px; } }

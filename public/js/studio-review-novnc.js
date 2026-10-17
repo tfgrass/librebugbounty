@@ -29,7 +29,48 @@ export function mountInteractivePanel(element) {
   let retryAfter = 0, deadline = 0;
   const say = (name, text) => { get(name).textContent = text || ''; };
   const notice = text => { say('notice', text); get('notice').hidden = !text; };
-  const on = (target, name, fn) => target.addEventListener(name, fn, { signal: lifecycle.signal });
+  const on = (target, name, fn, options = {}) => target.addEventListener(name, fn, { ...options, signal: lifecycle.signal });
+  const fullscreenButton = get('fullscreen');
+  let layoutFullscreen = false, fullscreenPending = false, previousOverflow;
+  const syncFullscreen = () => {
+    const active = document.fullscreenElement === element || layoutFullscreen;
+    element.dataset.fullscreen = String(active);
+    fullscreenButton.setAttribute('aria-pressed', String(active));
+    fullscreenButton.textContent = active ? messages.exitFullscreen : messages.fullscreen;
+  };
+  const leaveLayoutFullscreen = () => {
+    if (!layoutFullscreen) return;
+    layoutFullscreen = false;
+    document.body.style.overflow = previousOverflow;
+    syncFullscreen();
+  };
+  on(fullscreenButton, 'click', async () => {
+    if (fullscreenPending) return;
+    if (layoutFullscreen) { leaveLayoutFullscreen(); return; }
+    fullscreenPending = true;
+    try {
+      if (document.fullscreenElement === element) await document.exitFullscreen();
+      else if (document.fullscreenEnabled && element.requestFullscreen) await element.requestFullscreen();
+      else throw new Error('Use the window-filling fallback');
+    } catch (_) {
+      // Unsupported/denied browser fullscreen still gets an in-tab large view.
+      // This changes presentation only: no lease, navigation or worker request.
+      if (!disposed && document.fullscreenElement !== element) {
+        previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden'; layoutFullscreen = true;
+      }
+    } finally {
+      fullscreenPending = false;
+      if (!disposed) syncFullscreen();
+    }
+  });
+  on(document, 'fullscreenchange', syncFullscreen);
+  on(document, 'keydown', event => {
+    if (layoutFullscreen && event.key === 'Escape') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      leaveLayoutFullscreen(); fullscreenButton.focus();
+    }
+  }, { capture: true });
 
   // Let noVNC's canvas and native controls handle events before stopping them
   // at the panel boundary. Review's document shortcuts/swipes must not run.
@@ -249,6 +290,8 @@ export function mountInteractivePanel(element) {
     refresh,
     destroy() {
       disposed = true; ++epoch;
+      leaveLayoutFullscreen();
+      if (document.fullscreenElement === element) void document.exitFullscreen().catch(() => {});
       clearTimeout(timer); clearInterval(expiryTimer);
       lifecycle.abort(); disconnect(); panels.delete(element);
     },

@@ -123,6 +123,20 @@
 .novnc-dialog p { font-size: 13px; white-space: pre-wrap; }
 .novnc-shell { width: min(1800px, 100%); margin: 0 auto; }
 .novnc-shell .novnc-viewport { height: clamp(280px, 64vh, 1000px); }
+/* Fullscreen keeps local controls reachable; the remote framebuffer takes the
+   remaining space. The same layout works without browser Fullscreen support. */
+.novnc-panel[data-fullscreen="true"] {
+  position: fixed; inset: 0; z-index: 100; width: 100vw; height: 100dvh;
+  max-width: none; margin: 0; min-height: 0; padding: 10px; border: 0;
+  border-radius: 0; gap: 8px; overflow: auto; background: #11161d;
+}
+.novnc-panel[data-fullscreen="true"] .novnc-heading { align-items: center; }
+.novnc-panel[data-fullscreen="true"] .novnc-heading strong { font-size: 16px; }
+.novnc-panel[data-fullscreen="true"] .novnc-description,
+.novnc-panel[data-fullscreen="true"] .novnc-heading p { display: none; }
+.novnc-panel[data-fullscreen="true"] .novnc-viewport { height: auto; min-height: 100px; flex: 1 0 100px; }
+.novnc-panel[data-fullscreen="true"] .novnc-connection:empty { display: none; }
+.novnc-panel[data-fullscreen="true"] .novnc-dialog { max-height: 24vh; overflow: auto; }
 @media (max-width: 600px) {
   .novnc-panel { padding: 12px; gap: 10px; }
   .novnc-heading { flex-direction: column; }

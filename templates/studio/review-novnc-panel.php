@@ -38,6 +38,8 @@ $novncMessages = [
     'confirmRelease' => $t('Session ohne Speichern beenden? Nicht gespeicherte Inhalte gehen verloren.'),
     'dialogCaptured' => $t('Browser-Dialog vor dem Schließen als Bild festgehalten.'),
     'dialogUnconfirmed' => $t('Browser-Dialog beobachtet; seine Bildaufnahme ist nicht bestätigt.'),
+    'fullscreen' => $t('Vollbild'),
+    'exitFullscreen' => $t('Vollbild verlassen'),
 ];
 ?>
 <link rel="stylesheet" href="/css/studio-review-interactive.css">
@@ -57,6 +59,7 @@ $novncMessages = [
     <button type="button" class="novnc-primary" data-novnc-action="save" hidden><?= $escape($t('Beleg speichern')) ?></button>
     <button type="button" data-novnc-action="release" hidden><?= $escape($t('Abbrechen / Session beenden')) ?></button>
     <button type="button" data-novnc-action="refresh"><?= $escape($t('Session-Status prüfen')) ?></button>
+    <button type="button" data-novnc-fullscreen aria-pressed="false"><?= $escape($t('Vollbild')) ?></button>
     <span class="novnc-expiry" data-novnc-expiry></span>
   </div>
   <div class="novnc-confirm" data-novnc-confirm role="group" aria-label="<?= $escape($t('Aktion bestätigen')) ?>" hidden>

@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'Vollbild' => 'Fullscreen',
+    'Vollbild verlassen' => 'Exit fullscreen',
     'Beleg speichern' => 'Save evidence',
     'Ein zuvor festgehaltener Browser-Dialog wird bevorzugt gespeichert, auch wenn die Seite danach weitergeleitet hat. Ohne Dialogbild wird die aktuelle Seite aufgenommen.' => 'A previously captured browser dialog is saved preferentially, even if the page has since redirected. Without a dialog image, the current page is captured.',
     'Browser-Dialog vor dem Schließen als Bild festgehalten.' => 'Browser dialog captured before dismissal.',
