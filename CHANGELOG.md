@@ -5,11 +5,27 @@ repository's tagged commits.
 
 ## Unreleased
 
-Interactive review work is assigned to 2.1.0; the codename is undecided. The
-existing image/click fallback is implemented; noVNC is planned as the next slice.
+Interactive review work is assigned to 2.1.0; the codename is undecided.
 
 ### Added
 
+- Embedded noVNC streams the dedicated Playwright Chromium desktop inside LBB.
+  Review always offers **Review interactively**; without a readable image the
+  live-browser panel is primary, with an explicit Start button. Opening Review,
+  reloading, counters and preloads never start a browser. Stored readable images
+  retain the 2.0.3 viewer.
+- Interactive panels offer fullscreen with save/end controls still reachable,
+  an in-tab fallback when fullscreen permission is denied, and Escape to return.
+  Switching presentation never starts, replaces or takes over a browser session.
+- One interactive operator can reconnect or explicitly take over the same
+  finding without replacing its browser or extending its 20-minute expiry.
+  Another finding requires confirmed end-and-start. Database leases and gateway
+  generation fences revoke stale input/save/close requests; the four automated
+  screenshot lanes remain independent. Captured proof stays immutable and input
+  locked through takeover until save, cancel or expiry.
+- DDEV provides a dedicated interactive sidecar, same-origin WSS and a private
+  session-authorization callback, with loopback-only RFB/websockify and no
+  host-published worker ports. A separate gateway credential never reaches HTML.
 - Review can reopen an unresolved browser-protection capture in one fresh
   Playwright/Chromium retry context with bounded manual input and a 20-minute
   worker TTL. A non-destructive capture can be saved as another screenshot with
@@ -22,7 +38,7 @@ existing image/click fallback is implemented; noVNC is planned as the next slice
   locked after capture; dialog observation alone does not imply image capture
   or challenge clearance.
 - Internal worker mutations use a shared service token across the web container,
-  base worker and four screenshot lanes, with a development-only DDEV value and
+  base worker, four screenshot lanes and interactive sidecar, with a development-only DDEV value and
   no host-published worker HTTP ports.
 
 ## 2.0.3 — Moneta (2026-10-12)

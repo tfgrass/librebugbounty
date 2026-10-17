@@ -6,7 +6,7 @@
   "description": "Small HTTP API for browser retests and screenshots inside the DDEV Playwright sidecar.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test server.test.js vnc-gateway.test.js"
+    "test": "node --test server.test.js vnc-gateway.test.js vnc-runtime-smoke.test.cjs"
   },
   "dependencies": {
     "playwright": "1.61.1",

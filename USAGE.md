@@ -117,6 +117,41 @@ reminders are inferred from old markers.
 
 ## Manual review
 
+### Interactive verification
+
+**Review interactively** (German UI **Interaktiv prüfen**) is always visible and
+has no detection prerequisite.
+When no readable stored image exists, use the embedded noVNC panel as the primary
+surface and press **Start** explicitly; opening a case never starts a browser.
+Each manual Start uses a fresh context. Do not expect cookies, login state, or
+history from a screenshot lane or another session.
+
+Choose **Fullscreen** (**Vollbild**) to expand the live-browser panel; save/end
+controls stay available. Choose **Exit fullscreen** or press Escape to return.
+If browser fullscreen is unavailable, the panel fills the current tab instead.
+This is a display-only change and does not start or replace a session.
+
+Only one operator controls the shared interactive desktop. A second operator
+sees a busy state and must explicitly take over the same finding. Takeover keeps
+the existing browser context and cached proof. A native dialog can be retained as
+provenance, but it does not lock input and you may continue navigating after it.
+An explicit capture/save attempt sets `captureLocked`; the proof is then immutable
+and input remains locked until the new owner chooses **Save** or **Cancel**. The
+original capture ID, capture generation, capture time and URL remain attached to
+that proof; a later save authorization generation is only the current permission
+to save it.
+
+The worker lifetime is an absolute 20 minutes. Reconnect keeps the context only
+until that expiry and never renews it. For expiry, revoked, busy, or
+worker-unavailable states, follow the displayed recovery action and Start again
+explicitly. Different findings require confirmed **End and start**. A live view,
+a dialog observation, or a protection state does not establish clearance, a
+vulnerability, or an assessment.
+
+For a read-only runtime check with no target access or session mutation, use the
+command in [README.md](README.md). Tokens and cookies are environment-only and
+are never printed.
+
 Review prioritizes cases with readable images. Change the review selection to
 include cases without images or to focus on new notices, inconclusive results,
 technical errors, or cases without a technical observation.
@@ -204,18 +239,17 @@ decision buttons become available; Skip, Back, and Open PoC remain usable.
 The pause is off by default and requires JavaScript. Opening a stored URL uses
 normal browser navigation; it does not reproduce a stored POST request.
 
-When the latest screenshot records an unresolved browser-protection page,
-the normal screenshot viewer remains primary and Review offers the fallback
-**Open interactive retry**. This starts a *fresh*
-Playwright/Chromium context at the reported URL; it does not resume the original
-capture's cookies, storage or browser fingerprint. The live view accepts bounded
-clicks, keys, text entry and scrolling using a live viewport image, so clicks
-refer to the currently displayed page. Exactly one interactive session is
-admitted per worker; a second start is rejected with 409. Review uses the base
-worker and keeps at most one session per PHP browser session across findings.
-Sessions expire after an absolute 20-minute TTL; polling does not extend it and
-a 30-second sweeper removes expired worker contexts. A worker restart loses the
-in-memory session. Remote noVNC control is planned as the next 2.1.0 slice.
+**Review interactively** is available whether or not browser protection was
+detected. A readable stored image keeps the normal viewer primary; otherwise
+the embedded live-browser panel replaces the empty image area. Click **Start
+interactive review** to open a fresh worker Chromium at the reported URL and
+control it with normal mouse/keyboard input through noVNC inside LBB. This does
+not resume the screenshot's cookies, storage or fingerprint. The dedicated
+interactive desktop has one active operator globally; four automatic screenshot
+lanes remain independent. A second tab can explicitly take over the same finding
+without replacing its context or extending its absolute 20-minute expiry.
+Another finding requires confirmed **End and start**. A worker restart loses
+the in-memory browser; use the displayed recovery action and start explicitly.
 
 Use **Save evidence** to retain another screenshot with
 interactive provenance. A native alert is photographed on the desktop before
@@ -232,8 +266,10 @@ Capture leaves the context open and caches the first successful result. Further
 input is then blocked; retrying a failed save reuses the same image and timestamp
 until close or expiry. Storage/database failures retain the session for retry or
 cancel. A successful save closes it; cancelling closes it without new evidence.
-If the finding or its triggering screenshot changes or checks become disallowed,
-Review invalidates the session and requires a fresh start.
+If the finding URL changes or checks become disallowed, Review blocks further
+control/save and requires explicit cleanup. New automated screenshots alone do
+not invalidate this manually started browser. Old tabs cannot save or close a
+browser after another tab takes it over.
 
 The saved image is stronger context than an undocumented manual PoC visit, but it
 is still human-observed evidence. It does not run the technical retest logic or

@@ -1,7 +1,10 @@
 # Playwright worker
 
-This internal HTTP service runs in the DDEV `playwright` sidecar. It owns the
-shared Xvfb desktop used by headed browser work and exposes these routes:
+This internal HTTP service runs in the DDEV Playwright sidecars.
+`PLAYWRIGHT_WORKER_MODE` selects one explicit mode: `retest` for headless
+technical rechecks, `shot` for one of the four screenshot lanes, or `interactive`
+for the shared interactive noVNC desktop and gateway. The mode exposes only its
+configured routes:
 
 - `GET /health`
 - `POST /retest`
@@ -12,6 +15,8 @@ shared Xvfb desktop used by headed browser work and exposes these routes:
 - `POST /interactive-sessions/{id}/input`
 - `POST /interactive-sessions/{id}/capture`
 - `POST /interactive-sessions/{id}/close`
+- `GET /vnc-control/state` and `POST /vnc-control/fence` (gateway credential)
+- `GET /review/{findingId}/interactive/vnc` (same-origin WebSocket Upgrade)
 
 The service must remain inside the DDEV network. Every mutation route, including
 the existing `/screenshot` and `/retest` endpoints, requires the configured shared
@@ -22,16 +27,22 @@ a missing/incorrect request token returns 401. Health remains public. Status and
 frame GETs rely on the internal network and the unguessable session ID; keep
 these IDs inside the application proxy. This is service authentication, not
 worker identity or lane routing; the application has no user login. DDEV gives
-the web container, base worker and all four screenshot lanes the same token.
+the web container and all six browser services the same worker token. The
+interactive gateway requires a distinct `PLAYWRIGHT_GATEWAY_TOKEN`; neither
+credential is an operator identity or exposed to the browser.
 The checked-in `local-ddev-playwright-worker-token` is a development value.
 Worker HTTP ports use internal `expose` only, with no host-published ports.
 
 ## Reproducible runtime
 
 The Docker image, `package.json`, and `package-lock.json` all use Playwright
-`1.61.1`. `start.sh` runs `npm ci` when dependencies are absent, starts a
-1440x900 Xvfb display, waits for its Unix socket, exports `DISPLAY`, and then
-starts Node. The script forwards shutdown by terminating both Node and Xvfb.
+`1.61.1`. `start.sh` validates dependencies under a shared install lock, running
+`npm ci` only when needed. `retest` runs Node without a desktop; each `shot` lane
+starts its own 1440x900 Xvfb. `interactive` also starts pinned x11vnc/websockify,
+both bound to container loopback. Only the integrated gateway is reachable on
+the private worker HTTP port. Health checks include child liveness and desktop
+transport handshakes; shutdown terminates the process trees. The interactive
+Dockerfile pins `x11vnc=0.9.16-8` and `websockify=0.10.0+dfsg1-2build1`.
 
 The committed lock file is required so a fresh DDEV checkout installs exactly the
 dependency set used by the sidecar image.
@@ -113,8 +124,8 @@ capture errors return HTTP 500 with `errorMessage`.
 ## Interactive capture sessions
 
 This is a **fresh-context interactive retry**, with no cookies, fingerprint, or
-context carried over from the queued screenshot. The application uses the base
-`playwright` sidecar. Each session owns a separate headed Chromium browser server,
+context carried over from the queued screenshot. DDEV uses the dedicated
+`playwright-interactive` sidecar, not the base recheck worker. Each session owns a headed Chromium browser server,
 context, and page in worker memory. IDs are 24 cryptographically random bytes
 encoded as exactly 48 lowercase hex characters. No profile or cookie store is
 persisted or shared with other sessions or the screenshot lanes. Worker restart
@@ -122,12 +133,12 @@ invalidates all IDs.
 
 | Route | Behavior |
 | --- | --- |
-| `POST /interactive-sessions` | Accepts `{url, timeoutMs}`; creates a session and returns 201 with its view. Only HTTP(S) URLs are accepted (maximum 8192 characters). Navigation timeout defaults to 45000 ms and is bounded to 1000–120000 ms. Navigates once to `domcontentloaded`, records the initial state, and returns even if protection is still detected. |
+| `POST /interactive-sessions` | Accepts `{url, timeoutMs, generation, sessionId?}` in interactive mode; creates a session and returns 201 with its view. Generation is a positive integer; an optional reserved 48-hex ID supports lost-response recovery. Only HTTP(S) URLs are accepted (maximum 8192 characters). Navigation timeout defaults to 45000 ms and is bounded to 1000–120000 ms. Navigates once to `domcontentloaded`, records the initial state, and returns even if protection is still detected. |
 | `GET /interactive-sessions/{id}/status` | Re-inspects protection and returns the current session view. |
 | `GET /interactive-sessions/{id}/frame` | Returns the current live viewport PNG with `Cache-Control: no-store`, never a retained dialog image; click coordinates stay aligned with the current page. |
 | `POST /interactive-sessions/{id}/input` | Accepts one bounded manual action, then refreshes protection state. |
-| `POST /interactive-sessions/{id}/capture` | Returns screenshot-result JSON, preferring a retained native dialog desktop image (`captureMethod: "desktop-dialog"`), otherwise a headed desktop page image (`"interactive-desktop-page"`). Leaves the context open and caches the result. |
-| `POST /interactive-sessions/{id}/close` | Removes the live ID before teardown, then closes without saving evidence. Retrying a recent closed/expired tombstone returns 200 with `{closed: true, id}`; an unknown ID returns 404. |
+| `POST /interactive-sessions/{id}/capture` | Requires `{generation}` in interactive mode. Returns screenshot-result JSON, preferring a retained native dialog desktop image (`captureMethod: "desktop-dialog"`), otherwise a headed desktop page image (`"interactive-desktop-page"`). Leaves the context open and caches the result. |
+| `POST /interactive-sessions/{id}/close` | Requires `{generation}` in interactive mode. Removes the live ID before teardown, then closes without saving evidence. Retrying a recent closed/expired tombstone returns 200 with `{closed: true, id}`; an unknown ID returns 404. |
 
 Session views retain the required `id`, `createdAt`, `expiresAt`, `finalUrl`,
 `httpStatus`, `challenge`, `initialChallenge`, and `navigationError`. Additive
@@ -255,13 +266,54 @@ recovery. These tests do not exercise real Chromium/Xvfb/ffmpeg or manual challe
 clearance. Browser fixtures used for acceptance checks live in the project's
 `tests/Support/` directory.
 
-Handoff evidence for the current 2.1.0 WIP reports `node server.test.js` with
-51 passing tests, plus `dialog-smoke.cjs` with 4/4 real Chromium cases: immediate,
-delayed, popup and post-dialog navigation/redirect. The latter uses synthetic
-local protection fixtures; it does not establish behavior against real
-Cloudflare. P8 documentation continuation did not rerun these checks. Main owns
-the remaining PHP, browser and DDEV runtime acceptance and DDEV restart. noVNC
-is the planned next 2.1.0 slice, not implemented by this image/click fallback.
+The noVNC runtime is implemented as the embedded interactive fallback. The built
+DDEV stack has exercised the public WSS route, same-finding takeover and native
+alert capture. One interactive desktop is shared globally; the four screenshot
+lanes remain separate automated desktops. **Review interactively** (German UI
+**Interaktiv prüfen**) is always available with no detection prerequisite and
+uses a fresh context. With no readable image the noVNC panel is primary and
+starts on click. Takeover retains the context and cached proof. A retained native
+dialog frame alone does not set `captureLocked`; an explicit capture/save attempt
+does, after which input stays locked until explicit save/cancel. Saved proof
+metadata retains the original capture ID, capture generation, capture time and
+URL; the save authorization generation is separate. The 20-minute TTL is
+absolute and reconnect does not renew it. The smoke below never starts or closes
+a live session.
+
+## noVNC runtime smoke
+
+The official local noVNC client is pinned to **1.6.0**, with upstream provenance
+and licenses under `public/vendor/novnc/`. Browser input uses the same-origin
+WebSocket `/review/{findingId}/interactive/vnc` and the tab-only subprotocol
+`lbb-tab.<48hex>`, not worker credentials or query-string capabilities. The
+gateway checks exact configured Origin/Host and obtains short-lived grants from
+the private PHP listener at `web:8096`; the real session cookie is forwarded only
+server-to-server. Both tokens and worker session IDs stay out of browser HTML.
+
+PHP owns the singleton SQLite lease. Explicit takeover advances its generation
+and fences the old gateway before activating the new tab. Capture, close and
+input are serialized and reject stale generations before side effects. Captured
+proof keeps its original capture identity when authorization changes. Evidence
+and lease-closing commit together; file/RPC operations remain outside that lock.
+Legacy mode retains the old bounded image-input API for compatibility tests;
+DDEV explicitly selects each service's mode.
+
+`vnc-runtime-smoke.cjs` is a standalone Node-core, bounded, read-only probe. Run
+it inside the private worker/service network with environment-only credentials:
+
+```bash
+docker exec ddev-librebugbounty-playwright-interactive node vnc-runtime-smoke.cjs
+```
+
+It checks public `GET /health`, authenticated private `GET /vnc-control/state`,
+foreign-Origin Upgrade rejection, and missing-Cookie Upgrade rejection. It sends
+no browser input, starts no session, captures nothing, closes no session, and
+does not touch a foreign session or any external target. The command uses the
+existing container environment, so no credential is typed on the command line.
+`VNC_RUNTIME_SMOKE_BASE_URL` or `PLAYWRIGHT_WORKER_URL` selects the private
+endpoint; `VNC_RUNTIME_SMOKE_TIMEOUT_MS` bounds the whole run. The gateway token
+is never printed or accepted as a CLI argument. The internal `web:8096`
+authorization callback remains private and is not called by this smoke.
 
 Runtime checks from the web container:
 

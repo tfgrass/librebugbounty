@@ -46,7 +46,7 @@ preserve existing data. The database and evidence live below `storage/`, which
 is ignored by Git.
 
 DDEV keeps the Playwright services on its internal Docker network. The web
-container, shared browser worker and four screenshot lanes receive the same
+container, base recheck worker, four screenshot lanes and interactive sidecar receive the same
 `PLAYWRIGHT_WORKER_TOKEN`; health is unauthenticated, while mutation requests
 authenticate with that shared key. The token authorizes a service request—it is
 not a user identity, worker identity, session identity or routing decision. The
@@ -77,14 +77,18 @@ Choose **Vulnerable** or **Not vulnerable**, skip, open the stored PoC URL, or g
 back and reset a decision. Confirmed saves use overlapping card transitions;
 the next two stored screenshots preload quietly to avoid a second download on
 arrival. An optional decision pause helps prevent accidental classifications.
-The 2.0.3 screenshot viewer remains primary. The unreleased 2.1.0 work adds a
-fallback for unresolved browser protection: Review can open a bounded 20-minute
-interactive retry in a fresh Chromium context, with one session per worker.
-The image/click controls are implemented; evidence retains tri-state protection
-provenance and any successfully captured native dialog. Select the saved image
-explicitly before using it as a decision basis. Remote noVNC operation is planned
-as the next 2.1.0 slice; it is not implemented in this fallback.
-See the [review guide](USAGE.md#manual-review) for shortcuts and fallback behavior.
+The 2.0.3 screenshot viewer remains primary when a readable image exists. The
+embedded noVNC fallback provides a bounded 20-minute manual verification context.
+**Review interactively** (German UI **Interaktiv prüfen**) is always visible,
+has no detection prerequisite, and never starts on GET. Without a readable
+stored image, the noVNC panel is the primary view and starts only after the
+explicit click. The context is fresh and manual; saved evidence retains tri-state
+protection provenance, native dialog observations and immutable capture identity.
+An explicit capture/save attempt sets `captureLocked`; a retained dialog frame
+alone does not. Once locked, input stays locked until save or cancel. Select the
+saved image explicitly before using it as a decision basis. See [USAGE.md](USAGE.md#manual-review) and
+[playwright-worker/README.md](playwright-worker/README.md) for takeover, expiry,
+save/cancel, shortcuts and recovery behavior.
 
 <p>
   <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="Review shows the stored screenshot beside details and keyboard actions" width="680"></a>
@@ -212,6 +216,61 @@ npm --prefix playwright-worker ci --no-audit --no-fund
 npm --prefix playwright-worker test
 python3 -B -m unittest discover -s tests -p 'backup_local_test.py' -v
 ```
+
+### Embedded noVNC runtime
+
+The interactive-review runtime uses one shared interactive desktop and four
+separate automated screenshot lanes. **Review interactively** (German UI
+**Interaktiv prüfen**) is always visible and has no detection prerequisite.
+Opening or refreshing a case never starts a worker. With no readable stored
+image, the embedded noVNC panel is the primary surface and starts only after the
+explicit click on **Start**. The manual session is a fresh context: no cookies,
+profile, or target history are carried over.
+
+The service is reachable through the private worker network and the same-origin
+WebSocket route. The gateway callback on `web:8096` is internal only. The
+current runtime has exercised public WSS, same-finding takeover, and native alert
+capture in the built DDEV stack. Takeover retains the browser context and cached
+proof. A native dialog may be retained as provenance, but it does not lock input.
+An explicit capture/save attempt sets `captureLocked`; input then stays locked
+until the new owner explicitly saves or cancels. The saved proof keeps its
+original `captureId`, `captureGeneration`, capture time and URL; the current save
+authorization generation is separate and does not rewrite that immutable capture
+metadata.
+
+The absolute worker TTL is 20 minutes. Reconnect preserves the context only until
+that expiry and never renews it. After expiry, revoke/cleanup states are resolved
+by the worker lease recovery path, then an explicit Start creates a fresh manual
+context. A busy same-finding session requires explicit takeover; a different
+finding requires confirmed end+start. No live stream proves CAPTCHA clearance or
+a vulnerability.
+
+Run the bounded read-only smoke inside the private service network:
+
+```bash
+docker exec ddev-librebugbounty-playwright-interactive node vnc-runtime-smoke.cjs
+```
+
+It checks `GET /health`, authenticated `GET /vnc-control/state`, foreign-Origin
+Upgrade rejection, and missing-Cookie Upgrade rejection. It starts no session,
+sends no input, closes no session, and never prints tokens or cookies. Override
+the private endpoint with `VNC_RUNTIME_SMOKE_BASE_URL` or
+`PLAYWRIGHT_WORKER_URL`, and bound the run with
+`VNC_RUNTIME_SMOKE_TIMEOUT_MS`. The command uses the existing container
+environment, so no credential is typed on the command line. See [USAGE.md](USAGE.md) and
+[playwright-worker/README.md](playwright-worker/README.md).
+
+The real DDEV/WSS acceptance is separate from the read-only smoke:
+
+```bash
+node tests/browser/studio-review-novnc-live.cjs
+```
+
+Run it on the host with DDEV running and Playwright Chromium installed. It refuses
+a busy interactive lease, uses only synthetic loopback targets, and cleans up its
+own temporary finding. It exercises two-tab takeover, a parallel automatic
+screenshot, native alert capture and explicit save without assessment. Reports
+and PNGs go to `var/novnc-live-*/`. It does not establish real CAPTCHA clearance.
 
 CI also runs a Studio browser smoke test with disposable storage and mocked
 browser-health services. It covers eight preferences, DE/EN, narrow windows,
