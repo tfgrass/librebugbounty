@@ -12,6 +12,7 @@ final class PlaywrightBrowserRetestClient implements BrowserRetestClientInterfac
     public function __construct(
         private readonly HttpClientInterface $httpClient,
         private readonly string $workerUrl,
+        private readonly ?string $workerToken = null,
     ) {
     }
 
@@ -25,6 +26,7 @@ final class PlaywrightBrowserRetestClient implements BrowserRetestClientInterfac
         $browserSeconds = max(1, (int) ceil($request->timeoutMs / 1000));
         $timeoutSeconds = max(300, ($browserSeconds * 4) + 120);
         $maxDurationSeconds = max(420, ($browserSeconds * 6) + 120);
+        $authorization = $this->authorizationHeader();
         $previousSocketTimeout = ini_get('default_socket_timeout');
         ini_set('default_socket_timeout', (string) ($maxDurationSeconds + 60));
 
@@ -38,6 +40,9 @@ final class PlaywrightBrowserRetestClient implements BrowserRetestClientInterfac
                     'headless' => $request->headless,
                     'browser' => $request->browser,
                 ],
+                'headers' => [
+                    'Authorization' => $authorization,
+                ],
                 'timeout' => $timeoutSeconds,
                 'max_duration' => $maxDurationSeconds,
             ]);
@@ -46,6 +51,18 @@ final class PlaywrightBrowserRetestClient implements BrowserRetestClientInterfac
                 ini_set('default_socket_timeout', (string) $previousSocketTimeout);
             }
         }
+    }
+
+    private function authorizationHeader(): string
+    {
+        if ($this->workerToken === null || trim($this->workerToken) === '') {
+            throw new \RuntimeException('Browser retest requests require PLAYWRIGHT_WORKER_TOKEN.');
+        }
+        if (preg_match('/^[\x21-\x7e]+$/D', $this->workerToken) !== 1) {
+            throw new \RuntimeException('PLAYWRIGHT_WORKER_TOKEN must contain only visible ASCII characters without spaces.');
+        }
+
+        return 'Bearer '.$this->workerToken;
     }
 
     public function decode(ResponseInterface $response): RetestResultData

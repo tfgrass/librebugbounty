@@ -1,10 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const http = require('node:http');
+const net = require('node:net');
+const { randomBytes } = require('node:crypto');
 const {
   DEFAULT_CHALLENGE_WAIT_MS,
   DEFAULT_SCREENSHOT_SETTLE_MS,
+  INTERACTIVE_SESSION_TTL_MS,
+  INTERACTIVE_SWEEP_MS,
+  MAX_BODY_BYTES,
+  MAX_INTERACTIVE_SESSIONS,
+  createWorkerServer,
+  startInteractiveSession,
+  sweepExpiredSessions,
+  getInteractiveStatus,
+  getInteractiveFrame,
+  closeInteractiveSessionById,
   challengeSnapshotIsActive,
+  captureInteractiveSession,
+  interactiveSessions,
+  runInteractiveInput,
   runScreenshot,
   withDisplayLease,
 } = require('./server');
@@ -76,6 +92,123 @@ function createScreenshotHarness(options = {}) {
     initScriptCount: () => initScriptCount,
     dialogListenersAtContextClose: () => dialogListenersAtContextClose,
   };
+}
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=', 'base64');
+const URL = 'https://fixture.test/challenge';
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function createInteractiveHarness(options = {}) {
+  const page = new EventEmitter();
+  const calls = [];
+  let url = options.finalUrl || URL;
+  let now = new Date('2026-10-02T12:00:00.000Z');
+  let contextClosed = 0;
+  let browserClosed = 0;
+  let killed = 0;
+  let captureCount = 0;
+  let initialState = options.challengeActive ?? true;
+  const mainFrame = { url: () => url };
+  const response = (status, headers = {}, responseUrl = url, main = true) => ({
+    status: () => status,
+    headers: () => headers,
+    allHeaders: async () => headers,
+    url: () => responseUrl,
+    request: () => ({ isNavigationRequest: () => main, frame: () => mainFrame }),
+  });
+  page.mainFrame = () => mainFrame;
+  page.url = () => url;
+  page.bringToFront = async () => { calls.push(['front']); };
+  page.goto = async () => {
+    calls.push(['goto']);
+    if (options.goto) return options.goto(page, response);
+    return response(options.httpStatus ?? 403, options.headers);
+  };
+  page.mouse = {
+    move: async (x, y) => calls.push(['move', x, y]),
+    down: async () => calls.push(['down']),
+    up: async () => calls.push(['up']),
+    wheel: async (x, y) => calls.push(['wheel', x, y]),
+  };
+  page.keyboard = {
+    insertText: async (text) => calls.push(['type', text]),
+    press: async (key) => calls.push(['key', key]),
+  };
+  page.reload = async () => { calls.push(['reload']); };
+  page.goBack = async () => { calls.push(['back']); };
+  page.screenshot = async () => { calls.push(['frame']); return PNG; };
+  const context = new EventEmitter();
+  context.newPage = async () => { context.emit('page', page); return page; };
+  context.close = async () => { contextClosed += 1; await options.closeContext?.(); };
+  const browser = {
+    newContext: async () => { calls.push(['context']); return context; },
+    close: async () => { browserClosed += 1; },
+  };
+  const child = { exitCode: null, signalCode: null, kill: (signal) => { killed += 1; child.signalCode = signal; } };
+  const server = { process: () => child };
+  const harness = {
+    page, context, calls, response, browser, server,
+    setNow: (value) => { now = new Date(value); },
+    setChallenge: (active) => { initialState = active; },
+    navigate: (nextUrl, status = 200, headers = {}) => {
+      url = nextUrl;
+      page.emit('response', response(status, headers));
+      page.emit('framenavigated', mainFrame);
+    },
+    contextClosed: () => contextClosed,
+    browserClosed: () => browserClosed,
+    killed: () => killed,
+    captureCount: () => captureCount,
+    dependencies: {
+      launchBrowser: async () => ({ browser, server }),
+      inspectChallengePage: options.inspectChallengePage || (async () => ({
+        active: initialState,
+        snapshot: { title: initialState ? 'Just a moment…' : 'Target' },
+      })),
+      randomId: options.id ? () => options.id : () => randomBytes(24).toString('hex'),
+      now: () => now,
+      wait: async () => {},
+      cleanupTimeoutMs: 5,
+      captureDesktopScreenshot: async () => {
+        calls.push(['capture']); captureCount += 1;
+        return PNG.toString('base64');
+      },
+    },
+  };
+  return harness;
+}
+
+async function startHarness(harness, payload = { url: URL }) {
+  return startInteractiveSession(payload, harness.dependencies);
+}
+
+test.afterEach(async () => {
+  for (const id of interactiveSessions.keys()) {
+    await closeInteractiveSessionById(id, { cleanupTimeoutMs: 5 });
+  }
+  await withDisplayLease(async () => {});
+});
+
+async function serve(t, dependencies) {
+  const server = createWorkerServer(dependencies);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await withDisplayLease(async () => {});
+  });
+  return `http://127.0.0.1:${server.address().port}`;
+}
+
+async function request(base, pathname, body, token = 'worker-secret') {
+  return fetch(base + pathname, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: typeof body === 'string' ? body : JSON.stringify(body) }),
+  });
 }
 
 test('visible browser operations own the display one at a time and keep FIFO order', async () => {
@@ -311,4 +444,744 @@ test('dialog observation ends before browser teardown can start another capture'
   assert.equal(result.dialogSeen, false);
   assert.equal(harness.captureCount(), 1);
   assert.equal(harness.dialogListenersAtContextClose(), 1);
+});
+
+test('an unresolved initial challenge remains live in a fresh context with a fixed TTL', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  assert.match(view.id, /^[a-f0-9]{48}$/);
+  assert.equal(view.httpStatus, 403);
+  assert.equal(view.challenge.state, 'detected');
+  assert.equal(view.initialChallenge.state, 'detected');
+  assert.equal(view.initialUrl, URL);
+  assert.equal(Date.parse(view.expiresAt) - Date.parse(view.createdAt), INTERACTIVE_SESSION_TTL_MS);
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal(interactiveSessions.has(view.id), true);
+  assert.deepEqual(harness.calls, [['context'], ['goto'], ['front']]);
+});
+
+test('status refresh preserves initial state and inspection failures are unknown', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  harness.setChallenge(false);
+  const cleared = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(cleared.challenge.state, 'cleared');
+  assert.equal(cleared.initialChallenge.state, 'detected');
+  harness.dependencies.inspectChallengePage = async () => { throw new Error('renderer unavailable'); };
+  const unknown = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(unknown.challenge.state, 'unknown');
+  assert.equal(unknown.challenge.active, null);
+  assert.match(unknown.challenge.snapshot.error, /renderer unavailable/);
+  // Exercise the real inspector's catch path as well.
+  delete harness.dependencies.inspectChallengePage;
+  harness.page.evaluate = async () => { throw new Error('inspection failed'); };
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).challenge.state, 'unknown');
+  const captured = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(captured.metadata.currentChallengeState, 'unknown');
+  assert.equal(captured.metadata.challengeDetected, null);
+  assert.equal(captured.metadata.challengeCleared, null);
+});
+
+test('valid manual actions are replayed; malformed or out-of-bounds inputs return 400', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  const valid = [
+    { action: 'click', x: 100.4, y: 899 },
+    { action: 'type', text: 'manual text' },
+    { action: 'key', key: 'Tab' },
+    { action: 'scroll', deltaY: -2000 },
+    { action: 'reload' }, { action: 'back' },
+  ];
+  for (const input of valid) await runInteractiveInput(view.id, input, harness.dependencies);
+  assert.deepEqual(harness.calls.filter(([name]) => !['context', 'goto', 'front'].includes(name)), [
+    ['move', 100, 899], ['down'], ['up'], ['type', 'manual text'], ['key', 'Tab'], ['wheel', 0, -2000], ['reload'], ['back'],
+  ]);
+  const invalid = [
+    {}, { action: 'evaluate', script: 'alert(1)' },
+    { action: 'click', x: 2000, y: -20 }, { action: 'click', x: '1', y: 1 },
+    { action: 'click', x: NaN, y: 1 }, { action: 'click', x: 1, y: Infinity },
+    { action: 'type', text: '' }, { action: 'type', text: 123 }, { action: 'type', text: 'a'.repeat(10001) },
+    { action: 'key', key: 'Control+L' }, { action: 'key', key: 'F12' },
+    { action: 'scroll', deltaY: '12' }, { action: 'scroll', deltaY: 2001 },
+    { action: 'scroll', deltaY: Infinity }, { action: 'scroll' },
+  ];
+  const before = harness.calls.length;
+  for (const input of invalid) {
+    await assert.rejects(runInteractiveInput(view.id, input, harness.dependencies), { statusCode: 400 });
+  }
+  assert.equal(harness.calls.length, before);
+});
+
+test('frame returns PNG and capture is non-destructive and safely idempotent until close', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  assert.deepEqual(await getInteractiveFrame(view.id, harness.dependencies), PNG);
+  harness.setChallenge(false);
+  harness.navigate('https://fixture.test/target');
+  const dialog = createDialog('observed manual-session dialog');
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  let inspected = false;
+  harness.dependencies.inspectChallengePage = async () => { inspected = true; return { active: false }; };
+  const capture = harness.dependencies.captureDesktopScreenshot;
+  harness.dependencies.captureDesktopScreenshot = async () => { assert.equal(inspected, true); return capture(); };
+  const result = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(result.captureMethod, 'desktop-dialog');
+  assert.equal(result.metadata.interactive, true);
+  assert.equal(result.metadata.contextMode, 'fresh-retry');
+  assert.equal(result.metadata.initialChallengeState, 'detected');
+  assert.equal(result.metadata.currentChallengeState, 'unknown');
+  assert.equal(result.metadata.captureInspectionChallenge.state, 'cleared');
+  assert.equal(result.metadata.initialHttpStatus, 403);
+  assert.equal(result.metadata.currentHttpStatus, 200);
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.finalUrl, 'https://fixture.test/target');
+  assert.equal(result.dialogSeen, true);
+  assert.equal(result.dialogText, 'observed manual-session dialog');
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(result.metadata.dialogObservation.dismissed, true);
+  assert.equal(result.metadata.dialogImageCaptured, true);
+  assert.equal(result.metadata.dialogObservation.pageUrl, 'https://fixture.test/target');
+  assert.equal(result.metadata.dialogFramePageUrl, 'https://fixture.test/target');
+  assert.equal(result.capturedAt, result.dialogCapturedAt);
+  assert.equal(result.metadata.dialogCapturedAt, result.capturedAt);
+  assert.equal(result.sourceURL, 'https://fixture.test/target');
+  assert.equal(result.metadata.captureInspectionAt, result.capturedAt);
+  assert.equal(interactiveSessions.has(view.id), true);
+  assert.equal(harness.contextClosed(), 0);
+  assert.deepEqual(await captureInteractiveSession(view.id, harness.dependencies), result);
+  assert.equal(harness.captureCount(), 1);
+  await assert.rejects(runInteractiveInput(view.id, { action: 'reload' }, harness.dependencies), { statusCode: 409 });
+  await closeInteractiveSessionById(view.id, harness.dependencies);
+  await closeInteractiveSessionById(view.id, harness.dependencies);
+  assert.equal(harness.contextClosed(), 1);
+  assert.equal(harness.browserClosed(), 1);
+  assert.equal(harness.killed(), 1);
+  assert.equal(interactiveSessions.has(view.id), false);
+});
+
+test('cf-mitigated and initial HTTP survive a timeout and current main-document responses stay separate', async () => {
+  const harness = createInteractiveHarness({
+    challengeActive: false,
+    goto: async (page, response) => {
+      page.emit('response', response(503, { 'cf-mitigated': 'challenge' }));
+      throw new Error('DOM content timeout');
+    },
+  });
+  const view = await startHarness(harness);
+  assert.equal(view.initialHttpStatus, 503);
+  assert.equal(view.initialHttp.cfMitigated, 'challenge');
+  assert.equal(view.initialChallenge.state, 'detected');
+  assert.equal(view.navigationError, 'DOM content timeout');
+  harness.navigate('https://fixture.test/cleared', 201);
+  harness.page.emit('response', harness.response(404, { 'cf-mitigated': 'challenge' }, 'https://fixture.test/image', false));
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.initialHttpStatus, 503);
+  assert.equal(status.currentHttpStatus, 201);
+  assert.equal(status.currentHttp.cfMitigated, null);
+  assert.equal(status.challenge.state, 'cleared');
+});
+
+test('initial response headers can detect protection when DOM inspection is unavailable', async () => {
+  const harness = createInteractiveHarness({ headers: { 'cf-mitigated': 'challenge' }, inspectChallengePage: async () => { throw new Error('no DOM'); } });
+  const view = await startHarness(harness);
+  assert.equal(view.initialChallenge.state, 'detected');
+  assert.equal(view.initialHttp.cfMitigated, 'challenge');
+});
+
+test('bad start payloads and about:blank navigation failures do not leak resources', async () => {
+  const harness = createInteractiveHarness();
+  for (const payload of [{}, { url: 'file:///etc/passwd' }, { url: 'javascript:alert(1)' }, { url: URL, timeoutMs: '1000' }, { url: URL, timeoutMs: Infinity }]) {
+    await assert.rejects(startHarness(harness, payload), { statusCode: 400 });
+  }
+  assert.equal(harness.calls.length, 0);
+  const failed = createInteractiveHarness({ finalUrl: 'about:blank', goto: async () => { throw new Error('offline'); } });
+  await assert.rejects(startHarness(failed), /Navigation did not reach the target page/);
+  assert.equal(failed.contextClosed(), 1);
+  assert.equal(failed.killed(), 1);
+  assert.equal(interactiveSessions.size, 0);
+});
+
+test('global one-session capacity is atomic across concurrent starts and is recovered after close', async () => {
+  const harnesses = [createInteractiveHarness(), createInteractiveHarness(), createInteractiveHarness()];
+  const results = await Promise.allSettled(harnesses.map((h) => startHarness(h)));
+  assert.deepEqual(results.map((r) => r.status), ['fulfilled', 'rejected', 'rejected']);
+  assert.equal(results[1].reason.statusCode, 409);
+  assert.equal(results[2].reason.statusCode, 409);
+  assert.equal(interactiveSessions.size, MAX_INTERACTIVE_SESSIONS);
+  assert.equal(MAX_INTERACTIVE_SESSIONS, 1);
+  assert.equal(harnesses[2].calls.length, 0);
+  await closeInteractiveSessionById(results[0].value.id, harnesses[0].dependencies);
+  await startHarness(harnesses[2]);
+  assert.equal(interactiveSessions.size, 1);
+});
+
+test('sweeping closes expired sessions and distinguishes expired IDs from unknown IDs', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  harness.setNow(view.expiresAt);
+  await sweepExpiredSessions(harness.dependencies);
+  assert.equal(interactiveSessions.size, 0);
+  assert.equal(harness.contextClosed(), 1);
+  assert.equal(harness.killed(), 1);
+  await assert.rejects(getInteractiveStatus(view.id, harness.dependencies), { statusCode: 410 });
+  await assert.rejects(getInteractiveStatus('f'.repeat(48), harness.dependencies), { statusCode: 404 });
+  await assert.rejects(getInteractiveStatus('bad-id', harness.dependencies), { statusCode: 404 });
+  assert.equal((await closeInteractiveSessionById(view.id, harness.dependencies)).closed, true);
+  harness.setNow(Date.parse(view.expiresAt) + INTERACTIVE_SESSION_TTL_MS + 1);
+  await sweepExpiredSessions(harness.dependencies);
+  await assert.rejects(getInteractiveStatus(view.id, harness.dependencies), { statusCode: 404 });
+});
+
+test('the HTTP worker actively sweeps at 30-second intervals without another session request', async (t) => {
+  const harness = createInteractiveHarness();
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  await serve(t, { ...harness.dependencies, workerToken: 'worker-secret' });
+  const view = await startHarness(harness);
+  harness.setNow(view.expiresAt);
+  assert.equal(INTERACTIVE_SWEEP_MS, 30000);
+  t.mock.timers.tick(INTERACTIVE_SWEEP_MS);
+  await withDisplayLease(async () => {});
+  assert.equal(interactiveSessions.has(view.id), false);
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('queued requests recheck expiry inside the display lease before touching the page', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  const gate = deferred();
+  const lease = withDisplayLease(() => gate.promise);
+  const frontCount = harness.calls.length;
+  const queued = getInteractiveFrame(view.id, harness.dependencies);
+  harness.setNow(view.expiresAt);
+  gate.resolve();
+  await lease;
+  await assert.rejects(queued, { statusCode: 410 });
+  assert.equal(harness.calls.length, frontCount);
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('operation watchdog stops at session TTL and expiry after bringToFront is rechecked', async () => {
+  const slow = createInteractiveHarness();
+  const slowView = await startHarness(slow);
+  slow.setNow(Date.parse(slowView.expiresAt) - 10);
+  slow.page.screenshot = () => new Promise(() => {});
+  await assert.rejects(getInteractiveFrame(slowView.id, { ...slow.dependencies, operationTimeoutMs: 1000 }), { statusCode: 410 });
+  assert.equal(slow.contextClosed(), 1);
+  assert.equal(interactiveSessions.has(slowView.id), false);
+
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  harness.page.bringToFront = async () => { harness.setNow(view.expiresAt); };
+  const before = harness.calls.length;
+  await assert.rejects(getInteractiveStatus(view.id, harness.dependencies), { statusCode: 410 });
+  assert.equal(harness.calls.length, before);
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('close owns the FIFO, removes before teardown, and safely races with input/frame/capture', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  const entered = deferred();
+  const release = deferred();
+  harness.page.keyboard.press = async () => { entered.resolve(); await release.promise; };
+  const input = runInteractiveInput(view.id, { action: 'key', key: 'Enter' }, harness.dependencies);
+  await entered.promise;
+  const close = closeInteractiveSessionById(view.id, harness.dependencies);
+  const frame = getInteractiveFrame(view.id, harness.dependencies);
+  const capture = captureInteractiveSession(view.id, harness.dependencies);
+  const results = Promise.allSettled([input, close, frame, capture]);
+  release.resolve();
+  const settled = await results;
+  assert.deepEqual(settled.map((r) => r.status), ['fulfilled', 'fulfilled', 'rejected', 'rejected']);
+  assert.equal(settled[2].reason.statusCode, 404);
+  assert.equal(settled[3].reason.statusCode, 404);
+  assert.equal(harness.captureCount(), 0);
+  assert.equal(harness.contextClosed(), 1);
+  await closeInteractiveSessionById(view.id, harness.dependencies);
+});
+
+test('a failed capture leaves a live session for retry and does not poison the FIFO', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  const capture = harness.dependencies.captureDesktopScreenshot;
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('ffmpeg failed'); };
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies), /ffmpeg failed/);
+  assert.equal(interactiveSessions.has(view.id), true);
+  harness.dependencies.captureDesktopScreenshot = capture;
+  assert.equal((await captureInteractiveSession(view.id, harness.dependencies)).metadata.interactive, true);
+  assert.equal(await withDisplayLease(async () => 'next'), 'next');
+});
+
+test('a slow operation is killed and bounded teardown releases the FIFO for the next session', async () => {
+  const slow = createInteractiveHarness({ closeContext: () => new Promise(() => {}) });
+  const next = createInteractiveHarness();
+  const firstView = await startHarness(slow);
+  slow.page.screenshot = () => new Promise(() => {});
+  const hung = getInteractiveFrame(firstView.id, { ...slow.dependencies, operationTimeoutMs: 10 });
+  const continued = startHarness(next);
+  await assert.rejects(hung, { statusCode: 504 });
+  assert.equal(slow.killed(), 1);
+  assert.equal(interactiveSessions.has(firstView.id), false);
+  assert.match((await continued).id, /^[a-f0-9]{48}$/);
+});
+
+test('a late launch after the start watchdog cannot resurrect a session or create a context', async () => {
+  const harness = createInteractiveHarness();
+  const launched = deferred();
+  harness.dependencies.launchBrowser = () => launched.promise;
+  await assert.rejects(startInteractiveSession({ url: URL }, { ...harness.dependencies, startTimeoutMs: 10 }), { statusCode: 504 });
+  assert.equal(await withDisplayLease(async () => 'continued'), 'continued');
+  launched.resolve({ browser: harness.browser, server: harness.server });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(harness.killed(), 1);
+  assert.equal(harness.browserClosed(), 1);
+  assert.equal(harness.calls.length, 0);
+  assert.equal(interactiveSessions.size, 0);
+});
+
+test('all mutation routes require the shared worker token, while health stays public', async (t) => {
+  const harness = createInteractiveHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret' });
+  assert.equal((await fetch(base + '/health')).status, 200);
+  for (const endpoint of ['/screenshot', '/retest', '/interactive-sessions', ...['input', 'capture', 'close'].map((op) => `/interactive-sessions/${'a'.repeat(48)}/${op}`)]) {
+    for (const token of ['', 'wrong', 'worker-secret-extra']) {
+      const res = await request(base, endpoint, {}, token);
+      assert.equal(res.status, 401, endpoint);
+      assert.match((await res.json()).errorMessage, /token/);
+    }
+  }
+  assert.equal(harness.calls.length, 0);
+  const created = await request(base, '/interactive-sessions', { url: URL });
+  assert.equal(created.status, 201);
+  const view = await created.json();
+  const status = await request(base, `/interactive-sessions/${view.id}/status`);
+  assert.equal(status.status, 200);
+  const frame = await request(base, `/interactive-sessions/${view.id}/frame`);
+  assert.equal(frame.headers.get('Content-Type'), 'image/png');
+  assert.equal(frame.headers.get('Cache-Control'), 'no-store');
+  assert.deepEqual(Buffer.from(await frame.arrayBuffer()), PNG);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/input`, { action: 'key', key: 'Tab' })).status, 200);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/capture`, {})).status, 200);
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, {})).status, 200);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, {})).status, 200);
+  assert.equal((await request(base, `/interactive-sessions/${view.id}/frame`)).status, 404);
+});
+
+test('missing token configuration fails closed without disabling health', async (t) => {
+  const base = await serve(t, { workerToken: '' });
+  assert.equal((await fetch(base + '/health')).status, 200);
+  const result = await request(base, '/interactive-sessions', { url: URL });
+  assert.equal(result.status, 503);
+  assert.match((await result.json()).errorMessage, /not configured/);
+});
+
+test('HTTP bodies have strict JSON and byte limits including chunked bodies and empty-body operations', async (t) => {
+  const harness = createInteractiveHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret' });
+  for (const body of ['{', 'null', '[]', 'true', '"hello"']) {
+    const res = await request(base, '/interactive-sessions', body);
+    assert.equal(res.status, 400);
+    assert.equal(typeof (await res.json()).errorMessage, 'string');
+  }
+  const tooLarge = JSON.stringify({ text: 'x'.repeat(MAX_BODY_BYTES) });
+  for (const endpoint of ['/interactive-sessions', '/screenshot', '/retest', `/interactive-sessions/${'a'.repeat(48)}/capture`, `/interactive-sessions/${'a'.repeat(48)}/close`]) {
+    const res = await request(base, endpoint, tooLarge);
+    assert.equal(res.status, 413, endpoint);
+  }
+  const chunked = await new Promise((resolve, reject) => {
+    const req = http.request(base + '/interactive-sessions', {
+      method: 'POST', headers: { Authorization: 'Bearer worker-secret', 'Transfer-Encoding': 'chunked' },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+    });
+    req.on('error', reject);
+    req.write('x'.repeat(MAX_BODY_BYTES));
+    req.end('x');
+  });
+  assert.equal(chunked.status, 413);
+  assert.match(chunked.body.errorMessage, /exceeds/);
+  assert.equal(harness.calls.length, 0);
+  assert.equal((await fetch(base + '/health')).status, 200);
+});
+
+test('oversized raw upload gets 413 and closes the socket without draining its body', async (t) => {
+  const base = await serve(t, { workerToken: 'worker-secret' });
+  const address = new globalThis.URL(base);
+  const response = await new Promise((resolve, reject) => {
+    const socket = net.createConnection(Number(address.port), address.hostname);
+    let data = '';
+    socket.setTimeout(1500, () => socket.destroy(new Error('oversized upload socket stayed open')));
+    socket.on('connect', () => {
+      socket.write('POST /interactive-sessions HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer worker-secret\r\nContent-Length: 1000000\r\nConnection: keep-alive\r\n\r\n');
+      // No body follows: waiting to drain it would leave this connection open.
+    });
+    socket.on('data', (chunk) => { data += chunk.toString('utf8'); });
+    socket.on('close', () => resolve(data));
+    socket.on('error', reject);
+  });
+  assert.match(response, /^HTTP\/1\.1 413 /);
+  assert.match(response, /Connection: close/i);
+  assert.match(response, /Request body exceeds 65536 bytes/);
+});
+
+
+test('background dialog dismissal waits for the desktop FIFO owner', async () => {
+  const harness = createInteractiveHarness();
+  await startHarness(harness);
+  const gate = deferred();
+  const lease = withDisplayLease(() => gate.promise);
+  const dialog = createDialog('background dialog');
+  harness.page.emit('dialog', dialog);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(dialog.isDismissed(), false);
+  gate.resolve();
+  await lease;
+  await withDisplayLease(async () => {});
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(harness.contextClosed(), 0);
+});
+
+test('a dialog queued behind a frame request is handled before the page screenshot', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const gate = deferred();
+  const lease = withDisplayLease(() => gate.promise);
+  const dialog = createDialog('queued alert');
+  harness.page.screenshot = async () => {
+    assert.equal(dialog.isDismissed(), true);
+    return PNG;
+  };
+  const frame = getInteractiveFrame(view.id, harness.dependencies);
+  harness.page.emit('dialog', dialog);
+  gate.resolve();
+  await lease;
+  assert.deepEqual(await frame, PNG);
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).dialogObservation.captureSucceeded, true);
+});
+
+test('a navigation dialog is observed before the first page load and captured before dismissal', async () => {
+  const dialog = createDialog('first navigation alert');
+  const harness = createInteractiveHarness({
+    goto: async (page, response) => {
+      assert.equal(page.listenerCount('dialog'), 1);
+      page.emit('dialog', dialog);
+      return response(403);
+    },
+  });
+  harness.dependencies.dialogRenderDelayMs = 0;
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    assert.equal(dialog.isDismissed(), false);
+    return PNG.toString('base64');
+  };
+  const view = await startHarness(harness);
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(view.dialogSeen, true);
+  assert.equal(view.dialogObservation.captureSucceeded, true);
+  assert.equal(view.dialogObservation.pageUrl, URL);
+  assert.equal(view.dialogObservation.capturedAt, view.dialogFrameCapturedAt);
+  assert.equal(JSON.stringify(view).includes(PNG.toString('base64')), false);
+  harness.page.screenshot = async () => Buffer.from('live viewport');
+  assert.deepEqual(await getInteractiveFrame(view.id, harness.dependencies), Buffer.from('live viewport'));
+  assert.equal((await captureInteractiveSession(view.id, harness.dependencies)).screenshotBase64, PNG.toString('base64'));
+});
+
+test('input-triggered and popup dialogs keep their source URL and visible frame', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const dialog = createDialog('after key');
+  harness.page.keyboard.press = async () => { harness.page.emit('dialog', dialog); };
+  const input = await runInteractiveInput(view.id, { action: 'key', key: 'Enter' }, harness.dependencies);
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(input.dialogObservation.captureSucceeded, true);
+  assert.deepEqual(await getInteractiveFrame(view.id, harness.dependencies), PNG);
+
+  const popup = new EventEmitter();
+  const popupUrl = 'https://fixture.test/popup';
+  const popupFrame = {};
+  popup.url = () => popupUrl;
+  popup.mainFrame = () => popupFrame;
+  popup.bringToFront = async () => { harness.calls.push(['popup-front']); };
+  harness.context.emit('page', popup);
+  const popupDialog = { ...createDialog('popup alert'), page: () => popup };
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    assert.equal(harness.calls.at(-1)[0], 'popup-front');
+    assert.equal(popupDialog.isDismissed(), false);
+    return PNG.toString('base64');
+  };
+  popup.emit('dialog', popupDialog);
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.dialogObservation.pageUrl, popupUrl);
+  assert.equal(status.dialogObservation.captureSucceeded, true);
+  assert.equal(harness.calls.filter(([name]) => name === 'popup-front').length, 1);
+  assert.equal((await captureInteractiveSession(view.id, harness.dependencies)).sourceURL, popupUrl);
+});
+
+test('context dialog is retained before popup page notification and duplicate page events are ignored', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const popup = new EventEmitter();
+  popup.url = () => 'https://fixture.test/early-popup';
+  popup.mainFrame = () => ({});
+  popup.bringToFront = async () => {};
+  const dialog = { ...createDialog('early popup alert'), page: () => popup };
+  let captures = 0;
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    captures++;
+    assert.equal(dialog.isDismissed(), false);
+    return PNG.toString('base64');
+  };
+  // Real Chromium can report a popup's dialog before the context page event.
+  harness.context.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).dialogObservation?.captureSucceeded, true);
+  harness.context.emit('page', popup);
+  popup.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.dialogObservation?.captureSucceeded, true);
+  assert.equal(status.dialogObservation.pageUrl, popup.url());
+  assert.equal(captures, 1);
+  await closeInteractiveSessionById(view.id, harness.dependencies);
+  assert.equal(harness.context.listenerCount('dialog'), 0);
+});
+
+test('reload-triggered dialog retains its image while frame stays a live viewport PNG', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const dialog = createDialog('after reload');
+  harness.page.reload = async () => { harness.page.emit('dialog', dialog); };
+  harness.page.screenshot = async () => Buffer.from('viewport after reload');
+  await runInteractiveInput(view.id, { action: 'reload' }, harness.dependencies);
+  assert.equal(dialog.isDismissed(), true);
+  assert.deepEqual(await getInteractiveFrame(view.id, harness.dependencies), Buffer.from('viewport after reload'));
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.dialogObservation.captureSucceeded, true);
+  assert.equal(status.dialogObservation.message, 'after reload');
+  assert.equal((await captureInteractiveSession(view.id, harness.dependencies)).captureMethod, 'desktop-dialog');
+});
+
+test('a failed dialog image remains an observation, while later page capture stays honest', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const dialog = createDialog('failed image');
+  const normalCapture = harness.dependencies.captureDesktopScreenshot;
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('ffmpeg failed'); };
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  assert.equal(dialog.isDismissed(), true);
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.dialogSeen, true);
+  assert.equal(status.dialogObservation.captureSucceeded, false);
+  assert.match(status.dialogObservation.captureError, /ffmpeg failed/);
+  assert.equal(status.dialogFrameCapturedAt, null);
+  harness.dependencies.captureDesktopScreenshot = normalCapture;
+  const result = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(result.dialogSeen, true);
+  assert.equal(result.captureMethod, 'interactive-desktop-page');
+  assert.equal(result.metadata.dialogImageCaptured, false);
+  assert.equal(result.dialogCapturedAt, null);
+});
+
+test('later unrelated navigation retains the original dialog frame and separates the current page', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  harness.page.emit('dialog', createDialog('old page alert'));
+  await withDisplayLease(async () => {});
+  const oldStatus = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(oldStatus.dialogObservation.captureSucceeded, true);
+  harness.navigate('https://fixture.test/later', 201);
+  const later = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(later.captureMethod, 'desktop-dialog');
+  assert.equal(later.captureSelection, 'retained-dialog');
+  assert.equal(later.finalUrl, URL);
+  assert.equal(later.sourceURL, URL);
+  assert.equal(later.metadata.captureInspectionUrl, 'https://fixture.test/later');
+  assert.equal(later.metadata.captureInspectionHttp.status, 201);
+  assert.equal(later.metadata.currentChallengeState, 'unknown');
+  assert.equal(later.metadata.dialogImageCaptured, true);
+  assert.equal(later.metadata.dialogFramePageUrl, URL);
+});
+
+test('retained dialog timestamp and URL win over a later inspection at save time', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  harness.page.emit('dialog', createDialog('saved later'));
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  const dialogCapturedAt = status.dialogObservation.capturedAt;
+  harness.setNow('2026-10-02T12:02:00.000Z');
+  harness.setChallenge(false);
+  const result = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(result.capturedAt, dialogCapturedAt);
+  assert.equal(result.metadata.dialogCapturedAt, dialogCapturedAt);
+  assert.equal(result.metadata.captureInspectionAt, '2026-10-02T12:02:00.000Z');
+  assert.equal(result.metadata.currentChallengeState, 'unknown');
+  assert.equal(result.metadata.captureInspectionChallenge.state, 'cleared');
+  assert.equal(result.metadata.sourceURL, URL);
+  assert.equal(JSON.stringify(result.metadata).includes(PNG.toString('base64')), false);
+});
+
+test('dialog arriving during normal capture replaces the page image before save', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const dialog = createDialog('capture race');
+  const firstCapture = deferred();
+  let calls = 0;
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    calls += 1;
+    if (calls === 1) {
+      harness.page.emit('dialog', dialog);
+      await firstCapture.promise;
+      return Buffer.from('ordinary page').toString('base64');
+    }
+    assert.equal(dialog.isDismissed(), false);
+    firstCapture.resolve();
+    return PNG.toString('base64');
+  };
+  const result = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(result.captureMethod, 'desktop-dialog');
+  assert.equal(result.screenshotBase64, PNG.toString('base64'));
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(calls, 2);
+});
+
+test('dialog loops are bounded and the display FIFO continues', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  for (let i = 0; i < 5; i += 1) {
+    const dialog = createDialog(`loop ${i}`);
+    harness.page.emit('dialog', dialog);
+    await withDisplayLease(async () => {});
+    assert.equal(dialog.isDismissed(), true);
+  }
+  assert.equal(harness.captureCount(), 2);
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).dialogObservation.message, 'loop 4');
+  assert.equal(await withDisplayLease(async () => 'continued'), 'continued');
+});
+
+test('watchdogs cover initial navigation, status inspection, manual input, and desktop capture', async (t) => {
+  for (const operation of ['start', 'status', 'input', 'capture']) {
+    await t.test(operation, async () => {
+      const harness = createInteractiveHarness();
+      const never = () => new Promise(() => {});
+      const dependencies = { ...harness.dependencies, startTimeoutMs: 10, operationTimeoutMs: 10 };
+      let task;
+      if (operation === 'start') {
+        harness.page.goto = never;
+        task = startInteractiveSession({ url: URL }, dependencies);
+      } else {
+        const view = await startHarness(harness);
+        if (operation === 'status') {
+          dependencies.inspectChallengePage = never;
+          task = getInteractiveStatus(view.id, dependencies);
+        } else if (operation === 'input') {
+          harness.page.keyboard.press = never;
+          task = runInteractiveInput(view.id, { action: 'key', key: 'Tab' }, dependencies);
+        } else {
+          dependencies.captureDesktopScreenshot = never;
+          task = captureInteractiveSession(view.id, dependencies);
+        }
+      }
+      await assert.rejects(task, { statusCode: 504 });
+      assert.equal(harness.contextClosed(), 1);
+      assert.equal(harness.browserClosed(), 1);
+      assert.equal(harness.killed(), 1);
+      assert.equal(interactiveSessions.size, 0);
+      assert.equal(await withDisplayLease(async () => 'continued'), 'continued');
+    });
+  }
+});
+
+test('close removes the live session before bounded teardown can stall', async () => {
+  const entered = deferred();
+  const release = deferred();
+  const harness = createInteractiveHarness({ closeContext: async () => { entered.resolve(); await release.promise; } });
+  const view = await startHarness(harness);
+  const close = closeInteractiveSessionById(view.id, harness.dependencies);
+  await entered.promise;
+  assert.equal(interactiveSessions.has(view.id), false);
+  release.resolve();
+  await close;
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('HTTP status codes distinguish capacity, expiry, and unknown sessions', async (t) => {
+  // Each admitted start receives its own browser/context, just like production.
+  const harnesses = [createInteractiveHarness(), createInteractiveHarness()];
+  let launches = 0;
+  let now = new Date('2026-10-02T12:00:00.000Z');
+  const dependencies = {
+    ...harnesses[0].dependencies,
+    launchBrowser: async () => ({ browser: harnesses[launches].browser, server: harnesses[launches++].server }),
+    now: () => now,
+    workerToken: 'worker-secret',
+  };
+  const base = await serve(t, dependencies);
+  const first = await (await request(base, '/interactive-sessions', { url: URL })).json();
+  const second = await request(base, '/interactive-sessions', { url: URL });
+  assert.equal(second.status, 409);
+  assert.match((await second.json()).errorMessage, /maximum one session/);
+  assert.equal(launches, 1);
+  now = new Date(first.expiresAt);
+  const expired = await request(base, `/interactive-sessions/${first.id}/status`);
+  assert.equal(expired.status, 410);
+  assert.match((await expired.json()).errorMessage, /expired/);
+  const unknown = await request(base, `/interactive-sessions/${'e'.repeat(48)}/status`);
+  assert.equal(unknown.status, 404);
+});
+
+test('automatic navigation during inspection cannot overwrite the initial HTTP response', async () => {
+  const harness = createInteractiveHarness({ headers: { 'cf-mitigated': 'challenge' } });
+  harness.dependencies.inspectChallengePage = async () => {
+    harness.navigate('https://fixture.test/automatically-cleared', 200);
+    return { active: false, snapshot: { title: 'Target' } };
+  };
+  const view = await startHarness(harness);
+  assert.equal(view.initialHttpStatus, 403);
+  assert.equal(view.initialHttp.cfMitigated, 'challenge');
+  assert.equal(view.initialFinalUrl, URL);
+  assert.equal(view.initialChallenge.state, 'detected');
+  assert.equal(view.currentHttpStatus, 200);
+  assert.equal(view.currentHttp.cfMitigated, null);
+  assert.equal(view.challenge.state, 'unknown');
+  const capture = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(capture.metadata.initialHttpStatus, 403);
+  assert.equal(capture.metadata.currentHttpStatus, 200);
+});
+
+test('navigation during initial or capture inspection does not claim a cleared challenge', async () => {
+  const initial = createInteractiveHarness({ challengeActive: false });
+  initial.dependencies.inspectChallengePage = async () => {
+    initial.navigate('https://fixture.test/redirected');
+    return { active: false, snapshot: { title: 'Target' } };
+  };
+  const initialView = await startHarness(initial);
+  assert.equal(initialView.initialChallenge.state, 'unknown');
+  assert.equal(initialView.challenge.state, 'unknown');
+  await closeInteractiveSessionById(initialView.id, initial.dependencies);
+
+  const capture = createInteractiveHarness({ challengeActive: false });
+  const captureView = await startHarness(capture);
+  capture.dependencies.inspectChallengePage = async () => {
+    capture.navigate('https://fixture.test/new-document');
+    return { active: false, snapshot: { title: 'Target' } };
+  };
+  const result = await captureInteractiveSession(captureView.id, capture.dependencies);
+  assert.equal(result.metadata.currentChallengeState, 'unknown');
+  assert.equal(result.metadata.challengeCleared, null);
+  assert.equal(result.sourceURL, 'https://fixture.test/new-document');
 });

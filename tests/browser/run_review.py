@@ -10,6 +10,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -28,6 +29,9 @@ with socket.socket() as sock:
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
 env["STUDIO_BROWSER_BASE"] = f"http://127.0.0.1:{port}"
+env["STUDIO_BROWSER_WORKER_BASE"] = env["STUDIO_BROWSER_BASE"]
+env["STUDIO_BROWSER_WORKER_TOKEN"] = "p8-isolated-worker-token"
+env["PROJECT_ROOT"] = str(project)
 server = None
 try:
     subprocess.run(["php", "tests/Support/studio_review_browser_router.php", "init"], cwd=project, env=env, check=True)
@@ -44,7 +48,133 @@ try:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Fixture server did not start")
                 time.sleep(0.1)
-        subprocess.run(["node", "tests/browser/studio-review-focus.cjs"], cwd=project, env=env, check=True, timeout=300)
+        if env.get("STUDIO_REVIEW_ONLY") != "interactive":
+            subprocess.run(["node", "tests/browser/studio-review-focus.cjs"], cwd=project, env=env, check=True, timeout=300)
+            # The focus suite intentionally reviews/resets/skips cards. Run the
+            # retry flow with a new database/server, not its consumed review round.
+            print(f"Review focus artifacts: {output}", flush=True)
+            subprocess.run([sys.executable, str(Path(__file__).resolve())], cwd=project,
+                           env={**env, "STUDIO_REVIEW_ONLY": "interactive"}, check=True, timeout=300)
+            sys.exit(0)
+        fixtures = __import__("json").loads((root / "fixtures.json").read_text())
+        env["STUDIO_MAIN_FINDING_ID"] = fixtures["main"]["id"]
+        env["STUDIO_NEXT_FINDING_ID"] = fixtures["_expect"]["readyOrder"][1]
+        integrated = r'''
+            const assert = require("node:assert/strict");
+            const path = require("node:path");
+            const fs = require("node:fs");
+            const { chromium } = require(path.join(process.env.PROJECT_ROOT, "playwright-worker/node_modules/playwright"));
+
+            (async () => {
+              const project = process.env.PROJECT_ROOT;
+              const base = process.env.STUDIO_BROWSER_BASE;
+              const root = process.env.STUDIO_BROWSER_ROOT;
+              const findingId = process.env.STUDIO_MAIN_FINDING_ID;
+              const nextFindingId = process.env.STUDIO_NEXT_FINDING_ID;
+              const browser = await chromium.launch(
+                process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+                  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH }
+                  : undefined,
+              );
+              const context = await browser.newContext({ viewport: { width: 1500, height: 1000 } });
+              await context.route('**/*', route => new URL(route.request().url()).origin === base
+                ? route.continue() : route.abort());
+              await context.addCookies([{ name: "lbb_locale", value: "en", url: base }]);
+              const page = await context.newPage();
+              const before = await (await page.request.get(base + "/__studio_review_fixture")).json();
+              // A card ID is valid only inside an existing explicit review
+              // trail; the fresh fixture puts this finding first normally.
+              await page.goto(base + "/review?images=ready");
+              assert.equal(await page.locator('body').getAttribute('data-current-id'), findingId);
+              if (await page.locator(".review-interactive-start button").count() === 0) {
+                console.error("Interactive retry trigger absent at", page.url(), "title:", await page.title());
+                await page.screenshot({ path: path.join(process.env.STUDIO_BROWSER_OUTPUT, "interactive-trigger-missing.png"), fullPage: true });
+              }
+              await page.locator(".review-interactive-start button").click();
+              await page.waitForURL(/\/interactive-session$/);
+
+              await page.locator("[data-initial-state]").waitFor();
+              assert.equal(await page.locator("[data-initial-state]").getAttribute("data-initial-state"), "detected");
+              assert.equal(await page.locator("[data-current-state]").getAttribute("data-current-state"), "detected");
+              await page.locator(".interactive-frame").click({ position: { x: 720, y: 450 } });
+              await page.waitForFunction(() => document.querySelector("[data-current-state]")?.getAttribute("data-current-state") === "cleared");
+              await page.locator("#interactive-text").fill("synthetic clearance");
+              await page.locator(".interactive-text-form button").click();
+              await page.waitForFunction(() => !document.querySelector(".interactive-session-controls").disabled);
+              await page.locator("form[action$='/save'] button").click();
+              await page.waitForURL(url => new URL(url).pathname === "/review");
+
+              const returned = new URL(page.url());
+              const evidenceId = returned.searchParams.get("evidence");
+              assert.ok(evidenceId);
+              assert.match(returned.searchParams.get("message") || "", /assessment basis/);
+              assert.equal(await page.locator(`[data-review-shot-link="${evidenceId}"]`).getAttribute("aria-current"), "true");
+              assert.equal(await page.locator(`[data-review-shot="${evidenceId}"]`).isVisible(), true);
+              assert.match(await page.locator(`[data-review-shot="${evidenceId}"]`).textContent(), /Interactive/);
+
+              const snapshotResponse = await page.request.get(base + "/__studio_review_fixture");
+              assert.ok(snapshotResponse.ok());
+              const snapshot = await snapshotResponse.json();
+              const evidence = snapshot.snapshot.evidence.filter(row => row.id === evidenceId);
+              assert.equal(evidence.length, 1);
+              const jobs = snapshot.snapshot.screenshot_job.filter(row => row.finding_id === findingId && row.screenshot_path === evidence[0].file_path);
+              assert.equal(jobs.length, 1);
+              const metadata = typeof jobs[0].capture_metadata === "string" ? JSON.parse(jobs[0].capture_metadata) : jobs[0].capture_metadata;
+              assert.equal(metadata.interactive, true);
+              assert.equal(metadata.manual, true);
+              assert.equal(metadata.manualActionCount, 2);
+              assert.equal(metadata.manualInteraction, true);
+              assert.equal(metadata.freshContext, true);
+              assert.equal(metadata.initialChallengeState, "detected");
+              assert.equal(metadata.currentChallengeState, "cleared");
+              assert.equal(metadata.initialUrl, snapshot.fixtures.main.url);
+              assert.equal(metadata.finalUrl, snapshot.fixtures.main.url + "?interactive-target=1");
+              const triggerJob = snapshot.snapshot.screenshot_job.find(row => row.id === metadata.triggerJobId);
+              const triggerEvidence = snapshot.snapshot.evidence.find(row => row.id === snapshot.fixtures.main.latestEvidenceId);
+              assert.equal(triggerJob.screenshot_path, triggerEvidence.file_path);
+              assert.equal(metadata.triggerEvidenceId, snapshot.fixtures.main.latestEvidenceId);
+              assert.equal(fs.readFileSync(path.join(root, "worker-state.json"), "utf8"), "");
+              assert.deepEqual(snapshot.snapshot.finding_assessment, before.snapshot.finding_assessment);
+              assert.deepEqual(snapshot.snapshot.retest_run, before.snapshot.retest_run);
+
+              const inspector = page.locator('[data-review-inspector]');
+              if (!await inspector.evaluate(element => element.open)) {
+                await inspector.locator(':scope > summary').click();
+              }
+              const evidenceDetails = page.locator('details.review-basis');
+              if (!await evidenceDetails.evaluate(element => element.open)) {
+                await evidenceDetails.locator('summary').click();
+              }
+              await page.selectOption("#review-evidence-basis", evidenceId);
+              await page.locator("[data-review-confirm]").click();
+              await page.waitForURL(url => new URL(url).searchParams.get("reviewed") === findingId);
+              await page.waitForFunction(id => document.body.dataset.currentId === id, nextFindingId);
+              assert.equal(await page.locator('body').getAttribute('data-current-id'), nextFindingId);
+
+              const exportResponse = await page.request.get(base + "/export/download?profile=state&include_assessment=1");
+              assert.ok(exportResponse.ok());
+              const exported = await exportResponse.json();
+              const exportedFinding = exported.findings.find(item => item.id === findingId);
+              assert.equal(exportedFinding.manualAssessment.value, "confirmed");
+              const exportedEvidence = exportedFinding.evidence.find(item => item.id === evidenceId);
+              assert.equal(exportedEvidence.captureProvenance.interactive, true);
+              assert.equal(exportedEvidence.captureProvenance.context, "fresh-retry");
+              assert.equal(exportedEvidence.captureProvenance.initialChallengeState, "detected");
+              assert.equal(exportedEvidence.captureProvenance.currentChallengeState, "cleared");
+              assert.equal(exportedEvidence.captureProvenance.triggerEvidenceId, snapshot.fixtures.main.latestEvidenceId);
+
+              const refreshed = await (await page.request.get(base + "/__studio_review_fixture")).json();
+              const assessment = refreshed.snapshot.finding_assessment.find(row => row.finding_id === findingId);
+              assert.equal(assessment.evidence_id, evidenceId);
+              await browser.close();
+            })().catch(async error => {
+              console.error(error);
+              process.exit(1);
+            });
+        '''
+        script = output / "review-interactive-integrated.cjs"
+        script.write_text(__import__("textwrap").dedent(integrated))
+        subprocess.run(["node", str(script)], cwd=project, env=env, check=True, timeout=300)
     print(f"Review browser artifacts: {output}", flush=True)
 finally:
     if server is not None:

@@ -1,3 +1,6 @@
+# Worker HTTP ports stay internal (expose only, no host-published ports).
+# PLAYWRIGHT_WORKER_TOKEN below is a development value shared with config.yaml;
+# shot-2 through shot-4 inherit it from the shot-1 YAML anchor.
 services:
   # Headless technical rechecks. The screenshot lanes below each own a
   # separate Xvfb desktop, so parallel headed captures cannot overlap.
@@ -14,6 +17,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 2s
@@ -34,6 +38,7 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 2s

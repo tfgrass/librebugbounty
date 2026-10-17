@@ -129,6 +129,100 @@ final class StudioFindingTest extends DatabaseTestCase
         self::assertSame($paths, self::getContainer()->get(EvidenceStorageInterface::class)->listPaths());
     }
 
+    public function testInteractiveCaptureHasItsOwnHistoryAndNeverSelectsAnAssessmentBasis(): void
+    {
+        $finding = $this->finding('interactive-history')->setManualAssessment('confirmed', null, new \DateTimeImmutable('2026-01-01'));
+        $ordinary = $this->imageEvidence($finding);
+        $trigger = $this->job($finding, 'available', '2026-01-02')->setScreenshotPath($ordinary->getFilePath())
+            ->setCaptureMetadata(['challengeDetected' => true, 'challengeCleared' => false]);
+        $interactive = $this->imageEvidence($finding, 'interactive.png');
+        $job = $this->job($finding, 'available', '2026-01-03')->setScreenshotPath(substr($interactive->getFilePath(), strlen('storage/artifacts/')))
+            ->setCaptureMetadata([
+                'interactive' => true, 'initialChallengeState' => 'detected', 'currentChallengeState' => 'cleared',
+                'initialUrl' => $finding->getUrl(), 'finalUrl' => 'https://target.invalid/page',
+                'triggeredBy' => ['jobId' => $trigger->getId(), 'evidenceId' => $ordinary->getId()],
+                'initialHttpStatus' => 403, 'currentHttpStatus' => 200,
+                'captureMethod' => 'interactive-desktop-page',
+                'manualActionCount' => 1,
+            ]);
+        $this->observation($finding);
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+
+        $response = $this->request($this->studioPath($finding));
+        self::assertSame(200, $response->getStatusCode());
+        $xpath = $this->xpath($response->getContent());
+        self::assertSame(1, $xpath->query('//figure[@id="bild-'.$interactive->getId().'"]//strong[@data-interactive-capture]')->length);
+        self::assertSame(0, $xpath->query('//figure[@id="bild-'.$ordinary->getId().'"]//*[@data-interactive-capture]')->length);
+        $history = $xpath->query('//li[contains(@class,"studio-record")][.//code[text()="'.$job->getId().'"]]')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $history);
+        self::assertSame(1, $xpath->query('.//*[@data-interactive-capture]', $history)->length);
+        foreach (['frischen Chromium-Kontext', 'Start erkannt → Aufnahme nicht erkannt', 'Nach manueller Bedienung', 'kein Schutzmerkmal erkannt',
+            $finding->getUrl(), 'https://target.invalid/page', $trigger->getId(), $ordinary->getId(), '403', '200', 'Kein technisches Prüfergebnis'] as $text) {
+            self::assertStringContainsString($text, $history->textContent);
+        }
+        $captureState = $xpath->evaluate('string(//div[contains(@class,"studio-capture-state")])');
+        self::assertStringContainsString('frischen Chromium-Kontext', $captureState);
+        self::assertStringContainsString('Start erkannt → Aufnahme nicht erkannt', $captureState);
+        self::assertStringContainsString('Nach manueller Bedienung', $captureState);
+        self::assertStringNotContainsString('Zielseite als Bild gespeichert', $captureState);
+        self::assertSame(0, $xpath->query('//*[@data-assessment-basis]')->length);
+        self::assertSame(0, $xpath->query('//select[@name="evidence_id"]/option[@selected and @value!=""]')->length);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('interactiveChallengeHistory')]
+    public function testInteractiveHistoryOnlyClaimsManualClearanceWhenEstablished(array $metadata, string $state, bool $cleared): void
+    {
+        $finding = $this->finding('interactive-state');
+        $image = $this->imageEvidence($finding);
+        $this->job($finding, 'available', '2026-01-03')->setScreenshotPath($image->getFilePath())
+            ->setCaptureMetadata(['interactive' => true, 'initialChallengeState' => 'detected'] + $metadata);
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+        $response = $this->request($this->studioPath($finding));
+        self::assertSame(200, $response->getStatusCode());
+        $xpath = $this->xpath($response->getContent());
+        $text = $xpath->evaluate('string(//div[contains(@class,"studio-capture-state")])');
+        self::assertStringContainsString('Aufnahme '.$state, $text);
+        self::assertSame($cleared, str_contains($text, 'Nach manueller Bedienung'));
+        self::assertStringNotContainsString('Nach manueller Freigabe', $text);
+        self::assertStringNotContainsString('Zielseite als Bild gespeichert', $text);
+        self::assertStringNotContainsString('Browser-Schutz erkannt und beendet;', $text);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public static function interactiveChallengeHistory(): iterable
+    {
+        yield 'cleared with confirmed input' => [['currentChallengeState' => 'cleared', 'manualActionCount' => 1], 'nicht erkannt', true];
+        yield 'cleared without confirmed input' => [['currentChallengeState' => 'cleared'], 'nicht erkannt', false];
+        yield 'cleared zero inputs overrides manual flag' => [['currentChallengeState' => 'cleared', 'manualActionCount' => 0, 'manualInteraction' => true], 'nicht erkannt', false];
+        yield 'still protected' => [['currentChallengeState' => 'detected'], 'erkannt', false];
+        yield 'unknown' => [['currentChallengeState' => 'unknown'], 'unbekannt', false];
+        yield 'inspection error overrides cleared' => [['currentChallengeState' => 'cleared', 'challengeSnapshot' => ['error' => 'inspection failed']], 'unbekannt', false];
+        yield 'missing draft fields' => [[], 'unbekannt', false];
+        yield 'draft positive clearance' => [['challengeDetected' => false, 'challengeCleared' => true], 'nicht erkannt', false];
+    }
+
+    public function testInteractiveProvenanceEscapesStoredValuesAndDoesNotClaimAFailedCaptureWasSaved(): void
+    {
+        $finding = $this->finding('interactive-escaped');
+        $markup = '<script>captureProvenanceAttack()</script>';
+        $this->job($finding, 'failed', '2026-01-03')->setCaptureMetadata([
+            'interactive' => true, 'initialChallengeState' => 'detected', 'currentChallengeState' => 'cleared',
+            'initialUrl' => $markup, 'finalUrl' => $markup, 'triggerJobId' => $markup, 'triggerEvidenceId' => $markup,
+        ]);
+        $this->entityManager->flush();
+        $response = $this->request($this->studioPath($finding));
+        self::assertSame(200, $response->getStatusCode());
+        self::assertStringNotContainsString($markup, $response->getContent());
+        $xpath = $this->xpath($response->getContent());
+        self::assertSame(0, $xpath->query('//script[contains(text(), "captureProvenanceAttack")]')->length);
+        $text = $xpath->evaluate('string(//div[contains(@class,"studio-capture-state")])');
+        self::assertStringContainsString($markup, $xpath->evaluate('string(//section[@aria-labelledby="studio-job-history-title"])'));
+        self::assertStringNotContainsString('als Bild gespeichert', $text);
+    }
+
     public function testStudioActionsCoverHistoricalInconclusiveAndProtectedDecisions(): void
     {
         $new = $this->finding('new');
@@ -345,9 +439,9 @@ final class StudioFindingTest extends DatabaseTestCase
         return $job;
     }
 
-    private function imageEvidence(Finding $finding): Evidence
+    private function imageEvidence(Finding $finding, string $filename = 'fixture.png'): Evidence
     {
-        $stored = self::getContainer()->get(EvidenceStorageInterface::class)->storeContents($finding, base64_decode(self::PNG, true), 'fixture.png');
+        $stored = self::getContainer()->get(EvidenceStorageInterface::class)->storeContents($finding, base64_decode(self::PNG, true), $filename);
         $evidence = (new Evidence())->setFinding($finding)->setKind('screenshot')->setFilePath($stored->relativePath);
         $this->entityManager->persist($evidence);
         $this->entityManager->flush();

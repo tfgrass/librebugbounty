@@ -7,7 +7,10 @@ use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
+use App\Dto\BrowserInteractiveSessionResult;
+use App\Dto\BrowserScreenshotResult;
 use App\Service\BrowserRetestClientInterface;
+use App\Service\BrowserInteractiveClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\FindingNavigation;
@@ -20,9 +23,131 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 final class StudioReviewTest extends DatabaseTestCase
 {
+    public function testInteractiveRetryUsesNewestAvailableJobRatherThanNewerFailedAttempt(): void
+    {
+        $finding = $this->finding('interactive-trigger-selection');
+        $image = $this->image($finding);
+        $trigger = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())->setStatus('available')
+            ->setRequestedAt(new \DateTimeImmutable('2026-01-01'))
+            ->setCapturedAt(new \DateTimeImmutable('2026-01-01 00:00:01'))
+            ->setScreenshotPath($image->getFilePath())
+            ->setCaptureMetadata(['challengeDetected' => true, 'challengeCleared' => false]);
+        $failed = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())->setStatus('failed')
+            ->setRequestedAt(new \DateTimeImmutable('2026-01-02'));
+        $this->entityManager->persist($trigger);
+        $this->entityManager->persist($failed);
+        $this->entityManager->flush();
+        $response = $this->request('/review?images=ready');
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(1, $this->xpath($response->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->length);
+
+        // A newer successful result must prevent falling back to the older challenge.
+        $newer = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())->setStatus('available')
+            ->setRequestedAt(new \DateTimeImmutable('2026-01-03'))
+            ->setCapturedAt(new \DateTimeImmutable('2026-01-03 00:00:01'))
+            ->setScreenshotPath($image->getFilePath())
+            ->setCaptureMetadata(['challengeDetected' => false, 'challengeCleared' => true]);
+        $this->entityManager->persist($newer);
+        $this->entityManager->flush();
+        $response = $this->request('/review?images=ready');
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame(0, $this->xpath($response->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->length);
+    }
+
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=';
     private Session $session;
     private int $sequence = 0;
+
+    public function testInteractiveChallengeSessionCanBeResumedAndSavedAsProvenanceMarkedEvidence(): void
+    {
+        $finding = $this->finding('interactive challenge');
+        $image = $this->image($finding);
+        $job = (new ScreenshotJob())
+            ->setFinding($finding)
+            ->setUrl($finding->getUrl())
+            ->setStatus('available')
+            ->setCapturedAt(new \DateTimeImmutable('2026-01-02 12:00:01'))
+            ->setScreenshotPath($image->getFilePath())
+            ->setCaptureMetadata(['challengeDetected' => true, 'challengeCleared' => false]);
+        $this->entityManager->persist($job);
+        $this->entityManager->flush();
+
+        $sessionId = str_repeat('a1b2', 12);
+        $createdAt = new \DateTimeImmutable('now');
+        $expiresAt = $createdAt->modify('+20 minutes');
+        $session = new BrowserInteractiveSessionResult(
+            id: $sessionId,
+            createdAt: $createdAt,
+            expiresAt: $expiresAt,
+            finalUrl: $finding->getUrl(),
+            httpStatus: 403,
+            challenge: ['active' => true, 'snapshot' => ['title' => 'Just a moment…']],
+            initialChallenge: ['active' => true, 'snapshot' => ['title' => 'Just a moment…']],
+        );
+        $client = $this->createMock(BrowserInteractiveClientInterface::class);
+        $client->method('waitUntilReady');
+        $client->method('startInteractive')->willReturn($session);
+        $client->method('interactiveStatus')->willReturn($session);
+        $client->method('interactiveInput')->willReturn($session);
+        $client->method('interactiveFrame')->willReturn(base64_decode(self::PNG, true));
+        $client->method('captureInteractive')->willReturn(new BrowserScreenshotResult(
+            screenshotBase64: self::PNG,
+            capturedAt: new \DateTimeImmutable('2026-01-03 12:00:00.000Z'),
+            httpStatus: 200,
+            finalUrl: $finding->getUrl(),
+            captureMethod: 'interactive-desktop-page',
+            metadata: [
+                'interactive' => true,
+                'initialChallengeDetected' => true,
+                'challengeDetected' => false,
+                'challengeCleared' => true,
+            ],
+        ));
+        self::getContainer()->set(BrowserInteractiveClientInterface::class, $client);
+
+        $review = $this->request('/review?images=ready');
+        self::assertSame(200, $review->getStatusCode());
+        $startForm = $this->xpath($review->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->item(0);
+        self::assertInstanceOf(\DOMElement::class, $startForm);
+        $startParameters = [];
+        foreach ($startForm->getElementsByTagName('input') as $input) {
+            $startParameters[$input->getAttribute('name')] = $input->getAttribute('value');
+        }
+
+        $started = $this->request('/review/'.$finding->getId().'/interactive-session/start', 'POST', $startParameters);
+        self::assertSame(303, $started->getStatusCode());
+        self::assertSame('/review/'.$finding->getId().'/interactive-session', $started->getTargetUrl());
+
+        $show = $this->request($started->getTargetUrl());
+        self::assertSame(200, $show->getStatusCode());
+        self::assertStringContainsString('Live-Browseransicht', $show->getContent());
+
+        $input = $this->request('/review/'.$finding->getId().'/interactive-session/input', 'POST', [
+            '_token' => $startParameters['_token'],
+            'action' => 'click',
+            'click_x' => '100',
+            'click_y' => '200',
+        ]);
+        self::assertSame(303, $input->getStatusCode());
+
+        $frame = $this->request('/review/'.$finding->getId().'/interactive-session/frame');
+        self::assertSame(200, $frame->getStatusCode());
+        self::assertSame('image/png', $frame->headers->get('Content-Type'));
+
+        $saved = $this->request('/review/'.$finding->getId().'/interactive-session/save', 'POST', [
+            '_token' => $startParameters['_token'],
+        ]);
+        self::assertSame(303, $saved->getStatusCode());
+        self::assertStringContainsString('evidence=', $saved->getTargetUrl());
+
+        $this->entityManager->clear();
+        $jobs = $this->entityManager->getRepository(ScreenshotJob::class)->findBy(['finding' => $finding]);
+        self::assertCount(2, $jobs);
+        $interactive = array_values(array_filter($jobs, static fn (ScreenshotJob $entry): bool => ($entry->getCaptureMetadata()['interactive'] ?? false) === true))[0] ?? null;
+        self::assertInstanceOf(ScreenshotJob::class, $interactive);
+        self::assertTrue($interactive->getCaptureMetadata()['initialChallengeDetected']);
+        self::assertTrue($interactive->getCaptureMetadata()['challengeCleared']);
+    }
 
     protected function setUp(): void
     {

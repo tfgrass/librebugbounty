@@ -1,5 +1,6 @@
 <?php
 
+use App\Service\StudioExportProfileService;
 use App\Value\FindingReadLabels;
 
 /** @var \App\Dto\FindingDetailView $view */
@@ -13,6 +14,32 @@ $assessment = $finding->getManualAssessment();
 $state = $view->assessmentState;
 $latestRun = $state->latestRun;
 $latestJob = $view->screenshotJobs[0] ?? null;
+// New P7 labels stay local; P6 exclusively owns translation catalogs.
+$captureLabels = $locale === 'de' ? [
+    'initialUrl' => 'Start-URL', 'finalUrl' => 'Endgültige URL',
+    'triggerJobId' => 'Auslösender Screenshot-Auftrag', 'triggerEvidenceId' => 'Auslösender Beleg',
+    'initialHttpStatus' => 'HTTP-Status beim Start', 'currentHttpStatus' => 'HTTP-Status bei Aufnahme',
+    'captureMethod' => 'Aufnahmemethode',
+] : [
+    'initialUrl' => 'Initial URL', 'finalUrl' => 'Final URL',
+    'triggerJobId' => 'Trigger screenshot job', 'triggerEvidenceId' => 'Trigger evidence',
+    'initialHttpStatus' => 'Initial HTTP status', 'currentHttpStatus' => 'Capture HTTP status',
+    'captureMethod' => 'Capture method',
+];
+$renderProvenance = static function (array $provenance, bool $captured = true, bool $details = true) use ($escape, $locale, $captureLabels, $t): void {
+    ?>
+    <div data-capture-provenance>
+      <p class="studio-challenge-notice"><?= $escape(StudioExportProfileService::captureDescription($provenance, $locale, $captured)) ?></p>
+      <?php if ($details): ?>
+      <dl class="studio-record-data">
+        <?php foreach ($captureLabels as $key => $label): ?>
+          <dt><?= $escape($label) ?></dt><dd><code><?= $escape($provenance[$key] ?? $t('unbekannt')) ?></code></dd>
+        <?php endforeach; ?>
+      </dl>
+      <?php endif; ?>
+    </div>
+    <?php
+};
 $reviewResetById = [];
 foreach ($view->reviewResets as $reset) {
     $reviewResetById[$reset->getId()] = $reset;
@@ -110,8 +137,12 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                 <p><?= $escape($t('Der Auftrag läuft separat. Vorhandene Bilder bleiben frühere Belege.')) ?></p>
               <?php endif; ?>
               <?php $latestMetadata = $latestJob->getCaptureMetadata() ?? []; ?>
-              <?php if (($latestMetadata['challengeDetected'] ?? false) === true): ?>
+              <?php $latestProvenance = StudioExportProfileService::captureProvenance($latestMetadata); ?>
+              <?php if ($latestProvenance === null && ($latestMetadata['challengeDetected'] ?? false) === true): ?>
                 <p class="studio-challenge-notice"><?= $escape($t(($latestMetadata['challengeCleared'] ?? false) === true ? 'Browser-Schutz erkannt und beendet; anschließend wurde die Zielseite beobachtet.' : 'Browser-Schutz blieb aktiv. Ein Bild kann die Schutzseite zeigen.')) ?></p>
+              <?php endif; ?>
+              <?php if ($latestProvenance !== null): ?>
+                <?php $renderProvenance($latestProvenance, $latestJob->getStatus() === 'available' && $latestJob->getScreenshotPath() !== null, false); ?>
               <?php endif; ?>
             <?php endif; ?>
           </div>
@@ -126,8 +157,10 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
             <?php if (count($view->screenshots) > 1): ?>
               <nav class="studio-shot-picker" aria-label="<?= $escape($t('Bildbeleg auswählen')) ?>">
                 <?php foreach ($view->screenshots as $index => $shot): ?>
+                  <?php $shotProvenance = StudioExportProfileService::captureProvenance($shot['job']?->getCaptureMetadata()); ?>
                   <a href="#bild-<?= $escape($shot['evidence']->getId()) ?>" data-shot-select="<?= $escape($shot['evidence']->getId()) ?>">
                     <span><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></span>
+                    <?php if ($shotProvenance !== null): ?><small data-interactive-capture><?= $escape($t('Interaktiv')) ?></small><?php endif; ?>
                     <small><?= $escape($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt']) : $t('Aufnahmezeit unbekannt')) ?></small>
                     <?php if (!$shot['available']): ?><small class="studio-detail-error"><?= $escape($t('Datei nicht verfügbar')) ?></small><?php endif; ?>
                     <?php if ($shot['evidence']->getId() === $comparison->basisId()): ?><small data-assessment-basis><?= $escape($t('Beleg der Bewertung')) ?></small><?php endif; ?>
@@ -137,6 +170,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
             <?php endif; ?>
             <div class="studio-shot-stage" data-shot-stage>
               <?php foreach ($view->screenshots as $index => $shot): ?>
+                <?php $shotProvenance = StudioExportProfileService::captureProvenance($shot['job']?->getCaptureMetadata()); ?>
                 <?php $localImage = $shot['available'] && is_string($shot['url']) && str_starts_with($shot['url'], '/artifacts/'); ?>
                 <figure class="studio-shot" id="bild-<?= $escape($shot['evidence']->getId()) ?>" data-shot-id="<?= $escape($shot['evidence']->getId()) ?>" tabindex="-1">
                   <?php if ($localImage): ?>
@@ -150,9 +184,11 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                       <p><?= $escape($t('Der Beleg ist aufgezeichnet. Die zugehörige Datei fehlt oder kann nicht gelesen werden.')) ?></p>
                     </div>
                   <?php endif; ?>
+                  <?php if ($shotProvenance !== null): ?><?php $renderProvenance($shotProvenance, true, false); ?><?php endif; ?>
                   <figcaption>
                     <div>
                       <strong><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></strong>
+                      <?php if ($shotProvenance !== null): ?><strong data-interactive-capture><?= $escape($t('Interaktiv')) ?></strong><?php endif; ?>
                       <?php if ($shot['evidence']->getId() === $comparison->basisId()): ?><strong data-assessment-basis><?= $escape($t('Beleg der Bewertung')) ?></strong><?php endif; ?>
                       <span><?= $escape($t('Aufnahme')) ?>: <?= $escape($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt']) : $t('unbekannt')) ?></span>
                       <span><?= $escape($t('Ablage')) ?>: <?= $escape($formatTime($shot['evidence']->getCreatedAt())) ?></span>
@@ -385,8 +421,10 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
               <?php if ($view->screenshotJobs === []): ?><p class="studio-detail-hint"><?= $escape($t('Noch kein Auftrag aufgezeichnet.')) ?></p><?php endif; ?>
               <ol class="studio-record-list">
                 <?php foreach ($view->screenshotJobs as $job): ?>
+                  <?php $metadata = $job->getCaptureMetadata() ?? []; $provenance = StudioExportProfileService::captureProvenance($metadata); ?>
                   <li class="studio-record">
                     <div class="studio-record-heading"><strong class="studio-status" data-tone="<?= $escape($jobTone($job->getStatus())) ?>"><?= $escape($jobLabel($job->getStatus())) ?></strong><code><?= $escape($job->getId()) ?></code></div>
+                    <?php if ($provenance !== null): ?><strong data-interactive-capture><?= $escape($t('Interaktive Aufnahme')) ?></strong><?php endif; ?>
                     <dl class="studio-record-data">
                       <dt><?= $escape($t('Angefordert')) ?></dt><dd><?= $escape($formatTime($job->getRequestedAt())) ?></dd>
                       <dt><?= $escape($t('Begonnen')) ?></dt><dd><?= $escape($formatTime($job->getStartedAt())) ?></dd>
@@ -396,8 +434,8 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
                       <?php if ($job->getScreenshotPath() !== null): ?><dt><?= $escape($t('Datei')) ?></dt><dd><code><?= $escape($job->getScreenshotPath()) ?></code></dd><?php endif; ?>
                     </dl>
                     <?php if ($job->getErrorMessage() !== null): ?><p class="studio-record-error"><?= $escape($job->getErrorMessage()) ?></p><?php endif; ?>
-                    <?php $metadata = $job->getCaptureMetadata() ?? []; ?>
-                    <?php if (($metadata['challengeDetected'] ?? false) === true): ?><p class="studio-challenge-notice"><?= $escape($t('Browser-Schutz erkannt · {state} · {seconds} Sekunden gewartet.', ['state' => $t(($metadata['challengeCleared'] ?? false) === true ? 'beendet' : 'weiterhin aktiv'), 'seconds' => $formatNumber(max(0, (int) ($metadata['challengeWaitedMs'] ?? 0)) / 1000, 1)])) ?></p><?php endif; ?>
+                    <?php if ($provenance === null && ($metadata['challengeDetected'] ?? false) === true): ?><p class="studio-challenge-notice"><?= $escape($t('Browser-Schutz erkannt · {state} · {seconds} Sekunden gewartet.', ['state' => $t(($metadata['challengeCleared'] ?? false) === true ? 'beendet' : 'weiterhin aktiv'), 'seconds' => $formatNumber(max(0, (int) ($metadata['challengeWaitedMs'] ?? 0)) / 1000, 1)])) ?></p><?php endif; ?>
+                    <?php if ($provenance !== null): ?><?php $renderProvenance($provenance, $job->getStatus() === 'available' && $job->getScreenshotPath() !== null); ?><?php endif; ?>
                     <?php if ($metadata !== []): ?><details class="studio-detail-fold"><summary><?= $escape($t('Aufnahmedetails')) ?></summary><pre><?= $escape(json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?></pre></details><?php endif; ?>
                   </li>
                 <?php endforeach; ?>

@@ -6,18 +6,23 @@ use App\Dto\BrowserScreenshotRequest;
 use App\Dto\BrowserScreenshotResult;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
-final class PlaywrightBrowserScreenshotClient implements BrowserScreenshotClientInterface
+class PlaywrightBrowserScreenshotClient implements BrowserScreenshotClientInterface
 {
     public function __construct(
-        private readonly HttpClientInterface $httpClient,
-        private readonly string $workerUrl,
+        protected readonly HttpClientInterface $httpClient,
+        protected readonly string $workerUrl,
+        private readonly ?string $workerToken = null,
     ) {
     }
 
     public function capture(BrowserScreenshotRequest $request): BrowserScreenshotResult
     {
         $browserSeconds = max(1, (int) ceil($request->timeoutMs / 1000));
+        $authorization = $this->authorizationHeader();
         $response = $this->httpClient->request('POST', rtrim($this->workerUrl, '/').'/screenshot', [
+            'headers' => [
+                'Authorization' => $authorization,
+            ],
             'json' => [
                 'url' => $request->url,
                 'timeoutMs' => $request->timeoutMs,
@@ -31,27 +36,7 @@ final class PlaywrightBrowserScreenshotClient implements BrowserScreenshotClient
             throw new \RuntimeException((string) ($data['errorMessage'] ?? 'Browser worker did not return a screenshot.'));
         }
 
-        $capturedAtValue = $data['capturedAt'] ?? null;
-        if (!is_string($capturedAtValue) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/D', $capturedAtValue) !== 1) {
-            throw new \RuntimeException('Browser worker returned an invalid capture timestamp.');
-        }
-        try {
-            $capturedAt = new \DateTimeImmutable($capturedAtValue);
-        } catch (\Throwable $error) {
-            throw new \RuntimeException('Browser worker returned an invalid capture timestamp.', 0, $error);
-        }
-
-        return new BrowserScreenshotResult(
-            screenshotBase64: $data['screenshotBase64'],
-            capturedAt: $capturedAt,
-            httpStatus: isset($data['httpStatus']) ? (int) $data['httpStatus'] : null,
-            finalUrl: isset($data['finalUrl']) ? (string) $data['finalUrl'] : null,
-            dialogSeen: ($data['dialogSeen'] ?? false) === true,
-            dialogType: isset($data['dialogType']) ? (string) $data['dialogType'] : null,
-            dialogText: isset($data['dialogText']) ? (string) $data['dialogText'] : null,
-            captureMethod: isset($data['captureMethod']) ? (string) $data['captureMethod'] : null,
-            metadata: is_array($data['metadata'] ?? null) ? $data['metadata'] : [],
-        );
+        return $this->screenshotResult($data);
     }
 
     public function waitUntilReady(): void
@@ -75,5 +60,47 @@ final class PlaywrightBrowserScreenshotClient implements BrowserScreenshotClient
         } while (microtime(true) < $deadline);
 
         throw new \RuntimeException('Browser worker is not ready: '.$lastError);
+    }
+
+    private function authorizationHeader(): string
+    {
+        if ($this->workerToken === null || trim($this->workerToken) === '') {
+            throw new \RuntimeException('Browser screenshot requests require PLAYWRIGHT_WORKER_TOKEN.');
+        }
+        if (preg_match('/^[\x21-\x7e]+$/D', $this->workerToken) !== 1) {
+            throw new \RuntimeException('PLAYWRIGHT_WORKER_TOKEN must contain only visible ASCII characters without spaces.');
+        }
+
+        return 'Bearer '.$this->workerToken;
+    }
+
+    protected function screenshotResult(array $data): BrowserScreenshotResult
+    {
+        return new BrowserScreenshotResult(
+            screenshotBase64: $data['screenshotBase64'],
+            capturedAt: $this->timestamp($data['capturedAt'] ?? null, 'capture timestamp'),
+            httpStatus: isset($data['httpStatus']) ? (int) $data['httpStatus'] : null,
+            finalUrl: isset($data['finalUrl']) ? (string) $data['finalUrl'] : null,
+            dialogSeen: ($data['dialogSeen'] ?? false) === true,
+            dialogType: isset($data['dialogType']) ? (string) $data['dialogType'] : null,
+            dialogText: isset($data['dialogText']) ? (string) $data['dialogText'] : null,
+            captureMethod: isset($data['captureMethod']) ? (string) $data['captureMethod'] : null,
+            metadata: is_array($data['metadata'] ?? null) ? $data['metadata'] : [],
+        );
+    }
+
+    protected function timestamp(mixed $value, string $label = 'timestamp'): \DateTimeImmutable
+    {
+        $message = sprintf('Browser worker returned an invalid %s.', $label);
+        if (!is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/D', $value) !== 1) {
+            throw new \RuntimeException($message);
+        }
+
+        $timestamp = \DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s.v\Z', $value, new \DateTimeZone('UTC'));
+        if ($timestamp === false || $timestamp->format('Y-m-d\TH:i:s.v\Z') !== $value) {
+            throw new \RuntimeException($message);
+        }
+
+        return $timestamp;
     }
 }

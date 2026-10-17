@@ -119,12 +119,6 @@ final class StudioExportProfileService
         if ($options->profile === 'report') {
             throw new \InvalidArgumentException('Meldungspakete werden als ZIP erstellt.');
         }
-        if ($options->profile === 'state' && $options->includeRequestData && $options->includeAssessment && $options->includeContact) {
-            // Preserve the established JSON-v1 field contract and streaming behavior.
-            $this->stateExport->writeDownload($options->filter, $options->includePrivateNotes, $write);
-
-            return;
-        }
         $this->connection->transactional(function () use ($options, $write): void {
             if ($options->profile === 'urls') {
                 $write('[');
@@ -139,19 +133,20 @@ final class StudioExportProfileService
 
                 return;
             }
+            $legacyState = $options->includeRequestData && $options->includeAssessment && $options->includeContact;
             $selection = $this->summarize($options->filter);
             $header = [
-                'schemaVersion' => self::CUSTOM_STATE_SCHEMA_VERSION,
-                'exportProfile' => 'state',
+                'schemaVersion' => $legacyState ? StudioExportService::SCHEMA_VERSION : self::CUSTOM_STATE_SCHEMA_VERSION,
+            ] + ($legacyState ? [] : ['exportProfile' => 'state']) + [
                 'generatedAt' => (new \DateTimeImmutable())->format(DATE_ATOM),
                 'filters' => $this->list->filterQuery($options->filter),
                 'includePrivateNotes' => $options->includePrivateNotes,
-                'options' => [
+            ] + ($legacyState ? [] : ['options' => [
                     'includeRequestData' => $options->includeRequestData,
                     'includeAssessment' => $options->includeAssessment,
                     'includeContact' => $options->includeContact,
                     'includePrivateNotes' => $options->includePrivateNotes,
-                ],
+                ]]) + [
                 'findingCount' => $selection['findingCount'],
                 'domainCount' => count($selection['domains']),
                 'domains' => $selection['domains'],
@@ -160,12 +155,22 @@ final class StudioExportProfileService
             $first = true;
             foreach ($this->pages($options->filter) as $page) {
                 [$details, $observations] = $this->details($page, $options->includePrivateNotes);
+                $capture = $this->captureMetadata(array_map(static fn (FindingReadView $finding): string => $finding->id, $page));
                 foreach ($page as $finding) {
                     $record = $this->record($finding, $details[$finding->id], $observations, $options);
+                    if ($legacyState) {
+                        // Keep v1 keys and their order, adding provenance only to interactive images.
+                        $record = array_replace(array_fill_keys([
+                            'id', 'domainId', 'title', 'type', 'severity', 'url', 'method', 'requestParams',
+                            'payload', 'expectedEvidence', 'reportUrl', 'reportedAt', 'submittedAt', 'createdAt',
+                            'updatedAt', 'lastRetestedAt', 'manualAssessment', 'latestObservation', 'contactedAt',
+                            'sentAt', 'discarded', 'legacy',
+                        ], null), $record);
+                    }
                     $write(($first ? '' : ',').substr($this->json($record), 0, -1).',"evidence":[');
                     $first = false;
                     $firstEvidence = true;
-                    foreach ($this->evidence($finding->id) as $item) {
+                    foreach ($this->evidence($finding->id, $capture) as $item) {
                         $write(($firstEvidence ? '' : ',').$this->json($item));
                         $firstEvidence = false;
                     }
@@ -388,7 +393,7 @@ final class StudioExportProfileService
     }
 
     /** @return \Generator<int, array<string, mixed>> */
-    private function evidence(string $findingId): \Generator
+    private function evidence(string $findingId, array $capture): \Generator
     {
         $after = null;
         do {
@@ -400,11 +405,18 @@ final class StudioExportProfileService
             );
             foreach ($rows as $row) {
                 $after = (int) $row['cursor'];
-                yield [
+                $item = [
                     'id' => $row['id'], 'kind' => $row['kind'], 'sha256' => $row['sha256'],
                     'createdAt' => $this->date($row['created_at']), 'updatedAt' => $this->date($row['updated_at']),
                     'artifactUrl' => $this->artifactUrl($row['file_path'], $findingId),
                 ];
+                $provenance = $row['kind'] === 'screenshot' && $row['file_path'] !== null
+                    ? ($capture[$this->captureKey($findingId, $row['file_path'])]['captureProvenance'] ?? null)
+                    : null;
+                if ($provenance !== null) {
+                    $item['captureProvenance'] = $provenance;
+                }
+                yield $item;
             }
         } while (count($rows) === self::PAGE_SIZE);
     }
@@ -474,6 +486,9 @@ final class StudioExportProfileService
                     ];
                     if ($showAssessmentProvenance) {
                         $item['basisSource'] = $image['basis_source'];
+                    }
+                    if (isset($image['captureProvenance'])) {
+                        $item['captureProvenance'] = $image['captureProvenance'];
                     }
                     $record['screenshots'][] = $item;
                 }
@@ -604,15 +619,19 @@ final class StudioExportProfileService
         return $result;
     }
 
-    /** @param list<string> $findingIds @return array<string, array{capturedAt: ?string, source: ?string}> */
+    /** @param list<string> $findingIds @return array<string, array<string, mixed>> */
     private function captureMetadata(array $findingIds): array
     {
         $map = [];
         foreach ($this->connection->fetchAllAssociative(
-            'SELECT finding_id, screenshot_path, captured_at FROM screenshot_job WHERE finding_id IN (:ids) AND screenshot_path IS NOT NULL '
+            'SELECT finding_id, screenshot_path, captured_at, capture_metadata FROM screenshot_job WHERE finding_id IN (:ids) AND screenshot_path IS NOT NULL '
             .'ORDER BY captured_at DESC, id DESC', ['ids' => $findingIds], ['ids' => ArrayParameterType::STRING],
         ) as $row) {
-            $map[$this->captureKey($row['finding_id'], $row['screenshot_path'])] ??= ['capturedAt' => $row['captured_at'], 'source' => 'screenshot_job'];
+            $metadata = json_decode($row['capture_metadata'] ?? 'null', true);
+            $map[$this->captureKey($row['finding_id'], $row['screenshot_path'])] ??= [
+                'capturedAt' => $row['captured_at'], 'source' => 'screenshot_job',
+                'captureProvenance' => self::captureProvenance(is_array($metadata) ? $metadata : null),
+            ];
         }
         foreach ($this->connection->fetchAllAssociative(
             'SELECT finding_id, screenshot_path, finished_at, started_at FROM retest_run WHERE finding_id IN (:ids) AND screenshot_path IS NOT NULL '
@@ -624,7 +643,7 @@ final class StudioExportProfileService
         return $map;
     }
 
-    /** @param array<string, mixed> $row @param array<string, array{capturedAt: ?string, source: ?string}> $capture */
+    /** @param array<string, mixed> $row @param array<string, array<string, mixed>> $capture */
     private function withCapture(array $row, array $capture, string $selectionBasis, ?string $basisSource): array
     {
         $metadata = $row['file_path'] === null ? null : ($capture[$this->captureKey($row['finding_id'], $row['file_path'])] ?? null);
@@ -632,8 +651,122 @@ final class StudioExportProfileService
         $row['capture_source'] = $metadata['source'] ?? null;
         $row['selection_basis'] = $selectionBasis;
         $row['basis_source'] = $basisSource;
+        if (isset($metadata['captureProvenance'])) {
+            $row['captureProvenance'] = $metadata['captureProvenance'];
+        }
 
         return $row;
+    }
+
+    /** A whitelisted projection shared by detail history and image exports; never an assessment. */
+    public static function captureProvenance(?array $metadata): ?array
+    {
+        if (($metadata['interactive'] ?? null) !== true) {
+            return null;
+        }
+        $text = static fn (mixed $value): ?string => is_string($value) && $value !== '' ? $value : null;
+        $httpStatus = static fn (mixed $value): ?int => is_int($value) && $value >= 100 && $value <= 599 ? $value : null;
+        $trigger = is_array($metadata['triggeredBy'] ?? null) ? $metadata['triggeredBy'] : [];
+        $retry = is_array($metadata['retryOf'] ?? null) ? $metadata['retryOf'] : [];
+        $dialog = is_array($metadata['dialogObservation'] ?? null) ? $metadata['dialogObservation'] : [];
+        $actionCount = is_int($metadata['manualActionCount'] ?? null) && $metadata['manualActionCount'] >= 0 ? $metadata['manualActionCount'] : null;
+
+        return [
+            'interactive' => true,
+            'manual' => true,
+            'context' => 'fresh-retry',
+            'captureKind' => 'interactive_retry_capture',
+            'manualActionCount' => $actionCount,
+            'manualInteraction' => $actionCount !== null ? $actionCount > 0 : (is_bool($metadata['manualInteraction'] ?? null) ? $metadata['manualInteraction'] : null),
+            'initialChallengeState' => self::challengeState($metadata, true),
+            'currentChallengeState' => self::challengeState($metadata, false),
+            // Do not reconstruct the start URL from the finding's possibly changed URL.
+            'initialUrl' => $text($metadata['initialUrl'] ?? null),
+            'finalUrl' => $text($metadata['finalUrl'] ?? null),
+            'triggerJobId' => $text($metadata['triggerJobId'] ?? $trigger['jobId'] ?? $retry['jobId'] ?? null),
+            'triggerEvidenceId' => $text($metadata['triggerEvidenceId'] ?? $trigger['evidenceId'] ?? $retry['evidenceId'] ?? null),
+            // The draft's generic httpStatus is ambiguous; it cannot establish current status.
+            'initialHttpStatus' => $httpStatus($metadata['initialHttpStatus'] ?? null),
+            'currentHttpStatus' => $httpStatus($metadata['currentHttpStatus'] ?? null),
+            'captureMethod' => $text($metadata['captureMethod'] ?? null),
+            'dialogSeen' => is_bool($metadata['dialogSeen'] ?? null) ? $metadata['dialogSeen'] : null,
+            'dialogType' => $text($metadata['dialogType'] ?? null),
+            'dialogText' => is_string($metadata['dialogText'] ?? null) ? mb_substr($metadata['dialogText'], 0, 10000) : null,
+            'dialogImageCaptured' => ($metadata['dialogImageCaptured'] ?? null) === true,
+            'dialogDetectedAt' => $text($dialog['detectedAt'] ?? $metadata['dialogFrameDetectedAt'] ?? null),
+            'dialogCapturedAt' => $text($metadata['dialogCapturedAt'] ?? null),
+            'dialogPageUrl' => $text($metadata['dialogFramePageUrl'] ?? $dialog['pageUrl'] ?? null),
+        ];
+    }
+
+    private static function challengeState(array $metadata, bool $initial): string
+    {
+        $prefix = $initial ? 'initial' : 'current';
+        $inspection = $metadata[$prefix.'Challenge'] ?? (!$initial ? ($metadata['challenge'] ?? null) : null);
+        $inspection = is_array($inspection) ? $inspection : [];
+        $snapshot = $metadata[$initial ? 'initialChallengeSnapshot' : 'challengeSnapshot'] ?? [];
+        $snapshot = is_array($snapshot) ? $snapshot : [];
+        $inspectionSnapshot = is_array($inspection['snapshot'] ?? null) ? $inspection['snapshot'] : [];
+        foreach ([$metadata[$prefix.'ChallengeInspectionError'] ?? null,
+            !$initial ? ($metadata['challengeInspectionError'] ?? null) : null,
+            $inspection['error'] ?? null, $snapshot['error'] ?? null, $inspectionSnapshot['error'] ?? null] as $error) {
+            if ($error !== null && $error !== false && $error !== '') {
+                return 'unknown';
+            }
+        }
+        if (array_key_exists('active', $inspection) && !is_bool($inspection['active'])) {
+            return 'unknown';
+        }
+        $state = $metadata[$prefix.'ChallengeState'] ?? $inspection['state'] ?? null;
+        if (isset($metadata[$prefix.'ChallengeState'], $inspection['state']) && $metadata[$prefix.'ChallengeState'] !== $inspection['state']) {
+            return 'unknown';
+        }
+        if ($state !== null) {
+            return in_array($state, ['detected', 'cleared', 'unknown'], true) ? $state : 'unknown';
+        }
+        if (is_bool($inspection['active'] ?? null)) {
+            return $inspection['active'] ? 'detected' : 'cleared';
+        }
+        if (($metadata[$initial ? 'initialChallengeDetected' : 'challengeDetected'] ?? null) === true) {
+            return 'detected';
+        }
+        if (!$initial && ($metadata['challengeCleared'] ?? null) === true) {
+            return 'cleared';
+        }
+
+        // A missing/false draft detection flag can also mean inspection failed.
+        return 'unknown';
+    }
+
+    /** P7 owns this copy locally because translation catalogs belong to P6. */
+    public static function captureDescription(array $provenance, string $locale, bool $captured = true): string
+    {
+        $de = $locale === 'de';
+        $labels = $de
+            ? ['detected' => 'erkannt', 'cleared' => 'nicht erkannt', 'unknown' => 'unbekannt']
+            : ['detected' => 'detected', 'cleared' => 'not detected', 'unknown' => 'unknown'];
+        $description = $de
+            ? 'Interaktive Wiederholungsaufnahme in einem frischen Chromium-Kontext. '
+            : 'Interactive retry capture in a fresh Chromium context. ';
+        $description .= ($de ? 'Browser-Schutz: Start ' : 'Browser protection: initial ')
+            .$labels[$provenance['initialChallengeState']].' → '
+            .($de ? 'Aufnahme ' : 'capture ').$labels[$provenance['currentChallengeState']].'. ';
+        if ($captured && ($provenance['manualInteraction'] ?? false) === true && $provenance['initialChallengeState'] === 'detected' && $provenance['currentChallengeState'] === 'cleared') {
+            $description .= $de
+                ? 'Nach manueller Bedienung wurde bei der Aufnahme kein Schutzmerkmal erkannt. '
+                : 'After manual interaction, no protection marker was detected at capture. ';
+        } elseif ($captured) {
+            $description .= $de ? 'Eine zusätzliche Aufnahme wurde ausdrücklich als Bild gespeichert. ' : 'An additional capture was explicitly saved as an image. ';
+        }
+        if (($provenance['dialogSeen'] ?? false) === true) {
+            $description .= ($provenance['dialogImageCaptured'] ?? false)
+                ? ($de ? 'Der Browser-Dialog wurde vor dem Schließen als Bild festgehalten. ' : 'The browser dialog was captured before dismissal. ')
+                : ($de ? 'Ein Browser-Dialog wurde beobachtet; sein sichtbares Abbild ist nicht bestätigt. ' : 'A browser dialog was observed; its visible image is not confirmed. ');
+        }
+
+        return $description.($de
+            ? 'Kein technisches Prüfergebnis; nur eine ausdrückliche Auswahl legt die Bewertungsgrundlage fest.'
+            : 'No technical verification result; only an explicit selection establishes the assessment basis.');
     }
 
     /** @param array<string, mixed> $query */
@@ -734,6 +867,11 @@ final class StudioExportProfileService
                 $lines[] = isset($image['archivePath'])
                     ? '  - `'.$image['archivePath'].'`'.($basisSource === null ? '' : ' ('.$t('dokumentierte Grundlage').': '.$basisSource.')')
                     : '  - '.$t('Beleg').' '.$this->markdown((string) $image['id']).': '.$this->missingImageDescription((string) ($image['missingReason'] ?? 'missing_or_unreadable'));
+                if (isset($image['captureProvenance'])) {
+                    $lines[] = '    '.self::captureDescription($image['captureProvenance'], $this->i18n->locale());
+                    // Fenced literal data preserves URLs/references without interpreting stored Markdown/HTML.
+                    $lines[] = $this->indentedCode(json_encode(['captureProvenance' => $image['captureProvenance']], self::JSON_FLAGS | JSON_PRETTY_PRINT));
+                }
             }
             if (array_key_exists('hasKnownAssessmentImageBasis', $finding) && !$finding['hasKnownAssessmentImageBasis']) {
                 $lines[] = '  - '.$t('Für die aktuelle Bewertung ist keine konkrete Bildgrundlage dokumentiert.');

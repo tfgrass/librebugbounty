@@ -45,6 +45,15 @@ the SQLite schema, and starts the supervised screenshot worker. Repeated starts
 preserve existing data. The database and evidence live below `storage/`, which
 is ignored by Git.
 
+DDEV keeps the Playwright services on its internal Docker network. The web
+container, shared browser worker and four screenshot lanes receive the same
+`PLAYWRIGHT_WORKER_TOKEN`; health is unauthenticated, while mutation requests
+authenticate with that shared key. The token authorizes a service request—it is
+not a user identity, worker identity, session identity or routing decision. The
+checked-in token is a local development value. Worker HTTP ports are not
+published to the host. Screenshot lanes use separate Xvfb desktops so parallel
+automated captures cannot photograph each other.
+
 ## First use
 
 Follow the workflow below. Each screenshot opens at full size.
@@ -68,6 +77,13 @@ Choose **Vulnerable** or **Not vulnerable**, skip, open the stored PoC URL, or g
 back and reset a decision. Confirmed saves use overlapping card transitions;
 the next two stored screenshots preload quietly to avoid a second download on
 arrival. An optional decision pause helps prevent accidental classifications.
+The 2.0.3 screenshot viewer remains primary. The unreleased 2.1.0 work adds a
+fallback for unresolved browser protection: Review can open a bounded 20-minute
+interactive retry in a fresh Chromium context, with one session per worker.
+The image/click controls are implemented; evidence retains tri-state protection
+provenance and any successfully captured native dialog. Select the saved image
+explicitly before using it as a decision basis. Remote noVNC operation is planned
+as the next 2.1.0 slice; it is not implemented in this fallback.
 See the [review guide](USAGE.md#manual-review) for shortcuts and fallback behavior.
 
 <p>

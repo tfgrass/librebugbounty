@@ -12,9 +12,11 @@ use App\Entity\RetestRun;
 use App\Entity\ScreenshotJob;
 use App\Repository\ScreenshotJobRepository;
 use App\Service\BrowserRetestClientInterface;
+use App\Service\BrowserInteractiveClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
+use App\Service\InteractiveCaptureService;
 use App\Service\ScreenshotQueueService;
 use App\Service\ResetService;
 use App\Value\ReviewState;
@@ -31,6 +33,65 @@ final class ScreenshotQueueTest extends DatabaseTestCase
 {
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=';
     private Session $session;
+
+    public function testInteractiveCaptureAfterChallengeBecomesExplicitScreenshotEvidence(): void
+    {
+        $finding = $this->finding('interactive-challenge');
+        $stored = self::getContainer()->get(EvidenceStorageInterface::class)->storeContents($finding, base64_decode(self::PNG), 'challenge.png');
+        $basis = (new Evidence())->setFinding($finding)->setKind('screenshot')
+            ->setFilePath($stored->relativePath)->setSha256($stored->sha256);
+        $trigger = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())
+            ->setStatus(ScreenshotJobStatus::AVAILABLE)->setScreenshotPath($stored->relativePath)
+            ->setCaptureMetadata(['challengeDetected' => true, 'challengeCleared' => false]);
+        $this->entityManager->persist($basis);
+        $this->entityManager->persist($trigger);
+        $this->entityManager->flush();
+        $before = $this->findingSnapshot($finding);
+        $client = $this->createMock(BrowserInteractiveClientInterface::class);
+        $client->expects(self::once())->method('captureInteractive')->with('fixture-session-id')->willReturn(new BrowserScreenshotResult(
+            screenshotBase64: self::PNG,
+            capturedAt: new \DateTimeImmutable('2026-01-05T12:00:00.000Z'),
+            httpStatus: 200,
+            finalUrl: $finding->getUrl(),
+            captureMethod: 'interactive-desktop-page',
+            metadata: [
+                'interactive' => true,
+                'initialChallengeDetected' => true,
+                'challengeDetected' => false,
+                'challengeCleared' => true,
+            ],
+        ));
+        $client->expects(self::once())->method('closeInteractive')->with('fixture-session-id')->willReturnCallback(function (): void {
+            self::assertSame(2, $this->entityManager->getRepository(Evidence::class)->count([]));
+            self::assertFalse($this->entityManager->getConnection()->isTransactionActive());
+        });
+        self::getContainer()->set(BrowserInteractiveClientInterface::class, $client);
+
+        $saved = self::getContainer()->get(InteractiveCaptureService::class)->save($finding, 'fixture-session-id', [
+            'start_url' => $finding->getUrl(),
+            'finding_id' => $finding->getId(),
+            'start_url_hash' => hash('sha256', $finding->getUrl()),
+            'trigger_job_id' => $trigger->getId(),
+            'trigger_evidence_id' => $basis->getId(),
+            'trigger_hash' => hash('sha256', json_encode([$trigger->getId(), $trigger->getUrl(), $trigger->getStatus(),
+                $trigger->getScreenshotPath(), $trigger->getCaptureMetadata(), $basis->getId(), $basis->getFilePath(), $basis->getSha256()], JSON_THROW_ON_ERROR)),
+            'initial_http_status' => 403,
+        ]);
+
+        self::assertSame(ScreenshotJobStatus::AVAILABLE, $saved->job->getStatus());
+        self::assertSame($saved->evidence->getFilePath(), $saved->job->getScreenshotPath());
+        self::assertTrue($saved->job->getCaptureMetadata()['interactive']);
+        self::assertTrue($saved->job->getCaptureMetadata()['initialChallengeDetected']);
+        self::assertTrue($saved->job->getCaptureMetadata()['challengeCleared']);
+        self::assertSame('detected', $saved->job->getCaptureMetadata()['initialChallengeState']);
+        self::assertSame('cleared', $saved->job->getCaptureMetadata()['currentChallengeState']);
+        self::assertSame($trigger->getId(), $saved->job->getCaptureMetadata()['retryOf']['jobId']);
+        self::assertSame($saved->evidence->getSha256(), $saved->job->getCaptureMetadata()['sha256']);
+        self::assertTrue($saved->sessionClosed);
+        self::assertSame($before, $this->findingSnapshot($finding));
+        self::assertSame(0, $this->entityManager->getRepository(RetestRun::class)->count([]));
+        self::assertTrue(self::getContainer()->get(EvidenceStorageInterface::class)->exists($saved->evidence->getFilePath()));
+    }
 
     protected function setUp(): void
     {

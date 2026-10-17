@@ -52,11 +52,37 @@ $findingPath = $finding === null ? null : '/findings/'.$finding->getId();
 $notes = $finding?->getPrivateNotes();
 $findingLink = $findingPath === null ? null : $findingPath.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
 $lastReviewedLink = $lastReviewedId === null ? null : '/findings/'.$lastReviewedId.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
+$interactiveReturnQueryString = (string) parse_url($reviewUrl(['evidence' => $selectedEvidenceId]), PHP_URL_QUERY);
 $canAssess = $finding !== null && $view->eligible;
 $pocUrl = $finding?->getUrl();
 $pocUrl = is_string($pocUrl) ? str_replace(' ', '%20', $pocUrl) : $pocUrl;
 $pocParts = is_string($pocUrl) ? parse_url($pocUrl) : false;
 $canOpenPoc = $checksAllowed && is_array($pocParts) && in_array(strtolower($pocParts['scheme'] ?? ''), ['http', 'https'], true) && ($pocParts['host'] ?? '') !== '' && !preg_match('/[\x00-\x1f\x7f]/', $pocUrl);
+$retryJob = null;
+foreach ($detail?->screenshotJobs ?? [] as $candidate) {
+    if ($candidate->getStatus() === 'available' && $candidate->getUrl() === $finding?->getUrl()) {
+        $retryJob = $candidate;
+        break;
+    }
+}
+$latestCaptureMetadata = $retryJob?->getCaptureMetadata() ?? [];
+// Unknown/missing clearance is not proof of an unresolved protection capture.
+$hasUnresolvedChallenge = $retryJob !== null
+    && ($latestCaptureMetadata['challengeDetected'] ?? null) === true
+    && ($latestCaptureMetadata['challengeCleared'] ?? null) === false;
+$retryEvidenceId = null;
+if ($hasUnresolvedChallenge) {
+    foreach ($detail?->screenshots ?? [] as $shot) {
+        if ($shot['available'] && $shot['job']?->getId() === $retryJob->getId()) {
+            $retryEvidenceId = $shot['evidence']->getId();
+            break;
+        }
+    }
+}
+$canInteractiveRetry = $finding !== null && !$finding->isDiscarded() && $canOpenPoc && $retryEvidenceId !== null;
+if ($canInteractiveRetry) {
+    $interactiveReturnQueryString = (string) parse_url($reviewUrl(['evidence' => $retryEvidenceId]), PHP_URL_QUERY);
+}
 $hasError = $error !== null && $error !== '';
 $waitingForImages = $view->total === 0 && $view->images === 'ready' && $view->counts[$view->kind] > 0;
 $evidenceLabels = [];
@@ -64,6 +90,9 @@ $unavailableEvidence = [];
 foreach ($detail?->screenshots ?? [] as $index => $shot) {
     $id = $shot['evidence']->getId();
     $evidenceLabels[$id] = $t('Bild {number}', ['number' => $formatNumber($index + 1)]).' · '.$t('Aufnahme').': '.$formatTime($shot['capturedAt'], true);
+    if (($shot['job']?->getCaptureMetadata()['interactive'] ?? false) === true) {
+        $evidenceLabels[$id] .= ' · '.$t('Interaktiv');
+    }
     if (!$shot['available']) {
         $evidenceLabels[$id] .= ' · '.$t('Datei nicht lesbar');
         $unavailableEvidence[$id] = true;
@@ -156,14 +185,23 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                     <span class="studio-status" data-tone="<?= $escape($jobTone($latestJob->getStatus())) ?>"><?= $escape($jobLabel($latestJob->getStatus())) ?></span>
                     <span><?= $escape($t('Beauftragt: {value}', ['value' => $formatTime($latestJob->getRequestedAt(), true)])) ?></span>
                     <?php if ($latestJob->getStatus() === 'failed'): ?><p><?= $escape($latestJob->getErrorMessage() ?? $t('Die Aufnahme konnte nicht abgeschlossen werden.')) ?></p><?php elseif (in_array($latestJob->getStatus(), ['queued', 'running'], true)): ?><p><?= $escape($t('Neue Aufnahme läuft im Hintergrund. Nach Abschluss die Seite neu laden.')) ?></p><?php endif; ?>
-                    <?php $metadata = $latestJob->getCaptureMetadata() ?? []; ?>
+                    <?php $metadata = $latestCaptureMetadata; ?>
                     <?php if (($metadata['challengeDetected'] ?? false) === true): ?><p class="review-challenge"><?= $escape($t(($metadata['challengeCleared'] ?? false) === true ? 'Browser-Schutz wurde erkannt und beendet.' : 'Browser-Schutz blieb aktiv; die Aufnahme kann eine Schutzseite zeigen.')) ?></p><?php endif; ?>
+                    <?php if (($metadata['interactive'] ?? false) === true): ?><p class="review-challenge"><?= $escape($t('Interaktive Aufnahme')) ?></p><?php endif; ?>
+                    <?php if ($canInteractiveRetry): ?>
+                      <form method="post" action="<?= $escape('/review/'.$finding->getId().'/interactive-session/start') ?>" class="review-interactive-start">
+                        <?= $csrfField('review_interactive_'.$finding->getId()) ?>
+                        <input type="hidden" name="return_query" value="<?= $escape($interactiveReturnQueryString) ?>">
+                        <button class="review-button" type="submit" aria-describedby="review-interactive-retry-help"><?= $escape($t('Interaktiv erneut öffnen')) ?></button>
+                        <p id="review-interactive-retry-help"><?= $escape($t('Öffnet einen frischen Chromium-Kontext. Löse den Schutz aus und speichere danach die Zielseite als zusätzliche Aufnahme.')) ?></p>
+                      </form>
+                    <?php endif; ?>
                   </div>
                 <?php endif; ?>
                 <?php if (count($detail->screenshots) > 1): ?>
                   <nav class="review-shot-picker" aria-label="<?= $escape($t('Bildbeleg auswählen')) ?>">
                     <?php foreach ($detail->screenshots as $index => $shot): ?>
-                      <a href="<?= $escape($reviewUrl(['evidence' => $shot['evidence']->getId()])) ?>" data-review-shot-link="<?= $escape($shot['evidence']->getId()) ?>"<?= $selectedEvidenceId === $shot['evidence']->getId() ? ' aria-current="true"' : '' ?>><span><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></span><small><?= $escape($shot['available'] ? ($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt'], true) : $t('Aufnahmezeit unbekannt')) : $t('Datei nicht verfügbar')) ?></small></a>
+                      <a href="<?= $escape($reviewUrl(['evidence' => $shot['evidence']->getId()])) ?>" data-review-shot-link="<?= $escape($shot['evidence']->getId()) ?>"<?= $selectedEvidenceId === $shot['evidence']->getId() ? ' aria-current="true"' : '' ?>><span><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?><?php if (($shot['job']?->getCaptureMetadata()['interactive'] ?? false) === true): ?> · <?= $escape($t('Interaktiv')) ?><?php endif; ?></span><small><?= $escape($shot['available'] ? ($shot['capturedAt'] !== null ? $formatTime($shot['capturedAt'], true) : $t('Aufnahmezeit unbekannt')) : $t('Datei nicht verfügbar')) ?></small></a>
                     <?php endforeach; ?>
                   </nav>
                 <?php endif; ?>
@@ -178,7 +216,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                       <?php else: ?>
                         <div class="review-image-empty"><span class="review-missing-symbol" aria-hidden="true">⊘</span><h4><?= $escape($t('Bilddatei nicht verfügbar')) ?></h4><p><?= $escape($t('Ein Bildbeleg ist gespeichert, aber seine Datei fehlt oder kann nicht gelesen werden.')) ?></p></div>
                       <?php endif; ?>
-                      <figcaption data-review-image-caption><div><strong><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></strong><span><?= $escape($t('Aufnahme')) ?>: <?= $escape($formatTime($shot['capturedAt'], true)) ?></span><span><?= $escape($t('Ablage')) ?>: <?= $escape($formatTime($shot['evidence']->getCreatedAt(), true)) ?></span></div><?php if ($localImage): ?><a class="review-text-link" href="<?= $escape($shot['url']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Original öffnen')) ?> <span aria-hidden="true">↗</span></a><?php endif; ?></figcaption>
+                      <figcaption data-review-image-caption><div><strong><?= $escape($t('Bild {number}', ['number' => $formatNumber($index + 1)])) ?></strong><?php if (($shot['job']?->getCaptureMetadata()['interactive'] ?? false) === true): ?><strong class="review-interactive-label"><?= $escape($t('Interaktiv')) ?></strong><?php endif; ?><span><?= $escape($t('Aufnahme')) ?>: <?= $escape($formatTime($shot['capturedAt'], true)) ?></span><span><?= $escape($t('Ablage')) ?>: <?= $escape($formatTime($shot['evidence']->getCreatedAt(), true)) ?></span></div><?php if ($localImage): ?><a class="review-text-link" href="<?= $escape($shot['url']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Original öffnen')) ?> <span aria-hidden="true">↗</span></a><?php endif; ?></figcaption>
                     </figure>
                   <?php endforeach; ?>
                 <?php endif; ?>
@@ -290,7 +328,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
       <?php if (!$checksAllowed): ?><span class="review-alert-chip"><?= $escape($t('Prüfungen gesperrt')) ?></span><?php endif; ?>
       <?php if ($latestRun?->getResult() === 'error'): ?><button type="button" class="review-alert-chip" data-review-open-details data-review-technical-error><?= $escape($t('Technischer Fehler')) ?></button><?php endif; ?>
       <?php if ($latestJob?->getStatus() === 'failed'): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Letzte Aufnahme fehlgeschlagen')) ?></button><?php endif; ?>
-      <?php if (($latestJob?->getCaptureMetadata()['challengeDetected'] ?? false) && !($latestJob?->getCaptureMetadata()['challengeCleared'] ?? false)): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Browser-Schutz blieb aktiv; die Aufnahme kann eine Schutzseite zeigen.')) ?></button><?php endif; ?>
+      <?php if ($hasUnresolvedChallenge): ?><button type="button" class="review-alert-chip" data-review-open-details><?= $escape($t('Browser-Schutz blieb aktiv; die Aufnahme kann eine Schutzseite zeigen.')) ?></button><?php endif; ?>
       <span class="review-alert-chip" data-review-image-warning hidden><?= $escape($t('Bilddatei nicht verfügbar')) ?></span>
     </div>
     <?php endif; ?>

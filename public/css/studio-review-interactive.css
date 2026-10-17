@@ -1,0 +1,78 @@
+.interactive-shell {
+  min-height: 100vh;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.interactive-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.interactive-header > div { min-width: 0; }
+.interactive-header h1 { margin: 3px 0 4px; font-size: 22px; overflow-wrap: anywhere; }
+.interactive-url { margin: 0; max-height: 6em; overflow: auto; overflow-wrap: anywhere; }
+.interactive-back { color: var(--studio-blue) !important; white-space: nowrap; }
+
+.interactive-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  color: var(--studio-muted);
+  font-size: 13px;
+}
+
+.interactive-status a { text-decoration: underline; }
+.interactive-status .studio-status { font-size: 13px; }
+.interactive-hint,
+.interactive-actions p,
+.interactive-text-form small { margin: 0; color: var(--studio-muted); font-size: 13px; }
+.interactive-notice { margin: 0; padding: 12px; border: 1px solid var(--studio-amber); border-radius: 6px; color: var(--studio-amber); }
+
+.interactive-session-controls {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.interactive-session-controls legend { padding: 0; margin-bottom: 8px; font-weight: 600; }
+.interactive-frame-panel { min-width: 0; border: 1px solid var(--studio-line); border-radius: 10px; background: #090a0b; overflow: hidden; }
+.interactive-frame-scroll { overflow: auto; max-height: min(70vh, 760px); }
+.interactive-click-form,
+.interactive-frame { margin: 0; display: block; border: 0; padding: 0; background: #fff; }
+/* Preserve worker pixel coordinates, including on narrow screens and without JS. */
+.interactive-frame { width: 1440px; height: 900px; max-width: none; cursor: crosshair; }
+.interactive-frame:focus-visible { outline-offset: -4px; }
+.interactive-session-controls:disabled .interactive-frame { opacity: .65; cursor: default; }
+
+.interactive-controls { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; min-width: 0; }
+.interactive-controls form { margin: 0; display: inline-flex; }
+.interactive-controls .interactive-text-form { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; flex: 1 1 360px; min-width: 0; }
+.interactive-text-form label { color: var(--studio-muted); font-size: 13px; }
+.interactive-text-form input { min-width: 0; width: 120px; flex: 1; padding: 7px; border: 1px solid var(--studio-line); border-radius: 5px; background: var(--studio-panel); color: var(--studio-text); }
+.interactive-text-form small { flex-basis: 100%; }
+
+.interactive-actions { display: grid; grid-template-columns: minmax(0, 2fr) auto; gap: 12px; align-items: start; }
+.interactive-actions form { margin: 0; min-width: 0; }
+.interactive-actions > form:first-child { display: grid; gap: 6px; justify-items: start; }
+/* This standalone page does not load the Review workspace stylesheet. */
+.interactive-shell button { min-height: 40px; padding: 8px 12px; border: 1px solid #4a5769; border-radius: 5px; background: #283241; color: #dce6f4; cursor: pointer; }
+.interactive-shell button:hover { border-color: #8096b6; background: #334155; }
+.interactive-shell button:disabled { opacity: .5; cursor: default; }
+.interactive-shell .review-button-primary { background: #88d2ae; border-color: #87c9ac; color: #122d20; }
+.interactive-shell .review-button-primary:hover { background: #a0e0c1; }
+.review-key { min-width: 40px; }
+
+@media (max-width: 760px) {
+  .interactive-shell { padding: 12px; }
+  .interactive-header { flex-direction: column; }
+  .interactive-actions { grid-template-columns: minmax(0, 1fr); }
+}

@@ -32,6 +32,7 @@ services:
   App\Service\BrowserRetestClientInterface: '@App\Service\PlaywrightBrowserRetestClient'
   App\Service\BrowserRetestTransportInterface: '@App\Service\PlaywrightBrowserRetestClient'
   App\Service\BrowserScreenshotClientInterface: '@App\Service\PlaywrightBrowserScreenshotClient'
+  App\Service\BrowserInteractiveClientInterface: '@App\Service\PlaywrightBrowserInteractiveClient'
   App\Service\EvidenceStorageInterface: '@App\Service\LocalEvidenceStorage'
   App\Service\ScreenshotEnqueuerInterface: '@App\Service\ScreenshotQueueService'
 
@@ -46,10 +47,17 @@ services:
   App\Service\PlaywrightBrowserRetestClient:
     arguments:
       $workerUrl: '%app.playwright_worker_url%'
+      $workerToken: '%env(default::PLAYWRIGHT_WORKER_TOKEN)%'
 
   App\Service\PlaywrightBrowserScreenshotClient:
     arguments:
       $workerUrl: '%app.playwright_worker_url%'
+      $workerToken: '%env(default::PLAYWRIGHT_WORKER_TOKEN)%'
+
+  App\Service\PlaywrightBrowserInteractiveClient:
+    arguments:
+      $workerUrl: '%app.playwright_worker_url%'
+      $workerToken: '%env(default::PLAYWRIGHT_WORKER_TOKEN)%'
 
   app.security_txt_transport:
     class: Symfony\Contracts\HttpClient\HttpClientInterface

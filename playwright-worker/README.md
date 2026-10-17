@@ -1,14 +1,30 @@
 # Playwright worker
 
 This internal HTTP service runs in the DDEV `playwright` sidecar. It owns the
-shared Xvfb desktop used by headed browser work and exposes three routes:
+shared Xvfb desktop used by headed browser work and exposes these routes:
 
 - `GET /health`
 - `POST /retest`
 - `POST /screenshot`
+- `POST /interactive-sessions`
+- `GET /interactive-sessions/{id}/status`
+- `GET /interactive-sessions/{id}/frame`
+- `POST /interactive-sessions/{id}/input`
+- `POST /interactive-sessions/{id}/capture`
+- `POST /interactive-sessions/{id}/close`
 
-The service is exposed only inside the DDEV network. It has no authentication and
-must not be published as an external API.
+The service must remain inside the DDEV network. Every mutation route, including
+the existing `/screenshot` and `/retest` endpoints, requires the configured shared
+worker secret. Set `PLAYWRIGHT_WORKER_TOKEN` in each worker's environment and send
+`Authorization: Bearer <token>` from the application. Comparison uses constant-time
+comparison of fixed-size SHA-256 digests. A missing configuration returns 503;
+a missing/incorrect request token returns 401. Health remains public. Status and
+frame GETs rely on the internal network and the unguessable session ID; keep
+these IDs inside the application proxy. This is service authentication, not
+worker identity or lane routing; the application has no user login. DDEV gives
+the web container, base worker and all four screenshot lanes the same token.
+The checked-in `local-ddev-playwright-worker-token` is a development value.
+Worker HTTP ports use internal `expose` only, with no host-published ports.
 
 ## Reproducible runtime
 
@@ -94,6 +110,108 @@ Successful response fields include:
 and `desktop-page` otherwise. A missing URL returns HTTP 400; processing and
 capture errors return HTTP 500 with `errorMessage`.
 
+## Interactive capture sessions
+
+This is a **fresh-context interactive retry**, with no cookies, fingerprint, or
+context carried over from the queued screenshot. The application uses the base
+`playwright` sidecar. Each session owns a separate headed Chromium browser server,
+context, and page in worker memory. IDs are 24 cryptographically random bytes
+encoded as exactly 48 lowercase hex characters. No profile or cookie store is
+persisted or shared with other sessions or the screenshot lanes. Worker restart
+invalidates all IDs.
+
+| Route | Behavior |
+| --- | --- |
+| `POST /interactive-sessions` | Accepts `{url, timeoutMs}`; creates a session and returns 201 with its view. Only HTTP(S) URLs are accepted (maximum 8192 characters). Navigation timeout defaults to 45000 ms and is bounded to 1000–120000 ms. Navigates once to `domcontentloaded`, records the initial state, and returns even if protection is still detected. |
+| `GET /interactive-sessions/{id}/status` | Re-inspects protection and returns the current session view. |
+| `GET /interactive-sessions/{id}/frame` | Returns the current live viewport PNG with `Cache-Control: no-store`, never a retained dialog image; click coordinates stay aligned with the current page. |
+| `POST /interactive-sessions/{id}/input` | Accepts one bounded manual action, then refreshes protection state. |
+| `POST /interactive-sessions/{id}/capture` | Returns screenshot-result JSON, preferring a retained native dialog desktop image (`captureMethod: "desktop-dialog"`), otherwise a headed desktop page image (`"interactive-desktop-page"`). Leaves the context open and caches the result. |
+| `POST /interactive-sessions/{id}/close` | Removes the live ID before teardown, then closes without saving evidence. Retrying a recent closed/expired tombstone returns 200 with `{closed: true, id}`; an unknown ID returns 404. |
+
+Session views retain the required `id`, `createdAt`, `expiresAt`, `finalUrl`,
+`httpStatus`, `challenge`, `initialChallenge`, and `navigationError`. Additive
+fields include the exact requested `initialUrl`, `initialFinalUrl`,
+`initialHttpStatus`, `currentHttpStatus`, and `initialHttp`/`currentHttp` objects
+with `{url, status, cfMitigated}`. `httpStatus` always means the current document's
+status. Main-document responses are observed even if navigation subsequently
+times out; subresource responses do not replace that status. Unobserved response
+data stays null.
+
+Challenge objects contain `state: "detected" | "cleared" | "unknown"`,
+`active: true | false | null`, and a small `snapshot`. A `cf-mitigated: challenge`
+response identifies protection even if DOM inspection fails. An inspection error
+without a positive header signal is unknown, never cleared. Initial HTTP and
+challenge data remain separate from refreshed current data. Capture metadata
+retains both, the initial/final URLs, `interactive: true`, `manual: true`,
+`contextMode: "fresh-retry"`, and any observed dialog. The application must add
+the finding's `retryOf`/`triggeredBy` job/evidence references during persistence;
+the worker's start request has no finding/job identifier.
+
+For native alerts/confirms/prompts, including popup dialogs, the worker attempts
+a desktop capture **before** dismissal under the display FIFO. The dialog's
+source page is foregrounded when needed. Each session allows at most two dialog
+capture attempts, each bounded to six seconds, to contain dialog loops.
+`dialogObservation` records the source URL, detection/capture times, capture
+success/error and dismissal success. Observation, successful image capture and
+challenge clearance are independent facts: `dialogSeen` alone proves neither
+that the image contains a dialog nor that protection cleared.
+
+A successful retained dialog image wins at save time even after unrelated
+navigation. `captureSelection: "retained-dialog"`, `dialogImageCaptured: true`
+(in metadata), `sourceURL`/`finalUrl`, `dialogCapturedAt` and `capturedAt` identify
+that image and its original time. A current-page image uses
+`captureSelection: "current-page"`. Later inspection is recorded separately as
+`captureInspectionAt`, `captureInspectionUrl`, `captureInspectionChallenge` and
+`captureInspectionHttp`; it does not relabel the older image. For a retained
+dialog image, or navigation during capture inspection, the image-associated
+current challenge is `unknown`. A failed dialog capture remains an observation;
+a later page image must not claim to contain the dialog.
+
+The first successful capture is cached until close/expiry: repeated captures
+return identical bytes, metadata, and timestamp. Input then returns 409 to keep
+that persistence retry deterministic; status and frame remain usable. A failed
+capture can be retried if its operation watchdog did not expire. The application
+closes after a committed evidence/job save. Storage/database errors leave the
+session available for explicit save retry or close until expiry; binding/policy
+invalidation instead closes it. These routes neither solve challenges
+automatically nor change assessments, run retests, or
+choose the screenshot as an assessment basis.
+
+Input limits (invalid actions/types/ranges return 400, rather than being coerced):
+
+- `click`: numeric `x` in 0–1439 and `y` in 0–899, rounded to viewport pixels.
+- `type`: string `text` containing 1–10000 UTF-16 code units.
+- `key`: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `ArrowLeft`, `ArrowRight`,
+  `ArrowUp`, `ArrowDown`, `Home`, `End`, `PageUp`, or `PageDown`.
+- `scroll`: finite numeric `deltaY` in −2000–2000, rounded to pixels.
+- `reload` or `back`: bounded navigation; no arbitrary JavaScript action.
+
+All mutation bodies are limited to 65536 bytes, including chunked requests and
+capture/close bodies. Malformed JSON or a non-object body returns 400; excessive
+bodies return 413. An empty body is accepted as `{}` for capture/close.
+
+Exactly **one live interactive session** is admitted per worker;
+a second start returns 409. Sessions have an absolute **20-minute TTL**, starting
+when their browser launch is admitted; polling never extends it. A lightweight
+30-second sweeper actively removes and closes expired sessions. Recent expired
+IDs return 410 on status/frame/input/capture; unknown or closed IDs return 404.
+Expiry/close tombstones retain no browser resources, expire after another 20
+minutes, and are capped at 1024 entries; older IDs eventually become unknown.
+
+Launch/admission, status, frame, input, capture, expiry cleanup, and close use
+the same display FIFO as screenshots and headed retests. Sessions are looked up
+and expiry is rechecked **inside** the lease. Each interactive page is brought
+to the foreground before use. Operations have a 15-second watchdog; reload/back
+allow 50 seconds, and start allows its navigation timeout plus 15 seconds.
+A watchdog invalidates
+the session, kills its browser-server process, and returns 504. Teardown permits
+two seconds each for context and browser close, then forces process termination;
+failed or hung operations release the FIFO after bounded cleanup. The server's
+close event stops sweeping and queues cleanup of remaining interactive sessions.
+SIGTERM/SIGINT initiate this graceful HTTP shutdown. Different workers/lanes
+never share their browser memory or Xvfb display.
+
 ## Technical recheck endpoint
 
 `POST /retest` is the technical verification endpoint. It supports headless
@@ -129,10 +247,21 @@ npm --prefix playwright-worker ci --no-audit --no-fund
 npm --prefix playwright-worker test
 ```
 
-The Node tests use controlled mocks to verify FIFO serialization, the default
-dialog window, an open dialog during capture, the page/dialog race, failed
-dialog capture, and the teardown boundary. Browser fixtures used for acceptance
-checks live in the project's `tests/Support/` directory.
+The Node tests use controlled browser mocks and local HTTP requests to verify
+FIFO serialization, dialog screenshot behavior, token protection, JSON/body and
+manual-input bounds, initial/current HTTP and tri-state challenge provenance,
+one-session admission/409, active expiry, close races, capture retries, and watchdog
+recovery. These tests do not exercise real Chromium/Xvfb/ffmpeg or manual challenge
+clearance. Browser fixtures used for acceptance checks live in the project's
+`tests/Support/` directory.
+
+Handoff evidence for the current 2.1.0 WIP reports `node server.test.js` with
+51 passing tests, plus `dialog-smoke.cjs` with 4/4 real Chromium cases: immediate,
+delayed, popup and post-dialog navigation/redirect. The latter uses synthetic
+local protection fixtures; it does not establish behavior against real
+Cloudflare. P8 documentation continuation did not rerun these checks. Main owns
+the remaining PHP, browser and DDEV runtime acceptance and DDEV restart. noVNC
+is the planned next 2.1.0 slice, not implemented by this image/click fallback.
 
 Runtime checks from the web container:
 

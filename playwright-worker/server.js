@@ -1,5 +1,6 @@
 const http = require('http');
 const { execFile } = require('child_process');
+const { randomBytes, timingSafeEqual, createHash } = require('crypto');
 const { mkdtemp, readFile, rm } = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -11,6 +12,15 @@ const DEFAULT_CHALLENGE_WAIT_MS = 30000;
 const CHALLENGE_POLL_MS = 500;
 const DIALOG_RENDER_DELAY_MS = 400;
 const POST_CAPTURE_DIALOG_GRACE_MS = 50;
+const INTERACTIVE_SESSION_TTL_MS = 20 * 60 * 1000;
+const INTERACTIVE_INPUT_WAIT_MS = 500;
+const MAX_INTERACTIVE_SESSIONS = 1;
+const INTERACTIVE_DIALOG_CAPTURE_TIMEOUT_MS = 6000;
+const MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS = 2;
+const INTERACTIVE_SWEEP_MS = 30000;
+const INTERACTIVE_OPERATION_TIMEOUT_MS = 15000;
+const MAX_BODY_BYTES = 64 * 1024;
+const SESSION_ID_PATTERN = /^[a-f0-9]{48}$/;
 
 function challengeSnapshotIsActive(snapshot = {}) {
   if (snapshot.selectorMatched === true) {
@@ -54,8 +64,10 @@ async function inspectChallengePage(page) {
       ].join(','))),
     }));
 
+    const active = challengeSnapshotIsActive(snapshot);
     return {
-      active: challengeSnapshotIsActive(snapshot),
+      state: active ? 'detected' : 'cleared',
+      active,
       snapshot: {
         title: snapshot.title,
         url: snapshot.url,
@@ -64,7 +76,8 @@ async function inspectChallengePage(page) {
     };
   } catch (error) {
     return {
-      active: false,
+      state: 'unknown',
+      active: null,
       snapshot: { error: error.message },
     };
   }
@@ -94,7 +107,7 @@ async function waitForChallengeToClear(page, maximumMs, wait, shouldStop = () =>
   }
 
   return {
-    cleared: !lastInspection.active,
+    cleared: lastInspection.active === false ? true : lastInspection.active === true ? false : null,
     waitedMs: Date.now() - startedAt,
     snapshot: lastInspection.snapshot,
   };
@@ -107,15 +120,48 @@ function sendJson(res, statusCode, payload) {
 
 async function readJson(req) {
   const chunks = [];
-  for await (const chunk of req) {
-    chunks.push(chunk);
+  let size = 0;
+  if (Number(req.headers['content-length']) > MAX_BODY_BYTES) {
+    req.pause();
+    throw Object.assign(httpError(413, 'Request body exceeds 65536 bytes.'), { closeConnection: true });
   }
+  await new Promise((resolve, reject) => {
+    let rejected = false;
+    req.on('data', (chunk) => {
+      if (rejected) return;
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) {
+        rejected = true;
+        chunks.length = 0;
+        req.pause();
+        reject(Object.assign(httpError(413, 'Request body exceeds 65536 bytes.'), { closeConnection: true }));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.once('end', resolve);
+    req.once('error', reject);
+    req.once('aborted', () => reject(httpError(400, 'Request body aborted.')));
+  });
 
   if (!chunks.length) {
     return {};
   }
 
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw httpError(400, 'Malformed JSON.');
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw httpError(400, 'JSON body must be an object.');
+  }
+  return payload;
+}
+
+function httpError(statusCode, message) {
+  return Object.assign(new Error(message), { statusCode });
 }
 
 function execFileAsync(file, args, options = {}) {
@@ -133,7 +179,7 @@ function execFileAsync(file, args, options = {}) {
   });
 }
 
-async function captureDesktopScreenshot() {
+async function captureDesktopScreenshot(signal) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'playwright-desktop-'));
   const filePath = path.join(directory, 'screen.png');
 
@@ -154,6 +200,7 @@ async function captureDesktopScreenshot() {
         ...process.env,
       },
       timeout: 10000,
+      signal,
     });
 
     const buffer = await readFile(filePath);
@@ -166,6 +213,7 @@ async function captureDesktopScreenshot() {
 // All headed browsers share the same Xvfb desktop. This FIFO is the final
 // ownership boundary even if multiple HTTP or CLI callers reach this process.
 let displayLease = Promise.resolve();
+const interactiveSessions = new Map();
 function withDisplayLease(operation) {
   const current = displayLease.then(operation, operation);
   displayLease = current.catch(() => {});
@@ -245,18 +293,25 @@ async function launchBrowser(browserName, headless) {
   }
 }
 
-async function launchScreenshotBrowser() {
+async function launchScreenshotBrowser(_name, _headless, { signal } = {}) {
   const server = await chromium.launchServer({
     headless: false,
+    timeout: 10000,
     args: ['--window-size=1440,900', '--window-position=0,0', '--start-maximized'],
   });
 
+  const abort = () => terminateBrowserServer(server);
+  signal?.addEventListener('abort', abort, { once: true });
   try {
+    if (signal?.aborted) throw httpError(504, 'Interactive start timed out.');
     const browser = await chromium.connect(server.wsEndpoint());
+    if (signal?.aborted) throw httpError(504, 'Interactive start timed out.');
     return { browser, server };
   } catch (error) {
-    await server.kill().catch(() => {});
+    terminateBrowserServer(server);
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -272,6 +327,669 @@ async function finishWithin(task, timeoutMs) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// Tombstones distinguish recently expired IDs from unknown IDs, and make close
+// retries idempotent without retaining browser resources. Their memory is bounded.
+const interactiveTombstones = new Map();
+function rememberSession(id, reason, now = Date.now()) {
+  interactiveTombstones.delete(id);
+  interactiveTombstones.set(id, { reason, until: now + INTERACTIVE_SESSION_TTL_MS });
+  while (interactiveTombstones.size > 1024) {
+    interactiveTombstones.delete(interactiveTombstones.keys().next().value);
+  }
+}
+
+function currentTime(dependencies = {}) {
+  return dependencies.now ? dependencies.now().getTime() : Date.now();
+}
+
+function interactiveSessionView(session) {
+  return {
+    id: session.id,
+    createdAt: session.createdAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+    initialUrl: session.initialUrl,
+    initialFinalUrl: session.initialFinalUrl,
+    finalUrl: session.page.url(),
+    httpStatus: session.currentHttp.status,
+    initialHttpStatus: session.initialHttp.status,
+    currentHttpStatus: session.currentHttp.status,
+    initialHttp: session.initialHttp,
+    currentHttp: session.currentHttp,
+    challenge: session.lastChallenge,
+    initialChallenge: session.initialChallenge,
+    navigationError: session.navigationError,
+    dialogSeen: session.dialogInfo !== null,
+    dialogObservation: session.dialogInfo ? { ...session.dialogInfo } : null,
+    dialogFrameCapturedAt: session.dialogFrame?.capturedAt || null,
+    dialogFramePageUrl: session.dialogFrame?.pageUrl || null,
+    dialogFrameDetectedAt: session.dialogFrame?.detectedAt || null,
+  };
+}
+
+async function captureDialogWithin(captureDesktop) {
+  let timer;
+  const controller = new AbortController();
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => captureDesktop(controller.signal)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error('Dialog desktop capture timed out.'));
+        }, INTERACTIVE_DIALOG_CAPTURE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function drainActiveDialogs(session) {
+  while (session.activeDialogTasks.size) {
+    await Promise.allSettled([...session.activeDialogTasks]);
+  }
+}
+
+async function processPendingDialogs(session) {
+  while (session.pendingDialogs.length) {
+    await session.pendingDialogs.shift()();
+  }
+}
+
+function terminateBrowserServer(server) {
+  if (!server) return;
+  try {
+    const child = server.process();
+    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  } catch {
+    // The server may already have exited/disconnected.
+  }
+}
+
+function closeInteractiveSession(session, dependencies = {}) {
+  if (session.closeTask) return session.closeTask;
+  session.closed = true;
+  session.closeTask = (async () => {
+    const graceMs = dependencies.cleanupTimeoutMs ?? 2000;
+    try {
+      if (session.context) await finishWithin(Promise.resolve().then(() => session.context.close()), graceMs);
+      if (session.browser) await finishWithin(Promise.resolve().then(() => session.browser.close()), graceMs);
+    } finally {
+      terminateBrowserServer(session.browserServer);
+      if (session.responseHandler) session.page.off('response', session.responseHandler);
+      if (session.navigationHandler) session.page.off('framenavigated', session.navigationHandler);
+      if (session.contextPageHandler) session.context?.off?.('page', session.contextPageHandler);
+      if (session.contextDialogHandler) session.context?.off?.('dialog', session.contextDialogHandler);
+      for (const [page, handler] of session.pageHandlers || []) {
+        page.off('dialog', handler.dialog);
+        page.off('framenavigated', handler.navigation);
+      }
+    }
+  })();
+  return session.closeTask;
+}
+
+async function interactiveWatchdog(session, operation, milliseconds, dependencies = {}) {
+  let timer;
+  let timedOut = false;
+  const registered = interactiveSessions.get(session.id) === session;
+  const remainingTtlMs = registered ? Math.max(0, session.expiresAt.getTime() - currentTime(dependencies)) : Infinity;
+  const expiresFirst = remainingTtlMs <= milliseconds;
+  const deadlineMs = Math.min(milliseconds, remainingTtlMs);
+  const controller = new AbortController();
+  session.displayOperationActive = true;
+  // Passing the signal also lets a late launchServer result be killed before
+  // connect/newContext can create a page after this lease has been released.
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => operation(controller.signal)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          session.closed = true;
+          if (interactiveSessions.get(session.id) === session) {
+            interactiveSessions.delete(session.id);
+            rememberSession(session.id, expiresFirst ? 'expired' : 'closed', currentTime(dependencies));
+          }
+          terminateBrowserServer(session.browserServer);
+          reject(expiresFirst
+            ? httpError(410, 'Interactive browser session expired.')
+            : httpError(504, 'Interactive browser operation timed out; session closed.'));
+        }, deadlineMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (timedOut) await closeInteractiveSession(session, dependencies);
+    session.displayOperationActive = false;
+  }
+}
+
+function emptyHttp(url = null) {
+  return { url, status: null, cfMitigated: null };
+}
+
+async function inspectInteractiveChallenge(session, dependencies = {}) {
+  const inspect = dependencies.inspectChallengePage || inspectChallengePage;
+  const navigationBefore = session.pageNavigationSequence.get(session.page);
+  let inspection;
+  try {
+    inspection = await inspect(session.page);
+  } catch (error) {
+    inspection = { state: 'unknown', active: null, snapshot: { error: error.message } };
+  }
+  let state = 'unknown';
+  const navigationChanged = session.pageNavigationSequence.get(session.page) !== navigationBefore;
+  if (!inspection?.snapshot?.error && !navigationChanged) {
+    if (inspection?.state === 'detected' || inspection?.active === true) state = 'detected';
+    else if (inspection?.state === 'cleared' || inspection?.active === false) state = 'cleared';
+  }
+  // Response headers belong to the current document, not forever to the start URL.
+  if (String(session.currentHttp.cfMitigated).toLowerCase() === 'challenge') state = 'detected';
+  return {
+    state,
+    active: state === 'unknown' ? null : state === 'detected',
+    snapshot: navigationChanged
+      ? { reason: 'Main document navigated during challenge inspection.' }
+      : inspection?.snapshot || {},
+  };
+}
+
+function validateInteractiveStart(payload) {
+  let url;
+  try {
+    if (typeof payload.url !== 'string' || payload.url.length > 8192) throw new Error();
+    url = new URL(payload.url);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+  } catch {
+    throw httpError(400, 'Interactive url must be an HTTP(S) URL of at most 8192 characters.');
+  }
+  if (payload.timeoutMs !== undefined && (typeof payload.timeoutMs !== 'number' || !Number.isFinite(payload.timeoutMs))) {
+    throw httpError(400, 'timeoutMs must be a finite number.');
+  }
+  return Math.min(120000, Math.max(1000, payload.timeoutMs ?? 45000));
+}
+
+async function launchInteractiveSession(payload, dependencies = {}) {
+  const timeoutMs = validateInteractiveStart(payload);
+  const launch = dependencies.launchBrowser || launchScreenshotBrowser;
+  const createdAt = new Date(currentTime(dependencies));
+  const record = {
+    id: (dependencies.randomId || (() => randomBytes(24).toString('hex')))(),
+    createdAt,
+    expiresAt: new Date(createdAt.getTime() + INTERACTIVE_SESSION_TTL_MS),
+    initialUrl: payload.url,
+    browser: null, browserServer: null, context: null, page: null,
+    currentHttp: emptyHttp(), initialHttp: emptyHttp(),
+    lastChallenge: null, initialChallenge: null, navigationError: null,
+    dialogInfo: null, dialogFrame: null, activeDialogTasks: new Set(), observedDialogs: new WeakSet(),
+    pendingDialogs: [], backgroundDialogScheduled: false,
+    dialogCaptureAttempts: 0, pageNavigationSequence: new WeakMap(), pageHandlers: new Map(),
+    closed: false, captureResult: null,
+  };
+  if (!SESSION_ID_PATTERN.test(record.id)) throw new Error('Invalid generated interactive session ID.');
+  try {
+    return await interactiveWatchdog(record, async (signal) => {
+      const launched = await launch('chromium', false, { signal });
+      // A launch promise can resolve after its watchdog. Clean up its resources
+      // separately; it must never register a session or continue navigation.
+      if (signal.aborted) {
+        const late = { browser: launched.browser || launched, browserServer: launched.server || null };
+        terminateBrowserServer(late.browserServer);
+        await closeInteractiveSession(late, dependencies);
+        throw httpError(504, 'Interactive start timed out.');
+      }
+      record.browser = launched.browser || launched;
+      record.browserServer = launched.server || null;
+      record.context = await record.browser.newContext({
+        ignoreHTTPSErrors: true,
+        viewport: { width: 1440, height: 900 },
+      });
+      if (signal.aborted) {
+        await finishWithin(Promise.resolve().then(() => record.context.close()), dependencies.cleanupTimeoutMs ?? 2000);
+        throw httpError(504, 'Interactive start timed out.');
+      }
+      const scheduleBackgroundDialogs = () => {
+        if (record.backgroundDialogScheduled || !record.pendingDialogs.length) return;
+        record.backgroundDialogScheduled = true;
+        void withDisplayLease(async () => {
+          try {
+            if (record.closed || interactiveSessions.get(record.id) !== record) {
+              await processPendingDialogs(record);
+              return;
+            }
+            await interactiveWatchdog(record, () => processPendingDialogs(record),
+              dependencies.operationTimeoutMs ?? INTERACTIVE_OPERATION_TIMEOUT_MS, dependencies);
+          } finally {
+            record.backgroundDialogScheduled = false;
+            if (record.pendingDialogs.length) scheduleBackgroundDialogs();
+          }
+        }).catch(() => {});
+      };
+      record.contextPageHandler = (newPage) => {
+        if (record.pageHandlers.has(newPage)) return;
+        record.pageNavigationSequence.set(newPage, 0);
+        const navigation = (frame) => {
+          if (frame === newPage.mainFrame()) {
+            record.pageNavigationSequence.set(newPage, record.pageNavigationSequence.get(newPage) + 1);
+          }
+        };
+        const dialogHandler = (dialog) => {
+          // Context and page can report the same Dialog. The context listener
+          // also covers a synchronous popup alert before its page event.
+          if (record.observedDialogs.has(dialog)) return;
+          record.observedDialogs.add(dialog);
+          if (record.closed) {
+            void dialog.dismiss().catch(() => {});
+            return;
+          }
+          const sourcePage = dialog.page?.() || newPage;
+          const info = {
+            seen: true,
+            type: dialog.type(), message: dialog.message().slice(0, 10000),
+            pageUrl: sourcePage.url(), detectedAt: new Date(currentTime(dependencies)).toISOString(),
+            dismissed: false, capturedAt: null, captureSucceeded: false, captureError: null,
+          };
+          record.dialogInfo = info;
+          const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+          const handle = async () => {
+            try {
+              if (record.closed) return;
+              if (record.dialogCaptureAttempts < MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS) {
+                record.dialogCaptureAttempts += 1;
+                // A popup can own the native dialog while the opener remains
+                // foregrounded. This runs inside the display lease.
+                if (sourcePage !== record.page) await sourcePage.bringToFront();
+                const wait = dependencies.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+                await wait(dependencies.dialogRenderDelayMs ?? DIALOG_RENDER_DELAY_MS);
+                const screenshotBase64 = await captureDialogWithin(captureDesktop);
+                if (!screenshotBase64) throw new Error('Dialog desktop capture returned no image.');
+                const capturedAt = new Date(currentTime(dependencies)).toISOString();
+                info.capturedAt = capturedAt;
+                info.captureSucceeded = true;
+                record.dialogFrame = {
+                  screenshotBase64, capturedAt, pageUrl: info.pageUrl, page: sourcePage,
+                  navigationSequence: record.pageNavigationSequence.get(sourcePage),
+                  detectedAt: info.detectedAt, type: info.type, message: info.message,
+                  http: sourcePage === record.page ? { ...record.currentHttp } : emptyHttp(info.pageUrl),
+                };
+              }
+            } catch (error) {
+              info.captureError = error.message;
+            } finally {
+              try { await dialog.dismiss(); info.dismissed = true; }
+              catch { /* The page may have closed during capture. */ }
+            }
+          };
+          // Dialogs triggered by navigation or input already own the display.
+          // Between requests, queue capture behind the current desktop owner.
+          if (record.displayOperationActive) {
+            const task = handle();
+            record.activeDialogTasks.add(task);
+            void task.finally(() => record.activeDialogTasks.delete(task)).catch(() => {});
+          } else {
+            record.pendingDialogs.push(handle);
+            scheduleBackgroundDialogs();
+          }
+        };
+        newPage.on('framenavigated', navigation);
+        newPage.on('dialog', dialogHandler);
+        record.pageHandlers.set(newPage, { navigation, dialog: dialogHandler });
+      };
+      record.contextDialogHandler = (dialog) => {
+        const sourcePage = dialog.page?.() || record.page;
+        if (!sourcePage) return;
+        record.contextPageHandler(sourcePage);
+        record.pageHandlers.get(sourcePage).dialog(dialog);
+      };
+      record.context.on?.('dialog', record.contextDialogHandler);
+      record.context.on?.('page', record.contextPageHandler);
+      const page = record.page = await record.context.newPage();
+      record.contextPageHandler(page);
+      if (signal.aborted) throw httpError(504, 'Interactive start timed out.');
+      page.setDefaultTimeout?.(INTERACTIVE_OPERATION_TIMEOUT_MS);
+      page.setDefaultNavigationTimeout?.(45000);
+      let currentResponse = null;
+      const readResponse = (response) => {
+        const headers = response.headers?.() || {};
+        return {
+          url: response.url?.() || page.url(),
+          status: response.status(),
+          cfMitigated: headers['cf-mitigated'] ?? null,
+        };
+      };
+      record.responseHandler = (response) => {
+        const request = response.request();
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+          currentResponse = response;
+          record.currentHttp = readResponse(response);
+        }
+      };
+      record.navigationHandler = (frame) => {
+        if (frame === page.mainFrame() && record.currentHttp.url !== frame.url()) {
+          record.currentHttp = emptyHttp(frame.url());
+        }
+      };
+      page.on('response', record.responseHandler);
+      page.on('framenavigated', record.navigationHandler);
+      try {
+        const response = await page.goto(payload.url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+        if (signal.aborted) throw httpError(504, 'Interactive start timed out.');
+        if (response) {
+          record.initialHttp = readResponse(response);
+          // Read complete navigation headers where available.
+          if (response.allHeaders) {
+            try {
+              const headers = await response.allHeaders();
+              record.initialHttp = { ...record.initialHttp, cfMitigated: headers['cf-mitigated'] ?? record.initialHttp.cfMitigated };
+            } catch { /* DOM inspection can still report unknown/detected. */ }
+          }
+          // A second document may already have arrived while allHeaders was
+          // pending. Do not overwrite its current response with the start one.
+          if ((currentResponse === null && record.currentHttp.url === null)
+              || (currentResponse === response && record.currentHttp.url === record.initialHttp.url)) {
+            record.currentHttp = { ...record.initialHttp };
+          }
+        } else {
+          record.initialHttp = { ...record.currentHttp };
+        }
+      } catch (error) {
+        if (signal.aborted) throw error;
+        record.initialHttp = { ...record.currentHttp };
+        record.navigationError = error.message;
+        if (page.url() === 'about:blank') {
+          throw new Error(`Navigation did not reach the target page: ${error.message}`);
+        }
+      }
+      record.initialFinalUrl = record.initialHttp.url || page.url();
+      await page.bringToFront();
+      const initialInspectionNavigation = record.pageNavigationSequence.get(page);
+      record.lastChallenge = await inspectInteractiveChallenge(record, dependencies);
+      if (signal.aborted) throw httpError(504, 'Interactive start timed out.');
+      record.initialChallenge = structuredClone(record.lastChallenge);
+      if (record.pageNavigationSequence.get(page) !== initialInspectionNavigation) {
+        record.initialChallenge = {
+          state: 'unknown', active: null,
+          snapshot: { reason: 'Main document navigated during initial challenge inspection.' },
+        };
+      }
+      await drainActiveDialogs(record);
+      if (String(record.initialHttp.cfMitigated).toLowerCase() === 'challenge') {
+        record.initialChallenge.state = 'detected';
+        record.initialChallenge.active = true;
+      }
+      return record;
+    }, dependencies.startTimeoutMs ?? timeoutMs + INTERACTIVE_OPERATION_TIMEOUT_MS, dependencies);
+  } catch (error) {
+    await closeInteractiveSession(record, dependencies);
+    throw error;
+  }
+}
+
+async function sweepExpiredSessions(dependencies = {}) {
+  return withDisplayLease(async () => {
+    const now = currentTime(dependencies);
+    for (const [id, tombstone] of interactiveTombstones) {
+      if (tombstone.until <= now) interactiveTombstones.delete(id);
+    }
+    for (const [id, session] of interactiveSessions) {
+      if (session.expiresAt.getTime() > now) continue;
+      interactiveSessions.delete(id);
+      rememberSession(id, 'expired', now);
+      await closeInteractiveSession(session, dependencies);
+    }
+  });
+}
+
+async function startInteractiveSession(payload, dependencies = {}) {
+  validateInteractiveStart(payload);
+  return withDisplayLease(async () => {
+    // The count and insertion share the lease; concurrent starts cannot exceed one.
+    for (const [id, session] of interactiveSessions) {
+      if (session.expiresAt.getTime() <= currentTime(dependencies)) {
+        interactiveSessions.delete(id);
+        rememberSession(id, 'expired', currentTime(dependencies));
+        await closeInteractiveSession(session, dependencies);
+      }
+    }
+    if (interactiveSessions.size >= MAX_INTERACTIVE_SESSIONS) {
+      throw httpError(409, 'Interactive browser capacity reached (maximum one session).');
+    }
+    const session = await launchInteractiveSession(payload, dependencies);
+    if (interactiveSessions.has(session.id) || interactiveTombstones.has(session.id)) {
+      await closeInteractiveSession(session, dependencies);
+      throw new Error('Interactive session ID collision.');
+    }
+    interactiveSessions.set(session.id, session);
+    return interactiveSessionView(session);
+  });
+}
+
+async function getInteractiveSession(sessionId, dependencies) {
+  if (!SESSION_ID_PATTERN.test(sessionId)) throw httpError(404, 'Interactive browser session not found.');
+  const session = interactiveSessions.get(sessionId);
+  const now = currentTime(dependencies);
+  if (session && session.expiresAt.getTime() <= now) {
+    interactiveSessions.delete(sessionId);
+    rememberSession(sessionId, 'expired', now);
+    await closeInteractiveSession(session, dependencies);
+    throw httpError(410, 'Interactive browser session expired.');
+  }
+  if (!session) {
+    const tombstone = interactiveTombstones.get(sessionId);
+    if (tombstone?.reason === 'expired' && tombstone.until > now) {
+      throw httpError(410, 'Interactive browser session expired.');
+    }
+    throw httpError(404, 'Interactive browser session not found.');
+  }
+  return session;
+}
+
+function withInteractiveSession(sessionId, operation, dependencies = {}, timeoutMs = INTERACTIVE_OPERATION_TIMEOUT_MS) {
+  return withDisplayLease(async () => {
+    // Resolve inside the lease: a queued request may have expired or been closed.
+    const session = await getInteractiveSession(sessionId, dependencies);
+    return interactiveWatchdog(session, async () => {
+      // A dialog may have queued after this request but before its lease was
+      // entered. Capture/dismiss it here so a page API cannot wait on it.
+      await processPendingDialogs(session);
+      await session.page.bringToFront();
+      if (session.expiresAt.getTime() <= currentTime(dependencies)) {
+        interactiveSessions.delete(session.id);
+        rememberSession(session.id, 'expired', currentTime(dependencies));
+        await closeInteractiveSession(session, dependencies);
+        throw httpError(410, 'Interactive browser session expired.');
+      }
+      if (session.closed) throw httpError(410, 'Interactive browser session closed.');
+      const result = await operation(session);
+      // A dialog may have arrived at the end of an input operation. Keep the
+      // desktop lease until its before-dismiss capture has finished.
+      await drainActiveDialogs(session);
+      if (session.expiresAt.getTime() <= currentTime(dependencies)) {
+        interactiveSessions.delete(session.id);
+        rememberSession(session.id, 'expired', currentTime(dependencies));
+        await closeInteractiveSession(session, dependencies);
+        throw httpError(410, 'Interactive browser session expired.');
+      }
+      return result;
+    }, dependencies.operationTimeoutMs ?? timeoutMs, dependencies);
+  });
+}
+
+function validateInteractiveInput(payload) {
+  const allowedKeys = new Set(['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+  const finite = (value) => typeof value === 'number' && Number.isFinite(value);
+  switch (payload.action) {
+    case 'click':
+      if (!finite(payload.x) || !finite(payload.y) || payload.x < 0 || payload.x > 1439 || payload.y < 0 || payload.y > 899) {
+        throw httpError(400, 'Click coordinates must be within the 1440x900 viewport.');
+      }
+      return { action: 'click', x: Math.round(payload.x), y: Math.round(payload.y) };
+    case 'type':
+      if (typeof payload.text !== 'string' || payload.text.length < 1 || payload.text.length > 10000) {
+        throw httpError(400, 'Interactive text must contain 1 to 10000 characters.');
+      }
+      break;
+    case 'key':
+      if (!allowedKeys.has(payload.key)) throw httpError(400, 'Unsupported interactive key.');
+      break;
+    case 'scroll':
+      if (!finite(payload.deltaY) || Math.abs(payload.deltaY) > 2000) throw httpError(400, 'Scroll delta must be between -2000 and 2000.');
+      break;
+    case 'reload': case 'back': break;
+    default: throw httpError(400, 'Unsupported interactive action.');
+  }
+  return payload;
+}
+
+async function runInteractiveInput(sessionId, payload, dependencies = {}) {
+  const input = validateInteractiveInput(payload);
+  const wait = dependencies.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  return withInteractiveSession(sessionId, async (session) => {
+    if (session.captureResult) throw httpError(409, 'Session already captured; retry capture or close it.');
+    const page = session.page;
+    switch (input.action) {
+      case 'click':
+        await page.mouse.move(input.x, input.y);
+        await page.mouse.down();
+        await page.mouse.up();
+        break;
+      case 'type': await page.keyboard.insertText(input.text); break;
+      case 'key': await page.keyboard.press(input.key); break;
+      case 'scroll': await page.mouse.wheel(0, Math.round(input.deltaY)); break;
+      case 'reload': await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
+      case 'back': await page.goBack({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
+    }
+    await wait(INTERACTIVE_INPUT_WAIT_MS);
+    if (session.closed) throw httpError(410, 'Interactive browser session closed.');
+    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
+    await drainActiveDialogs(session);
+    return interactiveSessionView(session);
+  }, dependencies, ['reload', 'back'].includes(input.action) ? 50000 : INTERACTIVE_OPERATION_TIMEOUT_MS);
+}
+
+async function getInteractiveStatus(sessionId, dependencies = {}) {
+  return withInteractiveSession(sessionId, async (session) => {
+    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
+    await drainActiveDialogs(session);
+    return interactiveSessionView(session);
+  }, dependencies);
+}
+
+async function getInteractiveFrame(sessionId, dependencies = {}) {
+  return withInteractiveSession(sessionId, async (session) => {
+    const priorDialog = session.dialogInfo;
+    try {
+      return await session.page.screenshot({ type: 'png', timeout: 10000 });
+    } catch (error) {
+      await drainActiveDialogs(session);
+      // A dialog may have interrupted the viewport screenshot. Its handler
+      // dismisses it after preserving the desktop image; retry the live frame.
+      if (session.dialogInfo === priorDialog || session.closed) throw error;
+      return session.page.screenshot({ type: 'png', timeout: 10000 });
+    }
+  }, dependencies);
+}
+
+async function captureInteractiveSession(sessionId, dependencies = {}) {
+  const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+  return withInteractiveSession(sessionId, async (session) => {
+    // Returning the exact bytes/timestamp lets persistence retry without creating
+    // different evidence. Manual input is locked after this first capture.
+    if (session.captureResult) return session.captureResult;
+    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
+    const captureInspectionAt = new Date(currentTime(dependencies)).toISOString();
+    const inspectionSequence = session.pageNavigationSequence.get(session.page);
+    const view = interactiveSessionView(session);
+    let normalImage = null;
+    if (!session.dialogFrame) normalImage = await captureDesktop();
+    await drainActiveDialogs(session);
+    const useDialogFrame = session.dialogFrame !== null;
+    const screenshotBase64 = useDialogFrame ? session.dialogFrame.screenshotBase64 : normalImage;
+    if (!screenshotBase64) throw new Error('Interactive screenshot capture completed without an image.');
+    if (session.closed) throw httpError(410, 'Interactive browser session closed.');
+    const navigationAfterInspection = session.pageNavigationSequence.get(session.page) !== inspectionSequence;
+    const sourceURL = useDialogFrame ? session.dialogFrame.pageUrl : session.page.url();
+    const imageHttp = useDialogFrame ? session.dialogFrame.http
+      : session.currentHttp.url === sourceURL ? { ...session.currentHttp } : emptyHttp(sourceURL);
+    const imageChallenge = useDialogFrame || navigationAfterInspection
+      ? { state: 'unknown', active: null, snapshot: { reason: useDialogFrame
+        ? 'Native dialog image; page inspection occurred later.'
+        : 'Main document navigated after challenge inspection.' } }
+      : view.challenge;
+    const captureSelection = useDialogFrame ? 'retained-dialog' : 'current-page';
+    session.captureResult = {
+      screenshotBase64,
+      capturedAt: useDialogFrame ? session.dialogFrame.capturedAt : new Date(currentTime(dependencies)).toISOString(),
+      dialogCapturedAt: useDialogFrame ? session.dialogFrame.capturedAt : null,
+      sourceURL,
+      captureSelection,
+      finalUrl: sourceURL,
+      httpStatus: imageHttp.status,
+      dialogSeen: session.dialogInfo !== null,
+      dialogType: (useDialogFrame ? session.dialogFrame : session.dialogInfo)?.type || null,
+      dialogText: (useDialogFrame ? session.dialogFrame : session.dialogInfo)?.message || null,
+      captureMethod: useDialogFrame ? 'desktop-dialog' : 'interactive-desktop-page',
+      metadata: {
+        interactive: true,
+        manual: true,
+        contextMode: 'fresh-retry',
+        initialUrl: view.initialUrl,
+        initialFinalUrl: view.initialFinalUrl,
+        finalUrl: sourceURL,
+        sourceURL,
+        captureSelection,
+        dialogCapturedAt: useDialogFrame ? session.dialogFrame.capturedAt : null,
+        captureInspectionAt,
+        captureInspectionUrl: view.finalUrl,
+        initialChallenge: view.initialChallenge,
+        currentChallenge: imageChallenge,
+        captureInspectionChallenge: view.challenge,
+        initialChallengeState: view.initialChallenge.state,
+        currentChallengeState: imageChallenge.state,
+        initialChallengeDetected: view.initialChallenge.active,
+        challengeDetected: imageChallenge.active,
+        challengeCleared: imageChallenge.state === 'unknown' ? null : imageChallenge.state === 'cleared',
+        initialHttpStatus: view.initialHttpStatus,
+        currentHttpStatus: imageHttp.status,
+        initialHttp: view.initialHttp,
+        currentHttp: imageHttp,
+        captureInspectionHttp: view.currentHttp,
+        navigationError: session.navigationError,
+        challengeSnapshot: imageChallenge.snapshot,
+        dialogObservation: session.dialogInfo ? { ...session.dialogInfo } : null,
+        dialogFrameCapturedAt: session.dialogFrame?.capturedAt || null,
+        dialogFramePageUrl: session.dialogFrame?.pageUrl || null,
+        dialogFrameDetectedAt: session.dialogFrame?.detectedAt || null,
+        dialogFrameType: session.dialogFrame?.type || null,
+        dialogFrameText: session.dialogFrame?.message || null,
+        dialogImageCaptured: useDialogFrame,
+        browserName: 'chromium',
+      },
+    };
+    return session.captureResult;
+  }, dependencies);
+}
+
+async function closeInteractiveSessionById(sessionId, dependencies = {}) {
+  return withDisplayLease(async () => {
+    if (!SESSION_ID_PATTERN.test(sessionId)) throw httpError(404, 'Interactive browser session not found.');
+    const session = interactiveSessions.get(sessionId);
+    if (!session) {
+      const tombstone = interactiveTombstones.get(sessionId);
+      if (tombstone && tombstone.until > currentTime(dependencies)) return { closed: true, id: sessionId };
+      throw httpError(404, 'Interactive browser session not found.');
+    }
+    // Removal and teardown both own the FIFO. A racing input/frame/capture
+    // resolves the ID only after this teardown, and cannot revive the session.
+    interactiveSessions.delete(sessionId);
+    rememberSession(sessionId, session.expiresAt.getTime() <= currentTime(dependencies) ? 'expired' : 'closed', currentTime(dependencies));
+    await closeInteractiveSession(session, dependencies);
+    return { closed: true, id: sessionId };
+  });
 }
 
 async function runRetest(payload) {
@@ -751,45 +1469,109 @@ async function runScreenshot(payload, dependencies = {}) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'GET' && req.url === '/health') {
-    return sendJson(res, 200, { ok: true });
+function requireWorkerToken(req, token) {
+  if (typeof token !== 'string' || token.length === 0) {
+    throw httpError(503, 'Worker mutations disabled: PLAYWRIGHT_WORKER_TOKEN is not configured.');
   }
+  const header = req.headers.authorization;
+  const supplied = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : '';
+  // Compare fixed-size digests so different secret lengths take the same compare path.
+  const digest = (value) => createHash('sha256').update(value).digest();
+  const matches = timingSafeEqual(digest(supplied), digest(token));
+  if (!matches || supplied.length === 0) throw httpError(401, 'Invalid or missing worker token.');
+}
 
-  if (req.method === 'POST' && req.url === '/retest') {
+function createWorkerServer(dependencies = {}) {
+  const workerToken = dependencies.workerToken ?? process.env.PLAYWRIGHT_WORKER_TOKEN;
+  const worker = http.createServer(async (req, res) => {
+    let pathname;
     try {
-      const payload = await readJson(req);
-      if (!payload.url) {
-        return sendJson(res, 400, { errorMessage: 'Missing url.' });
+      const requestUrl = new URL(req.url, 'http://localhost');
+      pathname = requestUrl.pathname;
+      if (req.method === 'GET' && pathname === '/health') return sendJson(res, 200, { ok: true });
+      // This covers existing screenshot/retest mutations as well as interactive
+      // routes. An internal network is still required; the app has no user login.
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) requireWorkerToken(req, workerToken);
+
+      if (req.method === 'POST' && pathname === '/interactive-sessions') {
+        const session = await startInteractiveSession(await readJson(req), dependencies);
+        return sendJson(res, 201, session);
       }
-
-      const result = payload.headless === false
-        ? await withDisplayLease(() => runRetest(payload))
-        : await runRetest(payload);
-      return sendJson(res, 200, result);
-    } catch (error) {
-      return sendJson(res, 500, { errorMessage: error.message, result: 'error', raw: {} });
-    }
-  }
-
-  if (req.method === 'POST' && req.url === '/screenshot') {
-    try {
-      const payload = await readJson(req);
-      if (!payload.url) {
-        return sendJson(res, 400, { errorMessage: 'Missing url.' });
+      const match = pathname.match(/^\/interactive-sessions\/([^/]+)(?:\/(status|frame|input|capture|close))?$/);
+      if (match) {
+        const [, sessionId, operation = 'status'] = match;
+        if (req.method === 'GET' && operation === 'status') {
+          return sendJson(res, 200, await getInteractiveStatus(sessionId, dependencies));
+        }
+        if (req.method === 'GET' && operation === 'frame') {
+          const image = await getInteractiveFrame(sessionId, dependencies);
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store' });
+          return res.end(image);
+        }
+        if (req.method === 'POST' && ['input', 'capture', 'close'].includes(operation)) {
+          // Even empty-body operations must enforce the global transport limit.
+          const payload = await readJson(req);
+          const result = operation === 'input' ? await runInteractiveInput(sessionId, payload, dependencies)
+            : operation === 'capture' ? await captureInteractiveSession(sessionId, dependencies)
+              : await closeInteractiveSessionById(sessionId, dependencies);
+          return sendJson(res, 200, result);
+        }
+        return sendJson(res, 405, { errorMessage: 'Method not allowed.' });
       }
-
-      const result = await withDisplayLease(() => runScreenshot(payload));
-      return sendJson(res, 200, result);
+      if (req.method === 'POST' && ['/retest', '/screenshot'].includes(pathname)) {
+        const payload = await readJson(req);
+        if (!payload.url) throw httpError(400, 'Missing url.');
+        const result = pathname === '/screenshot'
+          ? await withDisplayLease(() => runScreenshot(payload))
+          : payload.headless === false ? await withDisplayLease(() => runRetest(payload)) : await runRetest(payload);
+        return sendJson(res, 200, result);
+      }
+      return sendJson(res, 404, { errorMessage: 'Not found.' });
     } catch (error) {
-      return sendJson(res, 500, { errorMessage: error.message });
+      if (!res.destroyed && !res.headersSent) {
+        if (error.closeConnection) {
+          res.shouldKeepAlive = false;
+          res.setHeader('Connection', 'close');
+          res.once('finish', () => req.socket.destroy());
+        }
+        sendJson(res, error.statusCode || 500, {
+          errorMessage: error.message,
+          ...(pathname === '/retest' ? { result: 'error', raw: {} } : {}),
+        });
+      }
     }
-  }
+  });
+  worker.requestTimeout = 15000;
+  worker.headersTimeout = 10000;
+  let sweepTimer;
+  worker.on('listening', () => {
+    sweepTimer = setInterval(() => { void sweepExpiredSessions(dependencies).catch(() => {}); }, INTERACTIVE_SWEEP_MS);
+    sweepTimer.unref();
+  });
+  worker.on('close', () => {
+    clearInterval(sweepTimer);
+    void withDisplayLease(async () => {
+      for (const [id, session] of interactiveSessions) {
+        interactiveSessions.delete(id);
+        rememberSession(id, 'closed', currentTime(dependencies));
+        await closeInteractiveSession(session, dependencies);
+      }
+    }).catch(() => {});
+  });
+  return worker;
+}
 
-  return sendJson(res, 404, { errorMessage: 'Not found.' });
-});
+const server = createWorkerServer();
 
 if (require.main === module) {
+  const shutdown = () => {
+    // Closing the HTTP server drains active requests, then its close handler
+    // stops sweeping and tears down the remaining sessions under the FIFO.
+    server.close();
+    server.closeIdleConnections();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
   server.listen(port, '0.0.0.0', () => {
     console.log(`Playwright worker listening on ${port}`);
   });
@@ -798,7 +1580,21 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_SCREENSHOT_SETTLE_MS,
   DEFAULT_CHALLENGE_WAIT_MS,
+  INTERACTIVE_SESSION_TTL_MS,
   challengeSnapshotIsActive,
+  launchInteractiveSession,
+  startInteractiveSession,
+  sweepExpiredSessions,
+  createWorkerServer,
+  INTERACTIVE_SWEEP_MS,
+  MAX_INTERACTIVE_SESSIONS,
+  MAX_BODY_BYTES,
+  getInteractiveStatus,
+  getInteractiveFrame,
+  runInteractiveInput,
+  captureInteractiveSession,
+  closeInteractiveSessionById,
   runScreenshot,
+  interactiveSessions,
   withDisplayLease,
 };

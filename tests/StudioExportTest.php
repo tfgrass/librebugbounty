@@ -7,10 +7,13 @@ use App\Entity\Evidence;
 use App\Entity\Finding;
 use App\Entity\FindingAssessment;
 use App\Entity\RetestRun;
+use App\Entity\ScreenshotJob;
 use App\Repository\FindingReadRepository;
 use App\Service\BrowserRetestClientInterface;
 use App\Service\BrowserScreenshotClientInterface;
 use App\Service\StudioExportService;
+use App\Service\StudioExportProfileService;
+use App\Service\EvidenceStorageInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -267,6 +270,212 @@ final class StudioExportTest extends DatabaseTestCase
         self::assertFalse($this->entityManager->getConnection()->isTransactionActive());
         self::assertSame($before, $this->snapshot());
         self::assertSame(1, $this->download()['findingCount']);
+    }
+
+    public function testDialogObservationIsDistinctFromVisibleImageAndManualClearanceInExport(): void
+    {
+        $metadata = ['interactive' => true, 'initialChallengeState' => 'detected', 'currentChallengeState' => 'cleared',
+            'manualInteraction' => true, 'manualActionCount' => 0, 'dialogSeen' => true,
+            'dialogImageCaptured' => false, 'dialogText' => str_repeat('d', 12000),
+            'dialogObservation' => ['detectedAt' => '2026-10-17T12:00:00Z', 'pageUrl' => 'https://fixture.invalid/',
+                'screenshotBase64' => 'private-image-data', 'captureError' => 'private-worker-details']];
+        $provenance = StudioExportProfileService::captureProvenance($metadata);
+        self::assertFalse($provenance['manualInteraction']);
+        self::assertFalse($provenance['dialogImageCaptured']);
+        self::assertSame(10000, mb_strlen($provenance['dialogText']));
+        self::assertSame('2026-10-17T12:00:00Z', $provenance['dialogDetectedAt']);
+        self::assertStringNotContainsString('private-', json_encode($provenance));
+        $description = StudioExportProfileService::captureDescription($provenance, 'de');
+        self::assertStringNotContainsString('Nach manueller Bedienung', $description);
+        self::assertStringContainsString('sichtbares Abbild ist nicht bestätigt', $description);
+
+        $metadata['dialogImageCaptured'] = true;
+        $metadata['dialogCapturedAt'] = '2026-10-17T12:00:01Z';
+        $provenance = StudioExportProfileService::captureProvenance($metadata);
+        self::assertSame($metadata['dialogCapturedAt'], $provenance['dialogCapturedAt']);
+        self::assertStringContainsString('vor dem Schließen als Bild festgehalten', StudioExportProfileService::captureDescription($provenance, 'de'));
+        self::assertStringNotContainsString('aktuelle Seite', StudioExportProfileService::captureDescription($provenance, 'de'));
+    }
+
+    public function testInteractiveStateProvenanceIsAdditiveAndOldV1RecordsRemainIdentical(): void
+    {
+        $finding = $this->finding('interactive-state')->setPrivateNotes('private notes')
+            ->setManualAssessment('confirmed', null, new \DateTimeImmutable('2026-10-01'));
+        $ordinary = $this->evidence($finding, $finding->getId().'/ordinary.png');
+        $metadata = $this->interactiveMetadata($finding);
+        $image = $this->interactiveImage($finding, $metadata);
+        // Same bytes/path without screenshot kind must not inherit provenance.
+        $otherKind = $this->evidence($finding, $image->getFilePath())->setKind('text');
+        $unrelated = $this->finding('ordinary-case');
+        $this->evidence($unrelated, $image->getFilePath());
+        $this->observation($finding, 'inconclusive');
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+        $legacyService = self::getContainer()->get(StudioExportService::class);
+        [$filter, $notes] = $legacyService->parse(['include_notes' => '1']);
+        $legacy = '';
+        $legacyService->writeDownload($filter, $notes, static function (string $part) use (&$legacy): void { $legacy .= $part; });
+        $legacy = json_decode($legacy, true, 512, JSON_THROW_ON_ERROR);
+        $state = $this->download(['include_notes' => '1']);
+        $records = array_column($state['findings'], null, 'id');
+        $evidence = array_column($records[$finding->getId()]['evidence'], null, 'id');
+        self::assertArrayNotHasKey('captureProvenance', $evidence[$ordinary->getId()]);
+        self::assertArrayNotHasKey('captureProvenance', $evidence[$otherKind->getId()]);
+        self::assertArrayNotHasKey('captureProvenance', $records[$unrelated->getId()]['evidence'][0]);
+        $provenance = $evidence[$image->getId()]['captureProvenance'];
+        self::assertTrue($provenance['interactive']);
+        self::assertTrue($provenance['manual']);
+        self::assertSame('fresh-retry', $provenance['context']);
+        foreach (['initialChallengeState', 'currentChallengeState', 'initialUrl', 'finalUrl', 'initialHttpStatus', 'currentHttpStatus', 'captureMethod', 'dialogSeen', 'dialogType', 'dialogText'] as $key) {
+            self::assertSame($metadata[$key], $provenance[$key], $key);
+        }
+        self::assertSame($metadata['triggeredBy']['jobId'], $provenance['triggerJobId']);
+        self::assertSame($metadata['triggeredBy']['evidenceId'], $provenance['triggerEvidenceId']);
+        self::assertArrayNotHasKey('workerSessionId', $provenance);
+        $custom = $this->download(['profile' => 'state', 'include_assessment' => '0']);
+        $customRecords = array_column($custom['findings'], null, 'id');
+        self::assertSame($provenance, array_column($customRecords[$finding->getId()]['evidence'], null, 'id')[$image->getId()]['captureProvenance']);
+        self::assertArrayNotHasKey('manualAssessment', $customRecords[$finding->getId()]);
+        foreach ($state['findings'] as &$record) {
+            foreach ($record['evidence'] as &$item) {
+                unset($item['captureProvenance']);
+            }
+            unset($item);
+        }
+        unset($record, $state['generatedAt'], $legacy['generatedAt']);
+        self::assertSame($legacy, $state);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testInteractiveReportRetainsCaptureChainWithoutInferringAnAssessmentBasis(): void
+    {
+        $finding = $this->finding('interactive-report')->setManualAssessment('confirmed', null, new \DateTimeImmutable('2026-10-01'));
+        $metadata = $this->interactiveMetadata($finding);
+        $image = $this->interactiveImage($finding, $metadata);
+        $this->entityManager->flush();
+        $before = $this->snapshot();
+        foreach (['all', 'latest'] as $mode) {
+            [$manifest, $report] = $this->report(['screenshots' => $mode]);
+            $record = $manifest['findings'][0];
+            self::assertFalse($record['hasKnownAssessmentImageBasis']);
+            self::assertNull($record['screenshots'][0]['basisSource']);
+            self::assertSame(StudioExportProfileService::captureProvenance($metadata), $record['screenshots'][0]['captureProvenance']);
+            self::assertTrue($record['screenshots'][0]['available']);
+            self::assertStringContainsString('Nach manueller Bedienung wurde bei der Aufnahme kein Schutzmerkmal erkannt.', $report);
+            self::assertStringContainsString('frischen Chromium-Kontext', $report);
+            self::assertStringContainsString('keine konkrete Bildgrundlage dokumentiert', $report);
+            foreach ([$metadata['initialUrl'], $metadata['finalUrl'], 'trigger-job', 'trigger-evidence', 'initialHttpStatus', 'currentHttpStatus'] as $text) {
+                self::assertStringContainsString($text, $report);
+            }
+            self::assertStringNotContainsString('private-worker-id', json_encode($manifest).$report);
+        }
+        [$manifest] = $this->report(['screenshots' => 'basis']);
+        self::assertSame([], $manifest['findings'][0]['screenshots']);
+        self::assertFalse($manifest['findings'][0]['hasKnownAssessmentImageBasis']);
+        [$manifest] = $this->report(['screenshots' => 'none']);
+        self::assertSame([], $manifest['findings'][0]['screenshots']);
+        self::assertSame($before, $this->snapshot());
+
+        // Only an explicit decision establishes this image as the assessment basis.
+        $decisionAt = new \DateTimeImmutable('2026-10-03');
+        $finding->setManualAssessment('confirmed', null, $decisionAt);
+        $this->entityManager->persist(new FindingAssessment($finding, 'confirmed', null, $decisionAt, null, $image->getId()));
+        $this->entityManager->flush();
+        [$manifest] = $this->report(['screenshots' => 'basis']);
+        self::assertTrue($manifest['findings'][0]['hasKnownAssessmentImageBasis']);
+        self::assertSame('assessment', $manifest['findings'][0]['screenshots'][0]['basisSource']);
+        self::assertSame(StudioExportProfileService::captureProvenance($metadata), $manifest['findings'][0]['screenshots'][0]['captureProvenance']);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('interactiveProvenanceStates')]
+    public function testPartialAndFailedInspectionsRemainTruthfulInStateAndReport(array $metadata, string $initial, string $current): void
+    {
+        $finding = $this->finding('partial-provenance');
+        $this->interactiveImage($finding, ['interactive' => true] + $metadata);
+        $this->entityManager->flush();
+        $state = $this->download();
+        $provenance = $state['findings'][0]['evidence'][0]['captureProvenance'];
+        self::assertSame($initial, $provenance['initialChallengeState']);
+        self::assertSame($current, $provenance['currentChallengeState']);
+        self::assertNull($provenance['initialUrl']);
+        self::assertNull($provenance['initialHttpStatus']);
+        self::assertNull($provenance['currentHttpStatus']);
+        [$manifest, $report] = $this->report(['screenshots' => 'all']);
+        self::assertSame($provenance, $manifest['findings'][0]['screenshots'][0]['captureProvenance']);
+        self::assertStringNotContainsString('Nach manueller Bedienung', $report);
+    }
+
+    public static function interactiveProvenanceStates(): iterable
+    {
+        yield 'missing' => [[], 'unknown', 'unknown'];
+        yield 'draft cleared' => [['initialChallengeDetected' => true, 'challengeCleared' => true, 'httpStatus' => 403], 'detected', 'cleared'];
+        yield 'draft protected' => [['initialChallengeDetected' => true, 'challengeDetected' => true], 'detected', 'detected'];
+        yield 'draft false is inconclusive' => [['initialChallengeDetected' => false, 'challengeDetected' => false], 'unknown', 'unknown'];
+        yield 'explicit unknown beats old clearance' => [['initialChallengeState' => 'detected', 'currentChallengeState' => 'unknown', 'challengeCleared' => true], 'detected', 'unknown'];
+        yield 'inspection error beats cleared' => [['initialChallengeState' => 'detected', 'currentChallengeState' => 'cleared', 'challengeSnapshot' => ['error' => 'failed']], 'detected', 'unknown'];
+        yield 'nested error cannot be hidden by outer snapshot' => [['currentChallengeState' => 'cleared', 'challengeSnapshot' => [], 'currentChallenge' => ['snapshot' => ['error' => 'failed']]], 'unknown', 'unknown'];
+        yield 'null inspection is unknown' => [['currentChallengeState' => 'cleared', 'currentChallenge' => ['active' => null]], 'unknown', 'unknown'];
+        yield 'conflicting inspection is unknown' => [['currentChallengeState' => 'cleared', 'currentChallenge' => ['state' => 'unknown']], 'unknown', 'unknown'];
+        yield 'nested inspections' => [['initialChallenge' => ['active' => false], 'currentChallenge' => ['state' => 'unknown']], 'cleared', 'unknown'];
+        yield 'malformed states' => [['initialChallengeState' => ['cleared'], 'currentChallengeState' => 'invalid'], 'unknown', 'unknown'];
+    }
+
+    public function testReportKeepsProvenanceWhenImageIsMissingAndTreatsStoredMarkupAsLiteral(): void
+    {
+        $finding = $this->finding('literal provenance');
+        $metadata = $this->interactiveMetadata($finding);
+        $metadata['finalUrl'] = "https://target.invalid/\n```\n<script>provenanceAttack()</script>\n````\n![image](https://untrusted.invalid/image)";
+        $image = $this->interactiveImage($finding, $metadata);
+        $this->entityManager->flush();
+        self::getContainer()->get(EvidenceStorageInterface::class)->deleteFile($image->getFilePath());
+        [$manifest, $report] = $this->report(['screenshots' => 'all']);
+        $exported = $manifest['findings'][0]['screenshots'][0];
+        self::assertFalse($exported['available']);
+        self::assertSame($metadata['finalUrl'], $exported['captureProvenance']['finalUrl']);
+        self::assertStringContainsString('`````text', $report);
+        $outside = preg_replace('/^(`{3,})text\n[\s\S]*?^\1\n/m', '', $report);
+        self::assertStringNotContainsString('<script>', $outside);
+        self::assertStringNotContainsString('![image]', $outside);
+    }
+
+    private function interactiveMetadata(Finding $finding): array
+    {
+        return [
+            'interactive' => true, 'initialChallengeState' => 'detected', 'currentChallengeState' => 'cleared',
+            'manualActionCount' => 3, 'manualInteraction' => true,
+            'initialUrl' => $finding->getUrl(), 'finalUrl' => 'https://target.invalid/final',
+            'triggeredBy' => ['jobId' => 'trigger-job', 'evidenceId' => 'trigger-evidence'],
+            'initialHttpStatus' => 403, 'currentHttpStatus' => 200,
+            'captureMethod' => 'interactive-desktop-page', 'dialogSeen' => true,
+            'dialogType' => 'alert', 'dialogText' => 'Stored dialog', 'workerSessionId' => 'private-worker-id',
+        ];
+    }
+
+    private function interactiveImage(Finding $finding, array $metadata): Evidence
+    {
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=', true);
+        $stored = self::getContainer()->get(EvidenceStorageInterface::class)->storeContents($finding, $png, 'interactive.png');
+        $image = $this->evidence($finding, $stored->relativePath)->setSha256($stored->sha256);
+        $job = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())->setStatus('available')
+            ->setCapturedAt(new \DateTimeImmutable('2026-10-02'))->setScreenshotPath(substr($stored->relativePath, strlen('storage/artifacts/')))->setCaptureMetadata($metadata);
+        $this->entityManager->persist($job);
+
+        return $image;
+    }
+
+    /** @return array{array, string} */
+    private function report(array $query = []): array
+    {
+        $service = self::getContainer()->get(StudioExportProfileService::class);
+        $path = $service->buildReportArchive($service->parse(['profile' => 'report'] + $query));
+        $zip = new \ZipArchive();
+        self::assertTrue($zip->open($path));
+        try {
+            return [json_decode($zip->getFromName('manifest.json'), true, 512, JSON_THROW_ON_ERROR), $zip->getFromName('report.md')];
+        } finally {
+            $zip->close();
+            unlink($path);
+        }
     }
 
     private function finding(string $label, string $hostname = 'export.test'): Finding

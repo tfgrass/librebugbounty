@@ -5,6 +5,26 @@ repository's tagged commits.
 
 ## Unreleased
 
+Interactive review work is assigned to 2.1.0; the codename is undecided. The
+existing image/click fallback is implemented; noVNC is planned as the next slice.
+
+### Added
+
+- Review can reopen an unresolved browser-protection capture in one fresh
+  Playwright/Chromium retry context with bounded manual input and a 20-minute
+  worker TTL. A non-destructive capture can be saved as another screenshot with
+  interactive provenance and tri-state initial/current challenge metadata. The
+  evidence remains manual and must still be selected explicitly as the assessment
+  basis before a decision is saved.
+- Interactive retry retains native dialog desktop evidence before dismissal,
+  preferring that image at save time even after navigation while keeping the
+  control frame live. Cached captures support persistence retries with input
+  locked after capture; dialog observation alone does not imply image capture
+  or challenge clearance.
+- Internal worker mutations use a shared service token across the web container,
+  base worker and four screenshot lanes, with a development-only DDEV value and
+  no host-published worker HTTP ports.
+
 ## 2.0.3 — Moneta (2026-10-12)
 
 ### Changed

@@ -204,6 +204,43 @@ decision buttons become available; Skip, Back, and Open PoC remain usable.
 The pause is off by default and requires JavaScript. Opening a stored URL uses
 normal browser navigation; it does not reproduce a stored POST request.
 
+When the latest screenshot records an unresolved browser-protection page,
+the normal screenshot viewer remains primary and Review offers the fallback
+**Open interactive retry**. This starts a *fresh*
+Playwright/Chromium context at the reported URL; it does not resume the original
+capture's cookies, storage or browser fingerprint. The live view accepts bounded
+clicks, keys, text entry and scrolling using a live viewport image, so clicks
+refer to the currently displayed page. Exactly one interactive session is
+admitted per worker; a second start is rejected with 409. Review uses the base
+worker and keeps at most one session per PHP browser session across findings.
+Sessions expire after an absolute 20-minute TTL; polling does not extend it and
+a 30-second sweeper removes expired worker contexts. A worker restart loses the
+in-memory session. Remote noVNC control is planned as the next 2.1.0 slice.
+
+Use **Save evidence** to retain another screenshot with
+interactive provenance. A native alert is photographed on the desktop before
+dismissal is attempted. If a dialog image was retained, saving prefers that
+image, even after navigation; the saved source URL and timestamp describe the
+dialog image. The live control view continues to show the current viewport.
+Observing a dialog alone does not prove that its image was captured or that
+browser protection cleared. Initial and image-associated protection states are
+preserved separately as `detected`, `cleared`, or `unknown`; a later page
+inspection cannot establish clearance for an earlier dialog image, and an
+inspection error remains `unknown`.
+
+Capture leaves the context open and caches the first successful result. Further
+input is then blocked; retrying a failed save reuses the same image and timestamp
+until close or expiry. Storage/database failures retain the session for retry or
+cancel. A successful save closes it; cancelling closes it without new evidence.
+If the finding or its triggering screenshot changes or checks become disallowed,
+Review invalidates the session and requires a fresh start.
+
+The saved image is stronger context than an undocumented manual PoC visit, but it
+is still human-observed evidence. It does not run the technical retest logic or
+classify the finding. Select that exact image under **Assessment basis** before
+saving your decision; merely returning to it after capture does not make it the
+basis.
+
 **Not vulnerable** records your current judgment using the application's
 **Fixed** category. It does not establish that a vulnerability existed earlier.
 Use Skip if the evidence is insufficient, or Discard for cases you want to
