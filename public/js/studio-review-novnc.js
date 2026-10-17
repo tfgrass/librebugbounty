@@ -102,6 +102,7 @@ export function mountInteractivePanel(element) {
   });
   on(document, 'fullscreenchange', syncFullscreen);
   on(document, 'keydown', event => {
+    if (document.querySelector('dialog[open]')) return;
     if (layoutFullscreen && event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation();
       leaveLayoutFullscreen(); fullscreenButton.focus();

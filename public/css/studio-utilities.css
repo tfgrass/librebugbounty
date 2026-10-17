@@ -1,0 +1,61 @@
+/* Secondary tools are separate from the five workflow destinations. */
+.studio-workspace-nav { padding-inline: 158px; }
+.studio-utility-nav { position: absolute; right: 12px; inset-block: 0; display: flex; gap: 4px; align-items: center; }
+.studio-utility-nav .studio-utility-link { position: relative; inset: auto; display: grid; place-items: center; width: 42px; height: 42px; padding: 0; border-radius: 8px; color: #9fa9b7; }
+.studio-utility-link:hover { background: #272e37; color: #e3eaf4; }
+.studio-utility-link:focus-visible { outline: 2px solid #86b7ff; outline-offset: 2px; }
+.studio-utility-warning { position: absolute; top: 7px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #e9b562; }
+.studio-utility-dialog {
+  --settings-panel: #1b1f24; --settings-border: #353c45;
+  width: min(760px, calc(100vw - 40px)); max-height: calc(100dvh - 64px);
+  padding: 0; border: 1px solid #3c4551; border-radius: 16px;
+  color: #dbe3ee; background: #171b20; box-shadow: 0 24px 100px #0008;
+}
+.studio-utility-dialog::backdrop { background: #080b10bd; backdrop-filter: blur(4px); }
+.studio-utility-dialog-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 18px 24px; background: #171b20; border-bottom: 1px solid #343c47; }
+.studio-utility-dialog-header h2 { margin: 0; font-size: 19px; }
+.studio-utility-dialog button { font: inherit; color: inherit; background: #252e39; border: 1px solid #435064; border-radius: 7px; padding: 9px 14px; cursor: pointer; }
+.studio-utility-dialog button:focus-visible, .studio-utility-dialog a:focus-visible { outline: 2px solid #86b7ff; outline-offset: 3px; }
+.studio-utility-dialog-body { padding: 24px; }
+.studio-utility-dialog a { color: #a9cbff; }
+.studio-utility-dialog [data-utility-content] > .studio-settings-panel { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.studio-utility-dialog details { margin-top: 14px; }
+.studio-utility-dialog summary { cursor: pointer; padding-block: 10px; }
+.studio-utility-dialog-footer { padding: 0 24px 20px; font-size: 12px; }
+@media (max-width: 1120px) {
+  .studio-shell:has(.studio-utility-nav) { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .studio-workspace-nav:has(.studio-utility-nav) { padding: 0 8px 48px; gap: 0; }
+  .studio-workspace-nav .studio-workspace-link { flex: 1; min-width: 0; padding-inline: 5px; }
+  .studio-utility-nav { top: auto; bottom: 3px; right: 0; left: 0; height: 44px; justify-content: center; border-top: 1px solid #2d343e; }
+}
+@media (max-width: 600px) {
+  .studio-utility-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; max-width: 100vw; margin: 0; border: 0; border-radius: 0; }
+  .studio-utility-dialog-header { padding: 14px 16px; }
+  .studio-utility-dialog-body { padding: 16px; }
+}
+.studio-utility-dialog .studio-settings-panel[data-utility-content] { padding: 0; border: 0; background: transparent; box-shadow: none; }
+/* Settings are now a focused form, not an information dashboard. */
+[data-studio-settings] .studio-settings-content { padding-top: 28px; }
+[data-studio-settings] .studio-settings-layout { gap: 24px; }
+[data-studio-settings] .studio-settings-group { margin-top: 16px; padding-bottom: 24px; }
+[data-studio-settings] .studio-settings-group legend { color: #a9bfd9; letter-spacing: .5px; }
+.studio-utility-dialog .studio-about-hero { padding: 0 0 16px; }
+.studio-utility-dialog .studio-about-logo { width: 48px; height: 48px; }
+.studio-utility-dialog .studio-about-hero h2 { margin: 12px 0 8px; font-size: 24px; }
+.studio-utility-dialog .studio-about-lead { margin-block: 14px; }
+.studio-utility-dialog .studio-settings-docs { margin-top: 18px; padding-top: 16px; }
+.studio-utility-dialog .studio-settings-docs nav { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.studio-utility-dialog .studio-about-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+.studio-utility-dialog .studio-about-facts > div { min-width: 0; }
+.studio-utility-dialog .studio-about-support { margin-top: 16px; padding-top: 14px; }
+@media (max-width: 440px) { .studio-utility-dialog .studio-about-facts { grid-template-columns: 1fr; } }
+.studio-utility-dialog [data-utility-content="status"] > .studio-settings-panel-heading { justify-content: flex-end; border: 0; padding-bottom: 0; }
+.studio-utility-dialog [data-utility-content="status"] #settings-health-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+/* Focus review turns navigation into a grid menu, not a footer. */
+[data-review-focus-mode="true"] .studio-workspace-nav:has(.studio-utility-nav) { padding: 8px; }
+[data-review-focus-mode="true"] .studio-utility-nav { position: static; inset: auto; grid-column: 1 / -1; width: auto; height: auto; justify-content: center; border-top: 1px solid #2d343e; padding-top: 4px; }
+@media (max-width: 1120px) {
+  [data-studio-review] .studio-review-shell:has(.studio-utility-nav) { grid-template-rows: auto minmax(0, 1fr) auto; }
+  [data-studio-review] .studio-review-shell.review-has-card:has(.studio-utility-nav),
+  [data-studio-review] .studio-review-shell.review-has-card.review-has-notice:has(.studio-utility-nav) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+}

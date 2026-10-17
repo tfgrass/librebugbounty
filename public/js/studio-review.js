@@ -143,6 +143,7 @@
       if (inspector) { inspector.open = true; inspector.querySelector('summary').focus({ preventScroll: true }); }
     }));
     on(document, 'keydown', (event) => {
+      if (document.querySelector('dialog[open]')) return;
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
       const panels = preferences.active ? [navigation, inspector, queuePanel] : narrow.matches ? [inspector] : [];
       const panel = panels.find(panel => panel?.open && panel.contains(document.activeElement)) || panels.find(panel => panel?.open);
@@ -464,6 +465,7 @@
       });
     });
     on(document, 'keydown', (event) => {
+      if (document.querySelector('dialog[open]')) return;
       if (event.key.toLowerCase() === 'f' && !event.defaultPrevented && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !event.isComposing && !editable(event.target) && !hasSelection()) {
         event.preventDefault();
         if (!event.repeat) toggleMode();

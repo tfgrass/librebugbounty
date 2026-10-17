@@ -22,5 +22,16 @@ $workspaceItems = [
       <span class="studio-workspace-link studio-workspace-link-active studio-detail-context" aria-current="page"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M14 4v16M4 14h10" stroke="currentColor" stroke-width="1.5"/></svg><span><?= $escape($t('Fall')) ?></span></span>
     <?php endif; ?>
   <?php endforeach; ?>
-  <a class="studio-settings-link<?= $activeWorkspace === 'settings' ? ' studio-settings-link-active' : '' ?>" href="/settings" aria-label="<?= $escape($t('Einstellungen')) ?>"<?= $activeWorkspace === 'settings' ? ' aria-current="page"' : '' ?>><svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.4"/></svg></a>
+  <div class="studio-utility-nav" role="group" aria-label="<?= $escape($t('Anwendung')) ?>"
+       data-utility-label-close="<?= $escape($t('Schließen')) ?>"
+       data-utility-label-loading="<?= $escape($t('Wird geladen …')) ?>"
+       data-utility-label-error="<?= $escape($t('Inhalt konnte nicht geladen werden.')) ?>"
+       data-utility-label-fallback="<?= $escape($t('Als Seite öffnen')) ?>"
+       data-utility-label-warning="<?= $escape($t('Systemstatus: Warnung bei letzter Prüfung')) ?>">
+    <a class="studio-utility-link studio-settings-link<?= $activeWorkspace === 'settings' ? ' studio-settings-link-active' : '' ?>" href="/settings" title="<?= $escape($t('Einstellungen')) ?>" aria-label="<?= $escape($t('Einstellungen')) ?>"<?= $activeWorkspace === 'settings' ? ' aria-current="page"' : '' ?>><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2v3l3 1 1 3h4l1-3 3-1v-3l2-2-2-3-3-1-1-3H9Z" transform="translate(1 1)" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/></svg></a>
+    <a class="studio-utility-link" href="/status" data-utility-open="status" title="<?= $escape($t('Systemstatus')) ?>" aria-label="<?= $escape($t('Systemstatus')) ?>" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="studio-utility-warning" data-utility-warning-dot hidden aria-hidden="true"></span></a>
+    <a class="studio-utility-link" href="/about" data-utility-open="about" title="<?= $escape($t('Über LibreBugBounty')) ?>" aria-label="<?= $escape($t('Über LibreBugBounty')) ?>" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg></a>
+  </div>
 </nav>
+<link rel="stylesheet" href="/css/studio-utilities.css">
+<script src="/js/studio-utilities.js" defer></script>

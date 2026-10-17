@@ -7,10 +7,8 @@
 /** @var string $exportScreenshotMode */
 /** @var string $recheckIntervalDays */
 /** @var string $recheckErrorBackoffDays */
-/** @var array<string, mixed> $health */
 /** @var array<string, string> $errors */
 /** @var ?string $message */
-/** @var array<string, string> $app */
 /** @var callable $escape */
 ?>
 <!doctype html>
@@ -20,7 +18,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
-  <title><?= $escape($t('Einstellungen & Info')) ?> · <?= $escape($app['name'].' '.$app['releaseName']) ?></title>
+  <title><?= $escape($t('Einstellungen')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
   <link rel="stylesheet" href="/css/studio.css">
   <link rel="stylesheet" href="/css/studio-settings.css">
   <script src="/js/i18n.js" defer></script>
@@ -37,8 +35,8 @@
         <header class="studio-settings-heading">
           <div>
             <p class="studio-eyebrow"><?= $escape($t('Arbeitsumgebung')) ?></p>
-            <h1><?= $escape($t('Einstellungen & Info')) ?></h1>
-            <p><?= $escape($t('Vorgaben, Dokumentation und Informationen zur Anwendung.')) ?></p>
+            <h1><?= $escape($t('Einstellungen')) ?></h1>
+            <p><?= $escape($t('Vorgaben und Sperren für diese Installation.')) ?></p>
           </div>
         </header>
 
@@ -51,54 +49,6 @@
             <span><?= $escape($t('Bitte korrigiere die markierten Felder. Deine Eingaben bleiben erhalten.')) ?></span>
           </div>
         <?php endif; ?>
-
-        <section class="studio-settings-panel studio-settings-health" id="health" aria-labelledby="settings-health-title">
-          <div class="studio-settings-panel-heading">
-            <div><h2 id="settings-health-title"><?= $escape($t('Status & Gesundheit')) ?></h2></div>
-            <a class="studio-health-refresh" href="/settings#health"><?= $escape($t('Status aktualisieren')) ?></a>
-          </div>
-          <p class="studio-settings-field-hint studio-health-checked"><?= $escape($t('Stand: {date}', ['date' => $formatTime($health['checkedAt'], true)])) ?></p>
-          <div class="studio-settings-health-grid">
-            <?php foreach (['recheck' => 'Recheck-Worker', 'screenshot' => 'Screenshot-Worker'] as $kind => $label): $group = $health[$kind]; ?>
-            <article class="studio-settings-health-card" data-health-kind="<?= $escape($kind) ?>" data-health-state="<?= $escape($group['state']) ?>">
-              <header>
-                <span class="studio-settings-health-dot" data-state="<?= $escape($group['state']) ?>" aria-hidden="true"></span>
-                <h3><?= $escape($t($label)) ?></h3>
-              </header>
-              <p class="studio-settings-health-state" data-health-summary><?= $escape($t('{active}/{expected} Worker aktiv', ['active' => $group['activeWorkers'], 'expected' => $group['expectedWorkers']])) ?></p>
-              <p class="studio-settings-field-hint" data-health-browser-summary><?= $escape($t('{active}/{expected} Browserdienste erreichbar', ['active' => $group['reachableBrowsers'], 'expected' => $group['expectedBrowsers']])) ?></p>
-              <ul class="studio-health-workers" aria-label="<?= $escape($t($label)) ?>">
-                <?php foreach ($group['workers'] as $worker): ?>
-                <li data-health-worker="<?= $escape($worker['id']) ?>" data-worker-state="<?= $escape($worker['state']) ?>" data-browser-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>">
-                  <div><strong><?= $escape($worker['id']) ?></strong><span class="studio-health-worker-state"><?= $escape($t(['ok' => 'Signal aktuell', 'stale' => 'Signal veraltet', 'unknown' => 'Noch kein Signal'][$worker['state']])) ?></span></div>
-                  <span class="studio-health-worker-seen"><?= $worker['lastSeen'] === null ? $escape($t('Zeitpunkt unbekannt')) : $escape($t('Letztes Signal: {date}', ['date' => $formatTime($worker['lastSeen'], true)])) ?></span>
-                  <span class="studio-health-browser" data-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>"><?= $escape($t($worker['browserReachable'] ? 'Browserdienst erreichbar' : 'Browserdienst nicht erreichbar')) ?></span>
-                </li>
-                <?php endforeach; ?>
-              </ul>
-              <dl>
-                <?php if ($kind === 'recheck'): ?>
-                <div><dt><?= $escape($t('Fällig jetzt')) ?></dt><dd><?= $escape($formatNumber($group['dueNow'])) ?></dd></div>
-                <div><dt><?= $escape($t('Geplant')) ?></dt><dd><?= $escape($formatNumber($group['scheduled'])) ?></dd></div>
-                <div><dt><?= $escape($t('Pausiert für Review')) ?></dt><dd><?= $escape($formatNumber($group['pausedManual'])) ?></dd></div>
-                <div><dt><?= $escape($t('Nächster Termin')) ?></dt><dd><?= $group['nextDueAt'] === null ? $escape($t('Kein Termin')) : $escape($formatTime($group['nextDueAt'])) ?></dd></div>
-                <div><dt><?= $escape($t('Intervall')) ?></dt><dd><?= $escape($t('{days} Tage', ['days' => $group['intervalDays']])) ?></dd></div>
-                <div><dt><?= $escape($t('Fälle mit technischem Fehler')) ?></dt><dd><a href="/errors?kind=technical" data-health-errors="technical"><?= $escape($formatNumber($group['errorCases'])) ?></a></dd></div>
-                <?php else: ?>
-                <div><dt><?= $escape($t('Wartend')) ?></dt><dd><?= $escape($formatNumber($group['queued'])) ?></dd></div>
-                <div><dt><?= $escape($t('In Arbeit')) ?></dt><dd><?= $escape($formatNumber($group['running'])) ?></dd></div>
-                <div><dt><?= $escape($t('Abgeschlossene Aufnahmen')) ?></dt><dd><?= $escape($formatNumber($group['available'])) ?></dd></div>
-                <div><dt><?= $escape($t('Fehlgeschlagene Aufträge (Historie)')) ?></dt><dd><?= $escape($formatNumber($group['failed'])) ?></dd></div>
-                <div><dt><?= $escape($t('Fälle mit Aufnahmefehler')) ?></dt><dd><a href="/errors?kind=screenshot" data-health-errors="screenshot"><?= $escape($formatNumber($group['errorCases'])) ?></a></dd></div>
-                <?php endif; ?>
-              </dl>
-            </article>
-            <?php endforeach; ?>
-          </div>
-          <p class="studio-settings-field-hint studio-health-checked"><?= $escape($t('Grün bedeutet: alle erwarteten Worker senden aktuelle Signale und ihre Browserdienste antworten. Die Dienstprüfung startet keine Browseraufnahme.')) ?></p>
-          <p class="studio-settings-field-hint"><?= $escape($t('Signale gelten für Rechecks 10 Minuten und für Screenshots 5 Minuten. Auftragszahlen enthalten die Historie; abgeschlossene Aufnahmen bestätigen nicht die Lesbarkeit der Bilddateien.')) ?></p>
-          <p class="studio-settings-field-hint"><a href="/errors"><?= $escape($t('Fehlerübersicht öffnen')) ?></a> · <a href="/errors?kind=missing" data-health-errors="missing"><?= $escape($t('Gespeicherte Bilddateien prüfen')) ?></a></p>
-        </section>
 
         <div class="studio-settings-layout">
           <section class="studio-settings-panel" aria-labelledby="settings-title">
@@ -190,70 +140,11 @@
                 <a href="/"><?= $escape($t('Zum Eingang')) ?></a>
               </div>
             </form>
-            <section class="studio-settings-docs" aria-labelledby="settings-docs-title" data-documentation-links>
-              <h3 id="settings-docs-title"><?= $escape($t('Dokumentation')) ?></h3>
-              <p><?= $escape($t('Direkt hier lesen, auch ohne Internet. Die Dokumentation ist auf Englisch.')) ?></p>
-              <nav aria-label="<?= $escape($t('Dokumentation')) ?>">
-                <a href="/docs/usage"><?= $escape($t('Benutzerhandbuch')) ?> <span aria-hidden="true">→</span></a>
-                <a href="/docs/readme"><?= $escape($t('Installation & Upgrade')) ?> <span aria-hidden="true">→</span></a>
-                <a href="/docs/backup"><?= $escape($t('Sicherung & Wiederherstellung')) ?> <span aria-hidden="true">→</span></a>
-                <a href="/docs/changelog">Changelog <span aria-hidden="true">→</span></a>
-                <a href="/docs/roadmap">Roadmap <span aria-hidden="true">→</span></a>
-              </nav>
-            </section>
+
           </section>
 
           <?php require __DIR__.'/restrictions.php'; ?>
 
-          <section class="studio-settings-panel studio-about-panel" id="about" aria-labelledby="about-title">
-            <div class="studio-about-hero" data-about-release>
-              <?php $logoSize = 72; $logoClass = 'studio-about-logo'; require __DIR__.'/logo.php'; unset($logoSize, $logoClass); ?>
-              <h2 id="about-title"><?= $escape($app['name']) ?></h2>
-              <p class="studio-about-version">v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></p>
-            </div>
-            <p class="studio-about-lead"><?= $escape($t('Eine lokale Arbeitsumgebung für Bug-Bounty-Ingest, technische Prüfung, Bildbelege und manuelle Entscheidungen.')) ?></p>
-            <section class="studio-about-release-notes" data-release-notes aria-labelledby="release-notes-title">
-              <h3 id="release-notes-title"><?= $escape($t('Neu in {version}', ['version' => $app['version']])) ?></h3>
-              <ul>
-                <li><?= $escape($t('Ein gemeinsamer Arbeitsbereich für Eingang, Bestand, Review, Statistik und Export.')) ?></li>
-                <li><?= $escape($t('Bildbelege manuell bewerten und neue Widersprüche, Unklarheiten oder Fehler erneut sichten.')) ?></li>
-                <li><?= $escape($t('Gemeldete, kontaktierte und behobene Fälle gemeinsam im Rückblick auswerten.')) ?></li>
-                <li><?= $escape($t('URL-Listen, Fallstatus oder Berichtspakete mit ausgewählten Bildbelegen exportieren.')) ?></li>
-                <li><?= $escape($t('Englische Oberfläche als Standard, Deutsch und Englisch direkt im Header wählen.')) ?></li>
-              </ul>
-            </section>
-            <details class="studio-about-history" data-release-history>
-              <summary><?= $escape($t('Versionsgeschichte')) ?></summary>
-              <div class="studio-about-history-entries">
-                <article data-release-entry>
-                  <h3>v<?= $escape($app['version']) ?> <span aria-hidden="true">·</span> <?= $escape($app['releaseName']) ?></h3>
-                  <p><?= $escape($t('Aus dem Prototyp wird ein vollständiger lokaler Arbeitsbereich: schneller Eingang, bildbasierter Review, Aktivitätsstatistik und konfigurierbare Exporte.')) ?></p>
-                </article>
-                <article data-release-entry>
-                  <h3>v1.1.0 <span aria-hidden="true">·</span> Scriptor Quo</h3>
-                  <p><?= $escape($t('Aus der täglichen Nutzung entstanden bessere Prüf- und Screenshot-Abläufe, Kontaktmarkierungen und Domain-Exporte. Schrittweise Verfeinerungen des bestehenden Workflows.')) ?></p>
-                </article>
-                <article data-release-entry>
-                  <h3>v1.0.0 <span aria-hidden="true">·</span> Scriptor</h3>
-                  <p><?= $escape($t('Die Idee eines lokalen OpenBugBounty-Workflows wurde zum ersten nutzbaren Prototyp: URL-Erfassung, Browserprüfung und Bildbelege als Grundlage für die manuelle Sichtung.')) ?></p>
-                </article>
-              </div>
-            </details>
-            <p class="studio-about-changelog"><a href="/docs/changelog"><?= $escape($t('Vollständigen Changelog lesen')) ?> <span aria-hidden="true">→</span></a></p>
-            <dl class="studio-about-facts">
-              <div><dt><?= $escape($t('Autor')) ?></dt><dd><a href="<?= $escape($app['homepage']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['author']) ?> <span aria-hidden="true">↗</span></a></dd></div>
-              <div><dt>Flickr</dt><dd><a href="<?= $escape($app['flickrUrl']) ?>" target="_blank" rel="noopener noreferrer">tkoschka <span aria-hidden="true">↗</span></a></dd></div>
-              <div><dt>OpenBugBounty</dt><dd><a href="<?= $escape($app['profileUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($app['profile']) ?> <span aria-hidden="true">↗</span></a></dd></div>
-              <div><dt><?= $escape($t('Quellcode')) ?></dt><dd><a href="<?= $escape($app['repository']) ?>" target="_blank" rel="noopener noreferrer">GitHub <span aria-hidden="true">↗</span></a></dd></div>
-              <div><dt><?= $escape($t('Lizenz')) ?></dt><dd><code><?= $escape($app['license']) ?></code></dd></div>
-            </dl>
-            <section class="studio-about-support" id="support" aria-labelledby="support-title">
-              <h3 id="support-title"><?= $escape($t('LibreBugBounty unterstützen')) ?></h3>
-              <p><?= $escape($t('Wenn dir LibreBugBounty hilft, kannst du die Weiterentwicklung freiwillig unterstützen.')) ?></p>
-              <a href="<?= $escape($app['donationUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Über PayPal unterstützen')) ?> <span aria-hidden="true">↗</span></a>
-            </section>
-            <p class="studio-about-vibe">Proudly vibe-coded.</p>
-          </section>
         </div>
       </div>
     </main>

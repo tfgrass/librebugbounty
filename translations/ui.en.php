@@ -1,6 +1,18 @@
 <?php
 
 return [
+    'Weitere Profile' => 'More profiles',
+    'Review im klassischen Layout oder im optionalen Fokusmodus mit Zoom, Bildnavigation und Tastatursteuerung.' => 'Review in the classic layout or optional focus mode with zoom, image navigation and keyboard controls.',
+    'Vorgaben und Sperren für diese Installation.' => 'Defaults and restrictions for this installation.',
+    'Technische Details' => 'Technical details',
+    'Schließen' => 'Close',
+    'Systemstatus: Warnung bei letzter Prüfung' => 'System status: warning at last check',
+    'Als Seite öffnen' => 'Open as page',
+    'Inhalt konnte nicht geladen werden.' => 'Could not load this content.',
+    'Wird geladen …' => 'Loading …',
+    'Über LibreBugBounty' => 'About LibreBugBounty',
+    'Systemstatus' => 'System status',
+    'Anwendung' => 'Application',
     'Zuletzt beobachteter Browser-Dialog' => 'Last observed browser dialog',
     'Festgehaltenes Dialogbild' => 'Retained dialog image',
     'Dialogbild ansehen' => 'View dialog image',

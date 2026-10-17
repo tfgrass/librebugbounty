@@ -372,7 +372,7 @@ Inventory writes no preference or case data to the server and starts no work.
 
 ### Error overview
 
-Open **Error overview** from Inventory or the Settings health panel. Its
+Open **Error overview** from Inventory or the System status dialog. Its
 capture-error and technical-error counters link to the corresponding cases,
 not to the number of historical attempts. Every case appears once, including
 archived cases; one case may have several error types. A newer successful,
@@ -469,7 +469,13 @@ effective profile and screenshot choice explicitly, so they match its preview.
 
 ## Settings
 
-Open the gear icon for **Settings & info**. Eight settings are available:
+The footer has three tools: **Settings** (gear), **System status** (pulse),
+and **About LibreBugBounty** (info). Settings remains a normal page with
+preferences and case/domain restrictions. Status and About open dialogs without
+leaving your current work; Escape closes them. On small screens the dialogs
+fill the viewport. Direct `/status` and `/about` pages also work without JavaScript.
+
+Open the gear icon for **Settings**. Eight settings are available:
 
 - **Default marker:** prefilled when a new URL is entered. Existing cases keep
   their saved marker.
@@ -494,7 +500,7 @@ Open the gear icon for **Settings & info**. Eight settings are available:
 - **Retry after errors:** days before an `error` result is rechecked. The
   factory default is 3 days; allowed values are 1 to 30 days.
 
-Above the preferences, **Status & health** shows active versus expected workers
+The **System status** dialog shows active versus expected workers
 and the last signal for each worker ID. Browser-service reachability is checked
 separately using a bounded, read-only `/health` request; this does not start a
 browser or visit a case URL. Green requires all expected worker signals to be
@@ -508,8 +514,11 @@ due time, and screenshot job counts. **Completed captures** counts historical
 successful jobs, not unique cases or currently readable image files. The
 current case-error counters are separate and open the Error overview. Use
 **Inspect stored image files** to explicitly inspect retained images. The
-**Refresh status** link reloads the snapshot and works without JavaScript;
-save pending preference changes before refreshing.
+**Refresh status** link reloads the snapshot and works without JavaScript on
+the direct status page. Health is requested only when opening or explicitly
+refreshing Status, not while loading Settings or About. Technical details are
+collapsed initially. A footer warning dot means the last explicit check found
+a problem; it is not a continuously refreshed live indicator.
 
 Expected IDs and browser URLs live in `app.health_workers` in
 `config/services.yaml`. Keep this roster aligned with `.ddev/config.yaml` and
@@ -530,7 +539,8 @@ Moneta, Scriptor Quo, and Scriptor, with the newest release first. The
 
 ### Local documentation
 
-The **Documentation** links in Settings & info open this guide, installation and
+The **About LibreBugBounty** dialog shows the current version, release notes,
+author, source, license and support link. Its **Documentation** links open this guide, installation and
 upgrade instructions, backup and recovery guidance, the changelog, and the
 roadmap inside the application. These documents and their screenshots are
 available without an internet connection. Links to external websites still
@@ -589,8 +599,7 @@ observation needs review, a screenshot is queued separately and one of the four
 headed screenshot lanes captures it. A finding the browser reports as fixed
 is marked as fixed directly; only unclear results enter your review queue, and
 error results retry after the configured backoff (3 days by default). Fixed
-findings are not rechecked. Check the workers on the Settings page under
-**Status & health**, or from the terminal with:
+findings are not rechecked. Check the workers via the footer **System status** icon, or from the terminal with:
 
 ```bash
 ddev exec supervisorctl status 'webextradaemons:recheck-worker-*'

@@ -84,8 +84,14 @@ async function main() {
     assert.equal(await page.locator('.studio-settings-form input:not([type="hidden"]), .studio-settings-form select').count(), 8);
     assert.equal(await page.locator('[name=recheck_interval_days]').inputValue(), '14');
     assert.equal(await page.locator('[name=recheck_error_backoff_days]').inputValue(), '3');
+    assert.equal(await page.locator('[data-health-kind], [data-about-release], [data-documentation-links]').count(), 0);
+    assert.equal(await page.locator('[data-restrictions]').count(), 1);
+    mark('Eight settings render with 14/3-day cadence and restrictions, without embedded health or About');
+    await goto(page, '/status');
     assert.equal(await page.locator('[data-health-kind=screenshot]').getAttribute('data-health-state'), 'unknown');
-    mark('Eight settings render with 14/3-day cadence and health starts with unknown worker signals');
+    assert.equal(await page.locator('[data-utility-content=status]').getAttribute('data-utility-warning'), 'true');
+    assert.equal(await page.locator('[data-health-kind] > details:not([open])').count(), 2);
+    mark('Status starts with unknown worker signals and collapsed technical details');
 
     for (const locale of ['de', 'en']) {
       await goto(page, '/settings');
@@ -97,7 +103,7 @@ async function main() {
         const geometry = await page.evaluate(() => ({
           width: document.documentElement.scrollWidth,
           groups: [...document.querySelectorAll('.studio-settings-group legend')].map(node => node.textContent.trim()),
-          controls: [...document.querySelectorAll('.studio-settings-form input, .studio-settings-form select, .studio-settings-form button, .studio-settings-health-card, [data-health-worker]')].map(node => {
+          controls: [...document.querySelectorAll('.studio-settings-form input, .studio-settings-form select, .studio-settings-form button')].map(node => {
             const box = node.getBoundingClientRect();
             return { left: box.left, right: box.right, width: box.width };
           }),
@@ -109,8 +115,23 @@ async function main() {
         await page.locator('#settings-export-screenshots').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(output, `settings-preferences-${locale}-${width}.png`), fullPage: true });
         await page.locator('.studio-settings-main').evaluate(node => { node.scrollTop = 0; });
-        mark(`${locale}/${width}: five settings groups, eight native controls and health cards remain usable`);
+        mark(`${locale}/${width}: five settings groups and eight native controls remain usable`);
       }
+      const aboutResponse = await page.goto(base + '/about');
+      assert.equal(aboutResponse.status(), 200);
+      assert.match(aboutResponse.headers()['cache-control'], /no-store/);
+      assert.equal(await page.locator('[data-utility-content=about][data-utility-title]').count(), 1);
+      assert.equal(await page.locator('[data-about-release]').count(), 1);
+      assert.equal(await page.locator('[data-release-notes] > p').count(), 1);
+      assert.equal(await page.locator('[data-release-history], [data-release-entry], .studio-settings-form, [data-health-kind]').count(), 0);
+      assert.equal(await page.locator('#about > .studio-about-facts > div').count(), 3);
+      assert.equal(await page.locator('.studio-about-profiles:not([open]) a').count(), 2);
+      assert.equal(await page.locator('#support a').count(), 1);
+      for (const slug of ['usage', 'readme', 'backup', 'changelog', 'roadmap']) {
+        assert.equal(await page.locator(`[data-documentation-links] a[href="/docs/${slug}"]`).count(), 1);
+      }
+      await page.screenshot({ path: path.join(output, `about-${locale}.png`), fullPage: true });
+      mark(`${locale}: About contains current release, documentation, primary facts, optional profiles and support`);
     }
 
     await save(page, '25', 'urls', 'none', '7', '5');
@@ -154,9 +175,21 @@ async function main() {
         await Promise.all([fallback.waitForNavigation(), fallback.locator(`[data-language-switcher] a[href^="/language/${locale}?"]`).click()]);
       }
       assert.equal(await fallback.locator('[name=recheck_interval_days]').inputValue(), '14');
+      assert.equal(await fallback.locator('[data-health-worker], [data-about-release]').count(), 0);
+      assert.equal(await fallback.evaluate(() => document.documentElement.scrollWidth), 375);
+      await goto(fallback, '/status');
       assert.equal(await fallback.locator('[data-health-worker]').count(), 8);
+      assert.equal(await fallback.locator('[data-health-kind] > details:not([open])').count(), 2);
+      await fallback.locator('[data-health-kind=screenshot] > details > summary').click();
+      assert.equal(await fallback.locator('[data-health-kind=screenshot] [data-health-worker]:visible').count(), 4);
+      assert.equal(await fallback.evaluate(() => document.documentElement.scrollWidth), 375);
+      await goto(fallback, '/about');
+      assert.equal(await fallback.locator('[data-about-release]').count(), 1);
+      assert.equal(await fallback.locator('[data-documentation-links] a').count(), 5);
+      assert.equal(await fallback.locator('.studio-settings-form, [data-health-kind]').count(), 0);
       assert.equal(await fallback.evaluate(() => document.documentElement.scrollWidth), 375);
     }
+    await goto(fallback, '/settings');
     await fallback.locator('[name=recheck_interval_days]').fill('91');
     await fallback.locator('[name=recheck_error_backoff_days]').fill('31');
     expectingValidation = true;
@@ -170,10 +203,10 @@ async function main() {
     assert.equal(await fallback.locator('[name=recheck_interval_days]').inputValue(), '14');
     assert.equal(await fallback.locator('[name=recheck_error_backoff_days]').inputValue(), '2');
     await native.close();
-    mark('Native saving, shared persistence, invalid interval rejection and explicit export choices work without JavaScript');
+    mark('Native saving, validation, export choices and separate Status/About pages work without JavaScript');
 
     for (const locale of ['de', 'en']) {
-      await goto(page, '/settings');
+      await goto(page, '/status');
       if (await page.locator('html').getAttribute('lang') !== locale) {
         await Promise.all([page.waitForNavigation(), page.locator(`[data-language-switcher] a[href^="/language/${locale}?"]`).click()]);
       }
@@ -185,6 +218,9 @@ async function main() {
         assert.equal(seeded.status(), 200);
         assert.equal((await seeded.json()).isolated, true);
         await page.reload();
+        assert.equal(new URL(page.url()).pathname, '/status');
+        assert.equal(await page.locator('[data-utility-content=status]').getAttribute('data-utility-warning'), scenario === 'healthy' ? 'false' : 'true');
+        assert.equal(await page.locator('.studio-settings-form, [data-about-release]').count(), 0);
         const card = page.locator('[data-health-kind=screenshot]');
         assert.equal(await card.getAttribute('data-health-state'), state);
         assert.ok((await card.locator('[data-health-summary]').innerText()).includes(`${active}/4`));
@@ -200,12 +236,16 @@ async function main() {
           assert.equal(await page.locator('[data-health-kind=recheck]').getAttribute('data-health-state'), 'degraded');
         }
         if (scenario === 'healthy') {
-          await page.locator('.studio-health-refresh').click();
+          assert.equal(await page.locator('.studio-health-refresh').getAttribute('href'), '/status');
+          await Promise.all([page.waitForNavigation(), page.locator('.studio-health-refresh').click()]);
+          assert.equal(new URL(page.url()).pathname, '/status');
           assert.equal(await card.getAttribute('data-health-state'), 'ok');
         }
+        await card.locator('details > summary').click();
+        assert.equal(await card.locator('[data-health-worker]:visible').count(), 4);
         await page.screenshot({ path: path.join(output, `health-${locale}-${scenario}.png`), fullPage: true });
       }
-      mark(`${locale}: healthy, partial, stale, unavailable browser and unknown states are distinct`);
+      mark(`${locale}: Status distinguishes healthy, partial, stale, unavailable browser and unknown states`);
     }
 
     assert.deepEqual(await counts(), before, 'Settings changes must not create cases, evidence, retests or screenshot jobs');

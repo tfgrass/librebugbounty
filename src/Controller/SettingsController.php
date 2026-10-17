@@ -144,21 +144,24 @@ final class SettingsController
         return new RedirectResponse('/settings?message='.rawurlencode($this->i18n->trans('Einstellungen gespeichert.')));
     }
 
-    /** @param array<string, string> $errors */
-    private function render(
-        Request $request,
-        string $defaultPayload,
-        string $reviewTimeout,
-        string $reviewDecisionDelay,
-        string $inventoryPageSize,
-        string $exportProfile,
-        string $exportScreenshotMode,
-        string $recheckIntervalDays,
-        string $recheckErrorBackoffDays,
-        array $errors,
-        ?string $message,
-        int $status = Response::HTTP_OK,
-    ): Response {
+    #[Route(path: '/about', name: 'studio_about', methods: ['GET'])]
+    public function about(Request $request): Response
+    {
+        return $this->renderUtility($request, 'about');
+    }
+
+    #[Route(path: '/status', name: 'studio_status', methods: ['GET'])]
+    public function status(Request $request): Response
+    {
+        return $this->renderUtility($request, 'status');
+    }
+
+    private function renderUtility(Request $request, string $utility): Response
+    {
+        $utilityTitle = $utility === 'about'
+            ? $this->i18n->trans('Über {name}', ['name' => AppInfo::NAME])
+            : $this->i18n->trans('Status & Gesundheit');
+        $utilityTemplate = dirname(__DIR__, 2).'/templates/studio/'.$utility.'-content.php';
         $app = [
             'name' => AppInfo::NAME,
             'version' => AppInfo::VERSION,
@@ -174,13 +177,52 @@ final class SettingsController
         ];
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $locale = $this->i18n->locale();
+        $languageReturnPath = $request->getPathInfo();
+        $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
+        $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
+        $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
+        $i18nJson = $this->i18n->browserCatalogJson();
+        if ($utility === 'status') {
+            $health = $this->health->snapshot();
+            $utilityWarning = $health['recheck']['state'] !== 'ok' || $health['screenshot']['state'] !== 'ok';
+        }
+
+        ob_start();
+        if ($request->query->getString('fragment') === '1') {
+            require $utilityTemplate;
+        } else {
+            require dirname(__DIR__, 2).'/templates/studio/utility.php';
+        }
+        $html = ob_get_clean();
+
+        return new Response($html, Response::HTTP_OK, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
+    /** @param array<string, string> $errors */
+    private function render(
+        Request $request,
+        string $defaultPayload,
+        string $reviewTimeout,
+        string $reviewDecisionDelay,
+        string $inventoryPageSize,
+        string $exportProfile,
+        string $exportScreenshotMode,
+        string $recheckIntervalDays,
+        string $recheckErrorBackoffDays,
+        array $errors,
+        ?string $message,
+        int $status = Response::HTTP_OK,
+    ): Response {
+        $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $locale = $this->i18n->locale();
         $languageReturnPath = $request->getRequestUri();
         $t = fn (string $key, array $parameters = []): string => $this->i18n->trans($key, $parameters);
         $formatTime = fn (?\DateTimeInterface $at, bool $withSeconds = false): string => $this->i18n->formatDateTime($at, $withSeconds);
-        $formatDate = fn (\DateTimeInterface|string $date): string => $this->i18n->formatDate($date);
         $formatNumber = fn (int|float $value, int $decimals = 0): string => $this->i18n->formatNumber($value, $decimals);
         $i18nJson = $this->i18n->browserCatalogJson();
-        $health = $this->health->snapshot();
         $restrictions = $this->followUp->restrictions();
         $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';
         $query = $request->query->all();

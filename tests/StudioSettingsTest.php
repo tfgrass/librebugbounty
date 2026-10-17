@@ -50,12 +50,8 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame(5, $xpath->query('//fieldset/legend')->length);
             self::assertSame(SettingsService::DEFAULTS['recheck.interval_days'], $xpath->evaluate('string(//input[@name="recheck_interval_days"]/@value)'));
             self::assertSame(SettingsService::DEFAULTS['recheck.error_backoff_days'], $xpath->evaluate('string(//input[@name="recheck_error_backoff_days"]/@value)'));
-            self::assertSame(2, $xpath->query('//*[contains(concat(" ", normalize-space(@class), " "), " studio-settings-health-card ")]')->length);
-            self::assertSame('unknown', $xpath->evaluate('string(//*[contains(concat(" ", normalize-space(@class), " "), " studio-settings-health-dot ")]/@data-state)'));
-            self::assertSame(AppInfo::HOMEPAGE, $xpath->evaluate('string(//a[normalize-space(.)="'.AppInfo::AUTHOR.' ↗"]/@href)'));
-            self::assertSame(AppInfo::OPENBUGBOUNTY_URL, $xpath->evaluate('string(//a[contains(normalize-space(.),"'.AppInfo::OPENBUGBOUNTY_PROFILE.'")]/@href)'));
-            self::assertStringContainsString(AppInfo::VERSION, $xpath->evaluate('string(//body)'));
-            self::assertStringContainsString(AppInfo::LICENSE, $xpath->evaluate('string(//body)'));
+            self::assertSame(0, $xpath->query('//*[@data-health-kind or @data-about-release or @data-documentation-links]')->length);
+            self::assertSame(1, $xpath->query('//*[@data-restrictions]')->length);
             self::assertSame(0, $xpath->query('//a[starts-with(@href,"/legacy")]')->length);
             self::assertSame(1, $xpath->query('//a[@href="/settings" and @aria-current="page" and contains(concat(" ", normalize-space(@class), " "), " studio-settings-link-active ")]')->length);
         }
@@ -69,11 +65,11 @@ final class StudioSettingsTest extends DatabaseTestCase
     }
 
     #[DataProvider('aboutLocales')]
-    public function testNamedReleaseAndAboutHighlightsRenderInBothLanguagesWithoutChangingSettings(string $locale): void
+    public function testNamedReleaseAndConciseAboutRenderInBothLanguagesWithoutChangingSettings(string $locale): void
     {
         self::getContainer()->set(UiTranslator::class, new UiTranslator($locale));
         $before = $this->rows();
-        $response = $this->request('/settings');
+        $response = $this->request('/about');
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         $xpath = $this->xpath($response->getContent());
         self::assertSame($locale, $xpath->evaluate('string(/html/@lang)'));
@@ -85,10 +81,8 @@ final class StudioSettingsTest extends DatabaseTestCase
         self::assertStringContainsString(AppInfo::NAME, $release);
         self::assertStringContainsString('v'.AppInfo::VERSION, $release);
         self::assertStringContainsString(AppInfo::RELEASE_NAME, $release);
-        self::assertSame(5, $xpath->query('//*[@id="about"]//*[@data-release-notes]//li')->length);
-        foreach ($xpath->query('//*[@data-release-notes]//li') as $highlight) {
-            self::assertNotSame('', trim($highlight->textContent));
-        }
+        self::assertSame(1, $xpath->query('//*[@data-release-notes]/p')->length);
+        self::assertSame(0, $xpath->query('//*[@data-release-history or @data-release-entry]')->length);
         foreach ([AppInfo::HOMEPAGE, AppInfo::FLICKR_URL, AppInfo::OPENBUGBOUNTY_URL, AppInfo::REPOSITORY] as $href) {
             self::assertSame(1, $xpath->query('//*[@id="about"]//a[@href="'.$href.'" and @target="_blank" and contains(@rel,"noopener")]')->length);
         }
@@ -97,9 +91,14 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame(1, $xpath->query('//*[@data-documentation-links]//a[@href="/docs/'.$page.'"]')->length);
         }
         self::assertStringContainsString(AppInfo::LICENSE, $xpath->evaluate('string(//*[@id="about"])'));
+        self::assertSame(3, $xpath->query('//*[@id="about"]/dl/div')->length);
+        self::assertSame(1, $xpath->query('//*[@id="about"]/details[not(@open)]')->length);
+        foreach ([AppInfo::FLICKR_URL, AppInfo::OPENBUGBOUNTY_URL] as $href) {
+            self::assertSame(1, $xpath->query('//*[@id="about"]/details//a[@href="'.$href.'"]')->length);
+        }
         self::assertStringContainsString('Proudly vibe-coded.', $xpath->evaluate('string(//*[@id="about"])'));
-        self::assertSame('/settings', $xpath->evaluate('string(//form[@method="post"]/@action)'));
-        self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $xpath->evaluate('string(//input[@name="default_payload"]/@value)'));
+        self::assertSame(0, $xpath->query('//form')->length);
+        self::assertSame(AppInfo::DONATION_URL, $xpath->evaluate('string(//*[@id="support"]//a/@href)'));
         self::assertSame($before, $this->rows());
     }
 
