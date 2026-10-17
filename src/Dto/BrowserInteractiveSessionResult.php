@@ -8,6 +8,7 @@ final readonly class BrowserInteractiveSessionResult
     /**
      * @param array<string, mixed> $challenge
      * @param array<string, mixed> $initialChallenge
+     * @param array<string, mixed>|null $retainedDialog
      * @param array<string, mixed> $dialogObservation
      */
     public function __construct(
@@ -26,6 +27,7 @@ final readonly class BrowserInteractiveSessionResult
         public bool $captureLocked = false,
         public ?string $captureId = null,
         public ?int $captureGeneration = null,
+        public ?array $retainedDialog = null,
     ) {
     }
 }

@@ -105,6 +105,15 @@ async function click(page, action, confirmation = false) {
     return (await fetch(`/review/${p.dataset.findingId}/interactive/status`, { headers: { 'X-LBB-Tab': channel } })).json();
   });
   assert.equal(status.dialogObservation.captureSucceeded, true, 'Native dialog image retained before dismiss');
+  assert.equal(status.retainedDialog.message, proof);
+  const beforePreview = php('echo json_encode($db->fetchAssociative("SELECT generation,worker_id,expires_at FROM interactive_browser_lease WHERE singleton_id=1"));');
+  await b.locator('[data-novnc-preview-open]').click();
+  await b.waitForFunction(() => { const image = document.querySelector('[data-novnc-preview-image]'); return !image.hidden && image.complete && image.naturalWidth > 0; });
+  await b.screenshot({ path: path.join(output, 'dialog-preview.png'), fullPage: true });
+  const previewPng = await b.locator('[data-novnc-preview-image]').evaluate(async image => Array.from(new Uint8Array(await (await fetch(image.src)).arrayBuffer())));
+  fs.writeFileSync(path.join(output, 'preview-native-dialog.png'), Buffer.from(previewPng));
+  assert.deepEqual(php('echo json_encode($db->fetchAssociative("SELECT generation,worker_id,expires_at FROM interactive_browser_lease WHERE singleton_id=1"));'), beforePreview);
+  await b.keyboard.press('Escape');
   await b.screenshot({ path: path.join(output, 'dialog-observed.png'), fullPage: true });
   await click(b, 'save', true);
   await b.waitForURL(url => url.pathname === '/review', { timeout: 30000 });

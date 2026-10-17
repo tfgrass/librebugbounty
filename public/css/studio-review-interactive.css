@@ -144,3 +144,11 @@
   .novnc-viewport { height: 46vh; min-height: 240px; }
   .novnc-toolbar button { flex: 1 1 140px; }
 }
+.novnc-retained { border: 1px solid #486b50; border-radius: 8px; padding: 12px; }
+.novnc-retained p { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 13px; }
+.novnc-preview:not([hidden]) {
+  position: fixed; inset: 0; z-index: 120; background: #11161d;
+  padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 12px;
+}
+.novnc-preview img { width: 100%; height: auto; object-fit: contain; min-height: 0; flex: 1; }
+.novnc-preview button { align-self: flex-end; }

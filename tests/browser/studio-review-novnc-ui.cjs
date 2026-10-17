@@ -44,6 +44,7 @@ function render(locale = 'en', embedded = false) {
   const pages = new Map();
   for (const locale of ['en', 'de']) for (const embedded of [false, true]) pages.set(`${locale}:${embedded}`, render(locale, embedded));
   let state = { state: 'available', findingId: id, revision: 0, reconnect: false, canTakeover: false, requiresEndStart: false };
+  let previewFailure = false;
   let statusFailure = false, saveFailure = false, staleNext = false;
   const posts = [], statuses = [], errors = [], outside = [], sockets = [];
   const setState = extra => { state = { ...state, reason: undefined, ...extra }; };
@@ -61,6 +62,13 @@ function render(locale = 'en', embedded = false) {
         res.setHeader('Content-Type', 'application/json');
         if (statusFailure) { res.writeHead(503); res.end('{}'); return; }
         res.end(JSON.stringify(state)); return;
+      }
+      if (url.pathname === basePath + '/dialog-frame') {
+        assert.match(req.headers['x-lbb-tab'], /^[a-f0-9]{48}$/);
+        assert.equal(url.searchParams.get('revision'), String(state.revision));
+        if (previewFailure) { res.writeHead(409); res.end(); return; }
+        res.setHeader('Content-Type', 'image/png');
+        res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')); return;
       }
       if (req.method === 'POST') {
         let raw = ''; for await (const chunk of req) raw += chunk;
@@ -245,6 +253,38 @@ function render(locale = 'en', embedded = false) {
 
     setState({ state: 'own_active', reconnect: true, revision: 13, canTakeover: false, captureLocked: false }); await refresh(page);
     await page.waitForFunction(() => document.querySelector('[data-novnc-screen] canvas'));
+    const previewPosts = posts.length;
+    setState({ retainedDialog: { capturedAt: '2026-10-17T05:33:27Z', pageUrl: 'https://fixture.invalid/', message: '<img onerror=bad>', type: 'alert' },
+      dialogObservation: { message: 'later event', captureSucceeded: false } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), '<img onerror=bad>');
+    const liveBeforePreview = await page.locator('[data-novnc-screen] canvas').elementHandle();
+    previewFailure = true;
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => document.querySelector('[data-novnc-preview-status]').textContent.includes('Try again'));
+    assert.equal(await page.locator('[data-novnc-preview-image]').isVisible(), false);
+    previewFailure = false;
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-novnc-preview-image]').hidden);
+    assert.equal(await liveBeforePreview.evaluate(node => node === document.querySelector('[data-novnc-screen] canvas')), true);
+    assert.equal(posts.length, previewPosts);
+    await page.screenshot({ path: path.join(output, 'en-dialog-preview.png') });
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('[data-novnc-preview]').isVisible(), false);
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-novnc-preview-image]').hidden);
+    setState({ expiresInSec: 0.1 }); await refresh(page);
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.state === 'expired', { timeout: 2500 });
+    assert.equal(await page.locator('[data-novnc-preview]').isVisible(), false);
+    assert.equal(await page.locator('[data-novnc-preview-image]').getAttribute('src'), null);
+    setState({ state: 'own_active', expiresInSec: 100, reconnect: true }); await refresh(page);
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-novnc-preview-image]').hidden);
+    setState({ state: 'busy', reconnect: false }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-preview]').isVisible(), false);
+    setState({ state: 'own_active', reconnect: true, retainedDialog: undefined }); await refresh(page);
+    mark('Retained dialog preview is read-only, escapes text, preserves live canvas and clears on revocation');
     saveFailure = true; await button(page, 'save').click(); await page.locator('[data-novnc-confirm-yes]').click();
     await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.captureLocked === 'true');
     setState({ dialogObservation: { message: '<script>untrusted dialog</script>', captureSucceeded: false } }); await refresh(page);

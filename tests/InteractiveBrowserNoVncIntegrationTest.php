@@ -300,6 +300,119 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         self::assertSame($committed, $this->snapshot(), 'Close retry never duplicates or rolls back committed proof');
     }
 
+    private function retainDialog(): array
+    {
+        $retained = ['capturedAt' => '2026-10-17T12:01:01.000Z', 'detectedAt' => '2026-10-17T12:01:00.000Z',
+            'pageUrl' => $this->fixtures['noImage']['url'], 'type' => 'alert', 'message' => 'first retained proof'];
+        $this->worker->state['session']['retainedDialog'] = $retained + ['screenshotBase64' => \StudioReviewNoVncWorkerFixture::PNG, 'secret' => 'hidden'];
+        $this->worker->state['session']['dialogObservation'] = ['message' => 'later failed observation', 'captureSucceeded' => false];
+        return $retained;
+    }
+
+    private function preview(int $revision, string $channel = self::A, string $name = 'noImage'): Response
+    {
+        return $this->request($this->path($name).'/dialog-frame?revision='.$revision, 'GET', [], ['HTTP_X_LBB_TAB' => $channel]);
+    }
+
+    public function testRetainedStatusIsOwnerOnlySanitizedAndIndependentAndPreviewIsReadOnly(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $retained = $this->retainDialog();
+        $lease = $this->lease(); $before = $this->snapshot(); $mutations = $this->mutations();
+        $status = $this->panelStatus('noImage', self::A);
+        self::assertSame($retained, $status['retainedDialog']);
+        self::assertSame('later failed observation', $status['dialogObservation']['message']);
+        self::assertStringNotContainsString(\StudioReviewNoVncWorkerFixture::PNG, json_encode($status));
+        $calls = $this->worker->state['calls'];
+        foreach ([self::B, null] as $channel) self::assertArrayNotHasKey('retainedDialog', $this->panelStatus('noImage', $channel));
+        $original = $this->session; $this->session = $this->newSession();
+        self::assertArrayNotHasKey('retainedDialog', $this->panelStatus('noImage', self::A));
+        self::assertSame(409, $this->preview($started['revision'])->getStatusCode());
+        $this->session = $original;
+        self::assertSame($calls, $this->worker->state['calls'], 'Foreign status and preview never call worker');
+        $response = $this->preview($started['revision']);
+        self::assertSame(200, $response->getStatusCode());
+        self::assertSame('image/png', $response->headers->get('Content-Type'));
+        self::assertSame(base64_decode(\StudioReviewNoVncWorkerFixture::PNG, true), $response->getContent());
+        $call = end($this->worker->state['calls']);
+        self::assertSame('GET', $call['method']); self::assertSame('generation='.$started['revision'], $call['query']);
+        self::assertSame($lease, $this->lease()); self::assertSame($before, $this->snapshot());
+        self::assertSame($mutations, $this->mutations()); self::assertNull($this->worker->state['capture']);
+    }
+
+    public function testPreviewRejectsInvalidInputsAndRightsBeforeAnyRpc(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $calls = $this->worker->state['calls'];
+        foreach (['', '?revision=', '?revision=-1', '?revision=1.5', '?revision[]=1'] as $query) {
+            self::assertSame(400, $this->request($this->path('noImage').'/dialog-frame'.$query, 'GET', [], ['HTTP_X_LBB_TAB' => self::A])->getStatusCode());
+        }
+        self::assertSame(400, $this->request($this->path('noImage').'/dialog-frame?revision='.$started['revision'])->getStatusCode());
+        self::assertSame(409, $this->preview($started['revision'] + 1)->getStatusCode());
+        self::assertSame(409, $this->preview($started['revision'], self::B)->getStatusCode());
+        self::assertSame(409, $this->preview($started['revision'], self::A, 'other')->getStatusCode());
+        self::assertSame($calls, $this->worker->state['calls']);
+    }
+
+    #[DataProvider('readRaces')]
+    public function testPreviewAndStatusRecheckOwnershipPolicyAndBindingBeforeAndAfterRpc(string $change, bool $during, string $read): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $mutate = function () use ($change): void {
+            $db = $this->entityManager->getConnection();
+            switch ($change) {
+                case 'takeover':
+                    $leases = self::getContainer()->get(InteractiveBrowserLeaseService::class);
+                    $leases->takeover($this->id('noImage'), $this->lease()['owner_hash'], self::B, $this->lease()['generation']);
+                    break;
+                case 'channel': $db->executeStatement('UPDATE interactive_browser_lease SET channel_id = ?', [self::B]); break;
+                case 'owner': $db->executeStatement('UPDATE interactive_browser_lease SET owner_hash = ?', [str_repeat('f', 64)]); break;
+                case 'expiry': $db->executeStatement('UPDATE interactive_browser_lease SET expires_at = ?', [time() - 1]); break;
+                case 'closing': $db->executeStatement("UPDATE interactive_browser_lease SET state = 'closing'"); break;
+                case 'policy': $db->update('finding', ['status' => 'discarded'], ['id' => $this->id('noImage')]); break;
+                case 'url': $db->update('finding', ['url' => 'http://127.0.0.1/changed'], ['id' => $this->id('noImage')]); break;
+                case 'binding':
+                    $binding = $this->lease()['binding']; $binding['start_url_hash'] = 'changed';
+                    $db->executeStatement('UPDATE interactive_browser_lease SET binding = ?', [json_encode($binding)]); break;
+                case 'worker': $db->executeStatement('UPDATE interactive_browser_lease SET worker_id = ?', [str_repeat('c', 48)]); break;
+            }
+        };
+        if ($during) {
+            if ($read === 'preview') $this->worker->afterDialogFrame = $mutate;
+            else $this->worker->afterStatus = $mutate;
+        } else { $mutate(); }
+        $before = $this->snapshot(); $calls = count($this->worker->state['calls']); $mutations = $this->mutations();
+        if ($read === 'preview') {
+            // A different worker ID is only detectable against the pre-RPC row.
+            $response = $this->preview($started['revision']);
+            self::assertNotSame(200, $response->getStatusCode());
+            self::assertNotSame('image/png', $response->headers->get('Content-Type'));
+        } else {
+            $status = $this->panelStatus('noImage', self::A);
+            self::assertArrayNotHasKey('retainedDialog', $status);
+            self::assertArrayNotHasKey('dialogObservation', $status);
+        }
+        if (!$during && $change !== 'worker') self::assertCount($calls, $this->worker->state['calls'], 'Denied before worker RPC');
+        self::assertSame($mutations, $this->mutations());
+        // Ignore the intentional finding mutation at the read barrier.
+        if (!($during && in_array($change, ['policy', 'url'], true))) self::assertSame($before, $this->snapshot());
+        self::assertNull($this->worker->state['capture']); self::assertSame(1, $this->worker->state['starts']);
+    }
+
+    public static function readRaces(): iterable
+    {
+        foreach (['takeover', 'channel', 'owner', 'expiry', 'closing', 'policy', 'url', 'binding', 'worker'] as $change) {
+            foreach ([false, true] as $during) {
+                foreach (['preview', 'status'] as $read) {
+                    if ($change === 'worker' && !$during) continue;
+                    yield $change.($during ? ' during ' : ' before ').$read => [$change, $during, $read];
+                }
+            }
+        }
+    }
+
     private function newSession(): Session
     {
         $session = new Session(new MockArraySessionStorage());

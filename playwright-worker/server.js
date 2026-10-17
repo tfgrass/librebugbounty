@@ -458,6 +458,10 @@ function interactiveSessionView(session) {
     navigationError: session.navigationError,
     dialogSeen: session.dialogInfo !== null,
     dialogObservation: session.dialogInfo ? { ...session.dialogInfo } : null,
+    retainedDialog: session.dialogFrame ? {
+      capturedAt: session.dialogFrame.capturedAt, detectedAt: session.dialogFrame.detectedAt,
+      pageUrl: session.dialogFrame.pageUrl, type: session.dialogFrame.type, message: session.dialogFrame.message,
+    } : null,
     dialogFrameCapturedAt: session.dialogFrame?.capturedAt || null,
     dialogFramePageUrl: session.dialogFrame?.pageUrl || null,
     dialogFrameDetectedAt: session.dialogFrame?.detectedAt || null,
@@ -719,12 +723,12 @@ async function launchInteractiveSession(payload, dependencies = {}) {
                 const capturedAt = new Date(currentTime(dependencies)).toISOString();
                 info.capturedAt = capturedAt;
                 info.captureSucceeded = true;
-                record.dialogFrame = {
+                record.dialogFrame ??= Object.freeze({
                   screenshotBase64, capturedAt, pageUrl: info.pageUrl, page: sourcePage,
                   navigationSequence: record.pageNavigationSequence.get(sourcePage),
                   detectedAt: info.detectedAt, type: info.type, message: info.message,
                   http: sourcePage === record.page ? { ...record.currentHttp } : emptyHttp(info.pageUrl),
-                };
+                });
               }
             } catch (error) {
               info.captureError = error.message;
@@ -917,6 +921,33 @@ async function getInteractiveSession(sessionId, dependencies) {
     throw httpError(404, 'Interactive browser session not found.');
   }
   return session;
+}
+
+// Pure retained-memory read: never enter the display FIFO, inspect a page,
+// drain/dismiss dialogs, capture pixels or tear down an expired browser.
+function getInteractiveDialogFrame(sessionId, generation, dependencies = {}) {
+  requireGeneration(generation);
+  dependencies.runtime?.checkMutation(null, generation);
+  if (!SESSION_ID_PATTERN.test(sessionId)) throw httpError(404, 'Interactive browser session not found.');
+  const session = interactiveSessions.get(sessionId);
+  if (!session) {
+    const tombstone = interactiveTombstones.get(sessionId);
+    if (tombstone?.reason === 'expired' && tombstone.until > currentTime(dependencies)) {
+      throw httpError(410, 'Interactive browser session expired.');
+    }
+    throw httpError(404, 'Interactive browser session not found.');
+  }
+  session.runtime?.checkMutation(session, generation);
+  if (session.generation !== generation) throw httpError(409, 'Stale interactive generation.');
+  if (session.closed || session.expiresAt.getTime() <= currentTime(dependencies)) {
+    throw httpError(410, 'Interactive browser session expired.');
+  }
+  if (!session.dialogFrame) throw httpError(404, 'No retained dialog image.');
+  const image = Buffer.from(session.dialogFrame.screenshotBase64, 'base64');
+  if (!image.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    throw httpError(502, 'Invalid retained dialog PNG.');
+  }
+  return image;
 }
 
 function withInteractiveSession(sessionId, operation, dependencies = {}, timeoutMs = INTERACTIVE_OPERATION_TIMEOUT_MS, mutation = null) {
@@ -1655,11 +1686,21 @@ function createWorkerServer(dependencies = {}) {
         const session = await startInteractiveSession(await readJson(req), dependencies);
         return sendJson(res, 201, session);
       }
-      const match = pathname.match(/^\/interactive-sessions\/([^/]+)(?:\/(status|frame|input|capture|close))?$/);
+      const match = pathname.match(/^\/interactive-sessions\/([^/]+)(?:\/(status|frame|dialog-frame|input|capture|close))?$/);
       if (match) {
         const [, sessionId, operation = 'status'] = match;
         if (req.method === 'GET' && operation === 'status') {
           return sendJson(res, 200, await getInteractiveStatus(sessionId, dependencies));
+        }
+        if (req.method === 'GET' && operation === 'dialog-frame') {
+          requireWorkerToken(req, workerToken);
+          const values = requestUrl.searchParams.getAll('generation');
+          if (values.length !== 1 || !/^[1-9][0-9]*$/.test(values[0])) {
+            throw httpError(400, 'generation query required.');
+          }
+          const image = getInteractiveDialogFrame(sessionId, Number(values[0]), dependencies);
+          res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store' });
+          return res.end(image);
         }
         if (req.method === 'GET' && operation === 'frame') {
           const image = await getInteractiveFrame(sessionId, dependencies);
@@ -1762,6 +1803,7 @@ module.exports = {
   MAX_INTERACTIVE_SESSIONS,
   MAX_BODY_BYTES,
   getInteractiveStatus,
+  getInteractiveDialogFrame,
   getInteractiveFrame,
   runInteractiveInput,
   captureInteractiveSession,

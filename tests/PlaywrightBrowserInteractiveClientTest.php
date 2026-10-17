@@ -39,6 +39,43 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
         self::assertSame($observation, $status->dialogObservation);
     }
 
+    public function testRetainedDialogMetadataIsIndependentOfLastObservation(): void
+    {
+        $retained = ['capturedAt' => '2026-10-17T12:01:01.000Z', 'detectedAt' => '2026-10-17T12:01:00.000Z',
+            'pageUrl' => self::URL, 'type' => 'alert', 'message' => 'first'];
+        $status = $this->client(self::jsonResponse(self::session([
+            'retainedDialog' => $retained,
+            'dialogObservation' => ['message' => 'second', 'captureSucceeded' => false],
+        ])))->interactiveStatus(self::ID);
+        self::assertSame($retained, $status->retainedDialog);
+        self::assertSame('second', $status->dialogObservation['message']);
+        self::assertNull($this->client(self::jsonResponse(self::session()))->interactiveStatus(self::ID)->retainedDialog);
+    }
+
+    public function testDialogPreviewUsesAuthenticatedGenerationBoundGetAndValidatesPng(): void
+    {
+        $http = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            self::assertSame('GET', $method);
+            self::assertSame(self::WORKER.'/interactive-sessions/'.self::ID.'/dialog-frame?generation=7', $url);
+            self::assertSame('Authorization: Bearer '.self::TOKEN, $options['normalized_headers']['authorization'][0]);
+            self::assertSame(0, $options['max_redirects']);
+            return new MockResponse(base64_decode(self::PNG, true), ['response_headers' => ['Content-Type: image/png']]);
+        });
+        self::assertSame(base64_decode(self::PNG, true), (new PlaywrightBrowserInteractiveClient($http, self::WORKER, self::TOKEN))->interactiveDialogFrame(self::ID, 7));
+        foreach ([['{}', 'application/json'], ['', 'image/png'], ['invalid', 'image/png'], [base64_decode(self::PNG, true), 'text/plain']] as [$body, $type]) {
+            try {
+                $this->client(new MockResponse($body, ['response_headers' => ['Content-Type: '.$type]]))->interactiveDialogFrame(self::ID, 7);
+                self::fail('Invalid preview was accepted.');
+            } catch (\RuntimeException $error) { self::assertStringContainsString('invalid PNG', $error->getMessage()); }
+        }
+        foreach ([0, -1] as $generation) {
+            try {
+                (new PlaywrightBrowserInteractiveClient(new MockHttpClient(static fn () => self::fail('No transport for invalid generation')), self::WORKER, self::TOKEN))->interactiveDialogFrame(self::ID, $generation);
+                self::fail('Invalid generation was accepted.');
+            } catch (\InvalidArgumentException) { self::assertTrue(true); }
+        }
+    }
+
     public function testLifecycleUsesDedicatedRoutesAndPreservesSessionAndCaptureData(): void
     {
         $calls = [];
@@ -163,7 +200,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function httpErrors(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
             foreach ([400, 401, 403, 404, 405, 409, 410, 413, 422, 429, 500, 502, 503, 504] as $status) {
                 yield "$operation HTTP $status worker JSON" => [$operation, $status, '{"errorMessage":"Worker rejected this request."}', 'Worker rejected this request.'];
             }
@@ -189,7 +226,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
     public static function invalidIds(): iterable
     {
         foreach (['', 'fixture-session-id', str_repeat('a', 47), str_repeat('a', 49), str_repeat('A', 48), str_repeat('g', 48), self::ID."\n", '../'.self::ID, self::ID.'/status'] as $id) {
-            foreach (['status', 'input', 'frame', 'capture', 'close'] as $operation) {
+            foreach (['status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
                 yield [$id, $operation];
             }
         }
@@ -364,7 +401,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function missingTokens(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
             foreach ([null, '', '   ', "bad\r\nInjected: header", 'bad token'] as $token) {
                 yield [$operation, $token];
             }
@@ -413,7 +450,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function transportFailures(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
             yield [$operation, false];
             yield [$operation, true];
         }
@@ -501,6 +538,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
             'status' => $client->interactiveStatus($id),
             'input' => $client->interactiveInput($id, ['action' => 'reload']),
             'frame' => $client->interactiveFrame($id),
+            'dialog-frame' => $client->interactiveDialogFrame($id, 7),
             'capture' => $client->captureInteractive($id),
             'close' => $client->closeInteractive($id),
         };

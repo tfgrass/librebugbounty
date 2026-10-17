@@ -109,6 +109,20 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
         return $content;
     }
 
+    public function interactiveDialogFrame(string $sessionId, int $generation): string
+    {
+        $this->assertGeneration($generation);
+        $response = $this->request('GET', $this->interactivePath($sessionId, 'dialog-frame').'?generation='.$generation, [
+            'timeout' => 20, 'max_duration' => 25,
+        ]);
+        $content = $response->getContent(false);
+        $contentType = $response->getHeaders(false)['content-type'][0] ?? '';
+        if (strtolower(trim(explode(';', $contentType, 2)[0])) !== 'image/png' || !str_starts_with($content, "\x89PNG\r\n\x1a\n")) {
+            throw new \RuntimeException('Browser worker returned an invalid PNG frame.');
+        }
+        return $content;
+    }
+
     public function captureInteractive(string $sessionId): BrowserScreenshotResult
     {
         $data = $this->json($this->request('POST', $this->interactivePath($sessionId, 'capture'), [
@@ -231,7 +245,7 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
         $this->validateOptionalFields($data, [
             'finalUrl' => 'string', 'httpStatus' => 'integer', 'challenge' => 'array',
             'initialChallenge' => 'array', 'navigationError' => 'string',
-            'initialUrl' => 'string', 'initialHttpStatus' => 'integer', 'dialogObservation' => 'array',
+            'initialUrl' => 'string', 'initialHttpStatus' => 'integer', 'dialogObservation' => 'array', 'retainedDialog' => 'array',
         ]);
         foreach (['httpStatus', 'initialHttpStatus'] as $field) {
             if (isset($data[$field]) && ($data[$field] < 100 || $data[$field] > 599)) {
@@ -255,6 +269,7 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             captureLocked: ($data['captureLocked'] ?? false) === true,
             captureId: is_string($data['captureId'] ?? null) ? $data['captureId'] : null,
             captureGeneration: is_int($data['captureGeneration'] ?? null) ? $data['captureGeneration'] : null,
+            retainedDialog: $data['retainedDialog'] ?? null,
         );
     }
 

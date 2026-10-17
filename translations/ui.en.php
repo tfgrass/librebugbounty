@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'Zuletzt beobachteter Browser-Dialog' => 'Last observed browser dialog',
+    'Festgehaltenes Dialogbild' => 'Retained dialog image',
+    'Dialogbild ansehen' => 'View dialog image',
+    'Vorschau schließen' => 'Close preview',
+    'Dialogbild konnte nicht geladen werden. Erneut versuchen.' => 'Could not load dialog image. Try again.',
+
     'Vollbild' => 'Fullscreen',
     'Vollbild verlassen' => 'Exit fullscreen',
     'Beleg speichern' => 'Save evidence',

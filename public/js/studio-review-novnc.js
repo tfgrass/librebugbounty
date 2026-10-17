@@ -30,6 +30,42 @@ export function mountInteractivePanel(element) {
   const say = (name, text) => { get(name).textContent = text || ''; };
   const notice = text => { say('notice', text); get('notice').hidden = !text; };
   const on = (target, name, fn, options = {}) => target.addEventListener(name, fn, { ...options, signal: lifecycle.signal });
+  let retainedKey = null, previewUrl = null, previewRequest = null;
+  const clearPreview = () => {
+    previewRequest?.abort(); previewRequest = null;
+    get('preview').hidden = true;
+    get('preview-image').hidden = true;
+    get('preview-image').removeAttribute('src');
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+    say('preview-status', '');
+  };
+  on(get('preview-close'), 'click', () => { clearPreview(); get('preview-open').focus(); });
+  on(element, 'keydown', event => {
+    if (event.key === 'Escape' && !get('preview').hidden) {
+      event.preventDefault(); clearPreview(); get('preview-open').focus();
+    }
+  });
+  on(get('preview-open'), 'click', async () => {
+    if (disposed || status?.state !== 'own_active' || !retainedKey) return;
+    clearPreview();
+    get('preview').hidden = false;
+    get('preview-close').focus();
+    const key = retainedKey, revision = status.revision;
+    const request = new AbortController(); previewRequest = request;
+    try {
+      const response = await fetch(base + '/dialog-frame?revision=' + revision, {
+        headers: { 'X-LBB-Tab': channel }, cache: 'no-store', signal: AbortSignal.any([request.signal, lifecycle.signal, AbortSignal.timeout(15000)]),
+      });
+      if (!response.ok || !response.headers.get('Content-Type')?.startsWith('image/png')) throw new Error('Preview unavailable');
+      const blob = await response.blob();
+      if (disposed || request.signal.aborted || key !== retainedKey || status?.revision !== revision || status?.state !== 'own_active') return;
+      previewUrl = URL.createObjectURL(blob);
+      get('preview-image').src = previewUrl; get('preview-image').hidden = false;
+    } catch (error) {
+      if (!disposed && !request.signal.aborted) say('preview-status', messages.previewError);
+    } finally { if (previewRequest === request) previewRequest = null; }
+  });
   const fullscreenButton = get('fullscreen');
   let layoutFullscreen = false, fullscreenPending = false, previousOverflow;
   const syncFullscreen = () => {
@@ -126,7 +162,8 @@ export function mountInteractivePanel(element) {
     say('expiry', messages.expires.replace('{value}', `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`));
     if (seconds === 0 && status?.state === 'own_active') {
       status = { ...status, state: 'expired', reconnect: false };
-      disconnect(); closeConfirmation(); say('state', messages.expired);
+      disconnect(); closeConfirmation(); clearPreview(); retainedKey = null;
+      get('retained').hidden = true; get('dialog').hidden = true; say('state', messages.expired);
       element.dataset.state = 'expired'; showButtons();
     }
   };
@@ -176,6 +213,7 @@ export function mountInteractivePanel(element) {
     } finally { connecting = false; showButtons(); }
   };
   const applyStatus = data => {
+    if (data.state === 'own_active' && Number.isFinite(data.expiresInSec) && data.expiresInSec <= 0) data = { ...data, state: 'expired', reconnect: false };
     if (!states.has(data.state) || !Number.isSafeInteger(data.revision) || data.revision < 0 || (data.findingId && data.findingId !== element.dataset.findingId && data.state === 'own_active')) throw new Error('Invalid status');
     if (status && (status.revision !== data.revision || status.state !== data.state || Boolean(status.captureLocked) !== Boolean(data.captureLocked))) closeConfirmation();
     status = data;
@@ -195,6 +233,13 @@ export function mountInteractivePanel(element) {
     get('dialog').hidden = !dialog || !Object.keys(dialog).length;
     say('dialog-message', typeof dialog?.message === 'string' ? dialog.message.slice(0, 10000) : '');
     say('dialog-image', dialog?.captureSucceeded === true ? messages.dialogCaptured : messages.dialogUnconfirmed);
+    const retained = own && data.retainedDialog && typeof data.retainedDialog.capturedAt === 'string' ? data.retainedDialog : null;
+    const nextRetainedKey = retained ? JSON.stringify([data.revision, retained.capturedAt]) : null;
+    if (nextRetainedKey !== retainedKey) clearPreview();
+    retainedKey = nextRetainedKey;
+    get('retained').hidden = !retained;
+    say('retained-message', typeof retained?.message === 'string' ? retained.message.slice(0, 10000) : '');
+    say('retained-meta', retained ? [retained.capturedAt, retained.pageUrl].filter(value => typeof value === 'string').join(' · ') : '');
     const reason = { checks_blocked: 'policy_blocked', stale_revision_or_busy: 'stale_revision', operation_failed: 'actionError' }[data.reason] || data.reason;
     notice(reason ? (messages[reason] || messages.actionError) : '');
     showButtons();
@@ -217,7 +262,7 @@ export function mountInteractivePanel(element) {
     } catch (_) {
       if (!disposed && version === epoch && !pending) {
         disconnect(true); closeConfirmation(); status = undefined;
-        say('state', messages.statusError); notice(messages.statusError); showButtons();
+        say('state', messages.statusError); clearPreview(); retainedKey = null; get('retained').hidden = true; get('dialog').hidden = true; notice(messages.statusError); showButtons();
       }
     } finally { statusRequest = undefined; }
     })();
@@ -259,7 +304,7 @@ export function mountInteractivePanel(element) {
       // unsuccessful capture); reopen only after fresh status confirms ownership.
       if (rfb && status.state === 'own_active' && !status.captureLocked && status.revision === revision) rfb.viewOnly = false;
     } catch (_) {
-      if (!disposed) { disconnect(true); status = undefined; notice(messages.actionError); }
+      if (!disposed) { disconnect(true); status = undefined; clearPreview(); retainedKey = null; get('retained').hidden = true; notice(messages.actionError); }
     } finally {
       pending = false;
       if (!disposed) { showButtons(); void refresh(); }
@@ -289,7 +334,7 @@ export function mountInteractivePanel(element) {
   const handle = {
     refresh,
     destroy() {
-      disposed = true; ++epoch;
+      disposed = true; ++epoch; clearPreview();
       leaveLayoutFullscreen();
       if (document.fullscreenElement === element) void document.exitFullscreen().catch(() => {});
       clearTimeout(timer); clearInterval(expiryTimer);

@@ -25,6 +25,9 @@ final class StudioReviewNoVncWorkerFixture
     public array $state = ['starts' => 0, 'generation' => 0, 'session' => null, 'capture' => null, 'calls' => []];
     /** Deterministic capture/lease race barrier; never a timing sleep. */
     public ?Closure $afterCapture = null;
+    /** Read-response barriers for deterministic ownership and policy races. */
+    public ?Closure $afterStatus = null;
+    public ?Closure $afterDialogFrame = null;
     /** Pause after PHP's persistence commit, before the worker close side effect. */
     public ?Closure $beforeClose = null;
 
@@ -48,7 +51,20 @@ final class StudioReviewNoVncWorkerFixture
             }
             $path = parse_url($url, PHP_URL_PATH);
             $body = json_decode((string) ($options['body'] ?? '{}'), true, flags: JSON_THROW_ON_ERROR);
-            $this->state['calls'][] = ['method' => $method, 'path' => $path, 'body' => $body];
+            $this->state['calls'][] = ['method' => $method, 'path' => $path, 'body' => $body, 'query' => parse_url($url, PHP_URL_QUERY)];
+            if ($method === 'GET' && str_ends_with($path, '/dialog-frame')) {
+                parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+                $session = $this->state['session'];
+                $status = ($query['generation'] ?? null) !== (string) $this->state['generation'] ? 409
+                    : ($session === null || !str_contains($path, $session['id']) ? 410
+                    : (empty($session['retainedDialog']) ? 404 : 200));
+                if ($this->afterDialogFrame !== null) {
+                    $hook = $this->afterDialogFrame; $this->afterDialogFrame = null; $hook();
+                }
+                return new MockResponse($status === 200 ? base64_decode(self::PNG, true) : '{}', [
+                    'http_code' => $status, 'response_headers' => ['content-type: '.($status === 200 ? 'image/png' : 'application/json')],
+                ]);
+            }
             [$status, $data] = $this->dispatch($method, $path, $body, $options['normalized_headers']['authorization'][0] ?? '');
             if ($this->statePath !== null) {
                 file_put_contents($this->statePath, json_encode($this->state, JSON_THROW_ON_ERROR), LOCK_EX);
@@ -102,7 +118,12 @@ final class StudioReviewNoVncWorkerFixture
         }
         $session = $this->state['session'];
         if ($session === null || $match[1] !== $session['id']) return [410, ['errorMessage' => 'Fixture session gone']];
-        if ($method === 'GET' && $match[2] === 'status') return [200, $session];
+        if ($method === 'GET' && $match[2] === 'status') {
+            if ($this->afterStatus !== null) {
+                $hook = $this->afterStatus; $this->afterStatus = null; $hook();
+            }
+            return [200, $session];
+        }
         if ($method !== 'POST') return [405, ['errorMessage' => 'POST required']];
         if (($body['generation'] ?? null) !== $this->state['generation']) return [409, ['errorMessage' => 'stale_generation']];
         if ($match[2] === 'close') {

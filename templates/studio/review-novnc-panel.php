@@ -38,6 +38,7 @@ $novncMessages = [
     'confirmRelease' => $t('Session ohne Speichern beenden? Nicht gespeicherte Inhalte gehen verloren.'),
     'dialogCaptured' => $t('Browser-Dialog vor dem Schließen als Bild festgehalten.'),
     'dialogUnconfirmed' => $t('Browser-Dialog beobachtet; seine Bildaufnahme ist nicht bestätigt.'),
+    'previewError' => $t('Dialogbild konnte nicht geladen werden. Erneut versuchen.'),
     'fullscreen' => $t('Vollbild'),
     'exitFullscreen' => $t('Vollbild verlassen'),
 ];
@@ -78,9 +79,20 @@ $novncMessages = [
   </div>
   <p class="novnc-connection" data-novnc-connection aria-live="polite"></p>
   <section class="novnc-dialog" data-novnc-dialog hidden>
-    <strong><?= $escape($t('Browser-Dialog beobachtet')) ?></strong>
+    <strong><?= $escape($t('Zuletzt beobachteter Browser-Dialog')) ?></strong>
     <p data-novnc-dialog-message></p><p data-novnc-dialog-image></p>
     <p><?= $escape($t('Eine Dialog-Beobachtung allein bestätigt keine Schwachstelle.')) ?></p>
+  </section>
+  <section class="novnc-retained" data-novnc-retained hidden>
+    <strong><?= $escape($t('Festgehaltenes Dialogbild')) ?></strong>
+    <p data-novnc-retained-message></p>
+    <p data-novnc-retained-meta></p>
+    <button type="button" data-novnc-preview-open><?= $escape($t('Dialogbild ansehen')) ?></button>
+    <div class="novnc-preview" data-novnc-preview hidden role="region" aria-label="<?= $escape($t('Festgehaltenes Dialogbild')) ?>">
+      <button type="button" data-novnc-preview-close><?= $escape($t('Vorschau schließen')) ?></button>
+      <p data-novnc-preview-status role="status"></p>
+      <img data-novnc-preview-image alt="<?= $escape($t('Festgehaltenes Dialogbild')) ?>" hidden>
+    </div>
   </section>
   <p class="novnc-description"><?= $escape($t('Eine Live-Ansicht oder gespeicherte Aufnahme ist keine automatische Bewertung. Wähle die Bewertungsgrundlage anschließend ausdrücklich im Review.')) ?></p>
   <noscript><p class="novnc-notice"><?= $escape($t('Die Live-Ansicht benötigt JavaScript. Ohne JavaScript bleiben gespeicherte Bilder im Review lesbar; Browser-Sessions können hier nicht gestartet oder übernommen werden.')) ?></p></noscript>

@@ -30,17 +30,44 @@ final class InteractiveBrowserCoordinator
         }
         if ($payload['state'] !== 'own_active') { return $payload; }
         try {
+            $this->dialogPreviewRow($finding, $owner, $channel, $row['generation'], $row);
             $worker = $this->browser->interactiveStatus($row['worker_id']);
             if ($worker->generation !== null && $worker->generation !== $row['generation']) {
                 return array_replace($payload, ['state' => 'activating', 'reconnect' => false]);
             }
+            $this->dialogPreviewRow($finding, $owner, $channel, $row['generation'], $row);
             $payload['captureLocked'] = $worker->captureLocked;
             $payload['dialogObservation'] = $this->dialogView($worker->dialogObservation);
+            $payload['retainedDialog'] = $this->retainedDialogView($worker->retainedDialog);
         } catch (\Throwable $error) {
             $payload['state'] = in_array((int) $error->getCode(), [404, 410], true) ? 'expired' : 'worker_unavailable';
             $payload['reconnect'] = false;
         }
         return $payload;
+    }
+
+    /** No acquisition, capture, lease refresh or close, even on expiry/failure. */
+    public function dialogPreview(Finding $finding, string $owner, string $channel, int $revision): string
+    {
+        $row = $this->dialogPreviewRow($finding, $owner, $channel, $revision);
+        $image = $this->browser->interactiveDialogFrame($row['worker_id'], $row['generation']);
+        $this->dialogPreviewRow($finding, $owner, $channel, $revision, $row);
+        return $image;
+    }
+
+    private function dialogPreviewRow(Finding $finding, string $owner, ?string $channel, int $revision, ?array $before = null): array
+    {
+        if ($revision < 1) { throw new \RuntimeException('Interactive revision required.', 400); }
+        $row = $this->ownedRow($finding->getId(), $owner, $channel ?? '', $revision);
+        if (($row['expires_at'] ?? 0) <= time()) { throw new \RuntimeException('Interactive session expired.', 410); }
+        $this->assertAllowed($finding->getId(), $finding->getUrl());
+        if (!$this->bindingAllowed($row) || !is_string($row['worker_id'] ?? null)
+            || ($row['binding']['finding_id'] ?? null) !== $finding->getId()
+            || ($row['binding']['start_url'] ?? null) !== $finding->getUrl()
+            || ($before !== null && ($row['binding'] !== $before['binding'] || $row['worker_id'] !== $before['worker_id']))) {
+            throw new \RuntimeException('Interactive binding changed.', 409);
+        }
+        return $row;
     }
 
     public function acquire(Finding $finding, string $owner, string $channel, ?int $revision): array
@@ -240,8 +267,26 @@ final class InteractiveBrowserCoordinator
         ];
     }
 
+    private function retainedDialogView(?array $dialog): ?array
+    {
+        if ($dialog === null) { return null; }
+        $view = [];
+        foreach (['capturedAt' => 64, 'detectedAt' => 64, 'pageUrl' => 10000, 'type' => 32, 'message' => 10000] as $key => $limit) {
+            if (!is_string($dialog[$key] ?? null)) { return null; }
+            $view[$key] = mb_substr($dialog[$key], 0, $limit);
+        }
+        return $view;
+    }
+
     private function dialogView(array $dialog): array
     {
-        return array_intersect_key($dialog, array_flip(['type', 'message', 'seen', 'detectedAt', 'dismissed', 'captureSucceeded', 'capturedAt']));
+        $view = [];
+        foreach (['type' => 32, 'message' => 10000, 'detectedAt' => 64, 'capturedAt' => 64] as $key => $limit) {
+            if (is_string($dialog[$key] ?? null)) { $view[$key] = mb_substr($dialog[$key], 0, $limit); }
+        }
+        foreach (['seen', 'dismissed', 'captureSucceeded'] as $key) {
+            if (is_bool($dialog[$key] ?? null)) { $view[$key] = $dialog[$key]; }
+        }
+        return $view;
     }
 }

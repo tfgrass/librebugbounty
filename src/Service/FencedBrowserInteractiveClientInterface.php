@@ -10,5 +10,7 @@ interface FencedBrowserInteractiveClientInterface extends BrowserInteractiveClie
 {
     public function startFenced(string $url, int $timeoutMs, int $generation, ?string $sessionId = null): BrowserInteractiveSessionResult;
     public function captureFenced(string $sessionId, int $generation): BrowserScreenshotResult;
+    /** Read retained PNG bytes only; no browser actions or captures. */
+    public function interactiveDialogFrame(string $sessionId, int $generation): string;
     public function closeFenced(string $sessionId, int $generation): void;
 }

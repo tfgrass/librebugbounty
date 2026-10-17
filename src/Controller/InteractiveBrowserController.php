@@ -59,6 +59,24 @@ final class InteractiveBrowserController
         }
     }
 
+    #[Route('/review/{id}/interactive/dialog-frame', name: 'studio_review_novnc_dialog_frame', methods: ['GET'])]
+    public function dialogFrame(string $id, Request $request): Response
+    {
+        $finding = $this->finding($id);
+        if ($finding === null) { return $this->json(['state' => 'revoked', 'reason' => 'not_found'], 404); }
+        try {
+            $channel = $this->channel($request->headers->get('X-LBB-Tab'), true);
+            $revision = $this->requiredRevision($this->revision($request->query->all()['revision'] ?? null));
+            $image = $this->browser->dialogPreview($finding, $this->owner($request), $channel, $revision);
+            return new Response($image, 200, [
+                'Content-Type' => 'image/png', 'Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff',
+            ]);
+        } catch (\Throwable $error) {
+            $code = in_array((int) $error->getCode(), [400, 401, 403, 404, 409, 410, 503], true) ? (int) $error->getCode() : 502;
+            return $this->json(['state' => 'revoked', 'reason' => $code === 410 ? 'expired' : 'dialog_preview_unavailable'], $code);
+        }
+    }
+
     #[Route('/review/{id}/interactive/lease/{operation}', name: 'studio_review_novnc_lease', requirements: ['operation' => 'acquire|takeover|release|end-and-start'], methods: ['POST'])]
     public function mutate(string $id, string $operation, Request $request): Response
     {
