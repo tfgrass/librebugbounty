@@ -8,7 +8,7 @@ use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
-final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreenshotClient implements BrowserInteractiveClientInterface
+final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreenshotClient implements FencedBrowserInteractiveClientInterface
 {
     public function __construct(
         HttpClientInterface $httpClient,
@@ -16,6 +16,54 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
         private readonly ?string $workerToken = null,
     ) {
         parent::__construct($httpClient, $workerUrl);
+    }
+
+    public function startFenced(string $url, int $timeoutMs, int $generation, ?string $sessionId = null): BrowserInteractiveSessionResult
+    {
+        $this->assertGeneration($generation);
+        $body = ['url' => $url, 'timeoutMs' => $timeoutMs, 'generation' => $generation];
+        if ($sessionId !== null) {
+            $this->interactivePath($sessionId, 'status');
+            $body['sessionId'] = $sessionId;
+        }
+        return $this->sessionResult($this->json($this->request('POST', '/interactive-sessions', [
+            'json' => $body,
+            'timeout' => max(30, (int) ceil($timeoutMs / 1000) + 20),
+            'max_duration' => max(45, (int) ceil($timeoutMs / 1000) + 30),
+        ])), $sessionId);
+    }
+
+    public function captureFenced(string $sessionId, int $generation): BrowserScreenshotResult
+    {
+        $this->assertGeneration($generation);
+        $data = $this->json($this->request('POST', $this->interactivePath($sessionId, 'capture'), [
+            'json' => ['generation' => $generation], 'timeout' => 30, 'max_duration' => 35,
+        ]));
+        if (($data['generation'] ?? null) !== $generation) {
+            throw new \RuntimeException('Interactive capture authorization changed.', 409);
+        }
+        if (!is_string($data['screenshotBase64'] ?? null) || $data['screenshotBase64'] === '') {
+            throw new \RuntimeException('Browser worker did not return an interactive screenshot.');
+        }
+        return $this->screenshotResult($data);
+    }
+
+    public function closeFenced(string $sessionId, int $generation): void
+    {
+        $this->assertGeneration($generation);
+        $response = $this->request('POST', $this->interactivePath($sessionId, 'close'), [
+            'json' => ['generation' => $generation], 'timeout' => 20, 'max_duration' => 25,
+        ]);
+        if ($response->getStatusCode() === 204 && $response->getContent(false) === '') { return; }
+        $data = $this->json($response);
+        if (($data['closed'] ?? null) !== true || ($data['id'] ?? null) !== $sessionId) {
+            throw new \RuntimeException('Browser worker did not confirm closure.');
+        }
+    }
+
+    private function assertGeneration(int $generation): void
+    {
+        if ($generation < 1) { throw new \InvalidArgumentException('Invalid interactive generation.'); }
     }
 
     public function startInteractive(string $url, int $timeoutMs): BrowserInteractiveSessionResult
@@ -203,6 +251,10 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             initialUrl: $data['initialUrl'] ?? null,
             initialHttpStatus: $data['initialHttpStatus'] ?? null,
             dialogObservation: $data['dialogObservation'] ?? [],
+            generation: is_int($data['generation'] ?? null) ? $data['generation'] : null,
+            captureLocked: ($data['captureLocked'] ?? false) === true,
+            captureId: is_string($data['captureId'] ?? null) ? $data['captureId'] : null,
+            captureGeneration: is_int($data['captureGeneration'] ?? null) ? $data['captureGeneration'] : null,
         );
     }
 

@@ -738,6 +738,7 @@ final class ReviewController
         $contextToken = $view->detail === null ? '' : $this->queue->contextToken($view->detail->finding->getId(), $view->stateFingerprint);
         $lastReviewedId = $view->lastReviewedId;
         $selectedEvidenceId = $view->selectedEvidenceId;
+        $interactiveCsrfToken = $view->detail === null ? '' : $this->csrf->getToken('review_interactive_'.$view->detail->finding->getId())->getValue();
         ob_start();
         $checksAllowed = $view->detail === null || $this->workPolicy->checksAllowed($view->detail->finding);
         require dirname(__DIR__, 2).'/templates/studio/review.php';

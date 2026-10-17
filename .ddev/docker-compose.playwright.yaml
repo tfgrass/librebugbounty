@@ -17,9 +17,11 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - PLAYWRIGHT_WORKER_MODE=retest
       - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
+    init: true
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      test: ["CMD", "./start.sh", "--healthcheck"]
       interval: 2s
       timeout: 2s
       retries: 30
@@ -38,9 +40,11 @@ services:
     environment:
       - PORT=3000
       - NODE_ENV=production
+      - PLAYWRIGHT_WORKER_MODE=shot
       - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
+    init: true
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      test: ["CMD", "./start.sh", "--healthcheck"]
       interval: 2s
       timeout: 2s
       retries: 30
@@ -57,3 +61,35 @@ services:
   playwright-shot-4:
     <<: *playwright_shot_service
     container_name: ddev-${DDEV_SITENAME}-playwright-shot-4
+
+  # The only interactive desktop. Both VNC transports bind container loopback.
+  playwright-interactive:
+    build:
+      context: .
+      dockerfile: playwright-interactive.Dockerfile
+    image: ddev-${DDEV_SITENAME}-playwright-interactive:1.61.1-vnc1
+    container_name: ddev-${DDEV_SITENAME}-playwright-interactive
+    working_dir: /var/www/html/playwright-worker
+    command: ./start.sh
+    init: true
+    stop_grace_period: 10s
+    shm_size: 1gb
+    volumes:
+      - ../:/var/www/html
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - PLAYWRIGHT_WORKER_MODE=interactive
+      - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
+      # Development only; distinct from worker/app secrets. Never deploy this literal.
+      - PLAYWRIGHT_GATEWAY_TOKEN=local-ddev-interactive-gateway-token
+      - PLAYWRIGHT_GATEWAY_AUTH_URL=http://web:8096/internal/interactive-gateway/authorize
+      - PLAYWRIGHT_ALLOWED_ORIGINS=https://${DDEV_HOSTNAME},http://${DDEV_HOSTNAME}
+    healthcheck:
+      test: ["CMD", "./start.sh", "--healthcheck"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 15s

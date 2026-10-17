@@ -76,3 +76,57 @@
   .interactive-header { flex-direction: column; }
   .interactive-actions { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* noVNC is shared by the embedded Review surface and the standalone page.
+   Keep these rules scoped so the original PNG controls remain usable. */
+.novnc-panel {
+  width: 100%;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--studio-line, #343a42);
+  border-radius: 12px;
+  background: var(--studio-panel, #1b1e22);
+  color: var(--studio-text, #eef1f4);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+.novnc-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px 20px; }
+.novnc-heading strong { font-size: 19px; }
+.novnc-panel p { margin: 0; overflow-wrap: anywhere; }
+.novnc-heading p, .novnc-description, .novnc-expiry, .novnc-connection { font-size: 13px; color: var(--studio-muted, #a4adb8); }
+.novnc-badge { padding: 5px 9px; border: 1px solid var(--studio-line, #343a42); border-radius: 6px; max-width: 100%; font-size: 13px; }
+.novnc-panel[data-state="own_active"] .novnc-badge { border-color: var(--studio-green, #83d4ac); color: var(--studio-green, #83d4ac); }
+.novnc-panel[data-state="busy"] .novnc-badge,
+.novnc-panel[data-capture-locked="true"] .novnc-badge { border-color: var(--studio-amber, #e8bf78); color: var(--studio-amber, #e8bf78); }
+.novnc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.novnc-panel button { padding: 9px 13px; min-height: 42px; max-width: 100%; border: 1px solid #546176; border-radius: 6px; background: #283241; color: #eef1f4; cursor: pointer; font: inherit; }
+.novnc-panel button:hover { background: #334155; border-color: #8096b6; }
+.novnc-panel button:disabled { opacity: .5; cursor: default; }
+.novnc-panel button.novnc-primary { background: #88d2ae; color: #122d20; border-color: #87c9ac; font-weight: 600; }
+.novnc-panel button.novnc-primary:hover { background: #a0e0c1; }
+.novnc-expiry { margin-inline-start: auto; font-variant-numeric: tabular-nums; }
+.novnc-viewport { position: relative; min-height: 260px; height: clamp(280px, 52vh, 800px); width: 100%; overflow: hidden; background: #090c10; border: 1px solid var(--studio-line, #343a42); border-radius: 8px; }
+.novnc-placeholder { min-height: 100%; padding: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; color: var(--studio-muted, #a4adb8); }
+.novnc-placeholder strong { color: var(--studio-text, #eef1f4); font-size: 18px; }
+.novnc-placeholder-icon { font-size: 40px; color: var(--studio-blue, #6aa7ff); }
+.novnc-placeholder p { max-width: 52ch; }
+.novnc-screen { position: absolute; inset: 0; width: 100%; height: 100%; }
+.novnc-screen canvas { outline-offset: -3px; }
+.novnc-last-frame { margin: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.novnc-last-frame canvas { min-height: 0; max-height: calc(100% - 48px); max-width: 100%; object-fit: contain; }
+.novnc-last-frame figcaption { padding: 8px; font-size: 12px; color: var(--studio-amber, #e8bf78); text-align: center; }
+.novnc-notice, .novnc-confirm, .novnc-dialog { padding: 12px; border: 1px solid var(--studio-amber, #e8bf78); border-radius: 6px; background: #30291e; }
+.novnc-confirm p { margin-bottom: 10px; }
+.novnc-confirm button + button { margin-inline-start: 8px; }
+.novnc-dialog p { font-size: 13px; white-space: pre-wrap; }
+.novnc-shell { width: min(1800px, 100%); margin: 0 auto; }
+.novnc-shell .novnc-viewport { height: clamp(280px, 64vh, 1000px); }
+@media (max-width: 600px) {
+  .novnc-panel { padding: 12px; gap: 10px; }
+  .novnc-heading { flex-direction: column; }
+  .novnc-expiry { flex-basis: 100%; margin-inline-start: 0; }
+  .novnc-viewport { height: 46vh; min-height: 240px; }
+  .novnc-toolbar button { flex: 1 1 140px; }
+}

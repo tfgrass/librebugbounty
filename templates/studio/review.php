@@ -52,7 +52,6 @@ $findingPath = $finding === null ? null : '/findings/'.$finding->getId();
 $notes = $finding?->getPrivateNotes();
 $findingLink = $findingPath === null ? null : $findingPath.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
 $lastReviewedLink = $lastReviewedId === null ? null : '/findings/'.$lastReviewedId.'?'.http_build_query(['return_to' => $view->currentPath], '', '&', PHP_QUERY_RFC3986);
-$interactiveReturnQueryString = (string) parse_url($reviewUrl(['evidence' => $selectedEvidenceId]), PHP_URL_QUERY);
 $canAssess = $finding !== null && $view->eligible;
 $pocUrl = $finding?->getUrl();
 $pocUrl = is_string($pocUrl) ? str_replace(' ', '%20', $pocUrl) : $pocUrl;
@@ -70,19 +69,8 @@ $latestCaptureMetadata = $retryJob?->getCaptureMetadata() ?? [];
 $hasUnresolvedChallenge = $retryJob !== null
     && ($latestCaptureMetadata['challengeDetected'] ?? null) === true
     && ($latestCaptureMetadata['challengeCleared'] ?? null) === false;
-$retryEvidenceId = null;
-if ($hasUnresolvedChallenge) {
-    foreach ($detail?->screenshots ?? [] as $shot) {
-        if ($shot['available'] && $shot['job']?->getId() === $retryJob->getId()) {
-            $retryEvidenceId = $shot['evidence']->getId();
-            break;
-        }
-    }
-}
-$canInteractiveRetry = $finding !== null && !$finding->isDiscarded() && $canOpenPoc && $retryEvidenceId !== null;
-if ($canInteractiveRetry) {
-    $interactiveReturnQueryString = (string) parse_url($reviewUrl(['evidence' => $retryEvidenceId]), PHP_URL_QUERY);
-}
+$canInteractiveReview = $finding !== null && !$finding->isDiscarded() && $canOpenPoc;
+$hasReadableImage = count(array_filter($detail?->screenshots ?? [], static fn (array $shot): bool => $shot['available'])) > 0;
 $hasError = $error !== null && $error !== '';
 $waitingForImages = $view->total === 0 && $view->images === 'ready' && $view->counts[$view->kind] > 0;
 $evidenceLabels = [];
@@ -114,6 +102,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
   <script src="/js/studio-review-viewer.js" defer></script>
   <script src="/js/studio-review-preload.js" defer></script>
   <script src="/js/studio-review.js" defer></script>
+  <script type="module" src="/js/studio-review-novnc.js"></script>
 </head>
 <body data-studio data-studio-review data-review-trail="<?= $escape($reviewTrailId) ?>" data-review-decision-delay="<?= $reviewDecisionDelaySeconds ?>" data-total="<?= $view->total ?>" data-remaining="<?= $view->remaining ?>" data-current-id="<?= $escape($finding?->getId() ?? '') ?>">
   <div data-review-preloads="<?= $escape(json_encode($view->preloadImages, JSON_THROW_ON_ERROR)) ?>" class="studio-shell studio-review-shell<?= $finding !== null || $reviewBackAvailable ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">
@@ -175,6 +164,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
           <article class="review-card" data-review-card data-current-id="<?= $escape($finding->getId()) ?>">
             <header class="review-case-heading">
               <div class="review-case-title"><p class="studio-eyebrow"><?= $escape($t('Fall')) ?> <?= $escape(substr($finding->getId(), 0, 8)) ?> · <?= $escape($finding->getType()) ?></p><h2 tabindex="-1" data-review-focus><?= $escape($finding->getDomain()->getHostname()) ?></h2><p><?= $escape($finding->getTitle()) ?></p></div>
+              <?php if ($canInteractiveReview): ?><a class="review-button review-interactive-entry<?= $hasUnresolvedChallenge ? ' review-interactive-recommended' : '' ?>" href="<?= $escape('/review/'.$finding->getId().'/interactive?return_to='.rawurlencode($view->currentPath)) ?>" data-review-interactive-entry><?= $escape($t('Interaktiv prüfen')) ?></a><?php else: ?><button class="review-button review-interactive-entry" type="button" disabled title="<?= $escape($t(!$checksAllowed ? 'Prüfungen gesperrt' : 'Für diese URL ist keine interaktive Aufnahme möglich.')) ?>"><?= $escape($t('Interaktiv prüfen')) ?></button><?php endif; ?>
               <a class="review-text-link" href="<?= $escape($findingLink) ?>" data-review-return-link><?= $escape($t('Fall öffnen')) ?> <span aria-hidden="true">↗</span></a>
             </header>
             <div class="review-card-layout">
@@ -188,14 +178,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                     <?php $metadata = $latestCaptureMetadata; ?>
                     <?php if (($metadata['challengeDetected'] ?? false) === true): ?><p class="review-challenge"><?= $escape($t(($metadata['challengeCleared'] ?? false) === true ? 'Browser-Schutz wurde erkannt und beendet.' : 'Browser-Schutz blieb aktiv; die Aufnahme kann eine Schutzseite zeigen.')) ?></p><?php endif; ?>
                     <?php if (($metadata['interactive'] ?? false) === true): ?><p class="review-challenge"><?= $escape($t('Interaktive Aufnahme')) ?></p><?php endif; ?>
-                    <?php if ($canInteractiveRetry): ?>
-                      <form method="post" action="<?= $escape('/review/'.$finding->getId().'/interactive-session/start') ?>" class="review-interactive-start">
-                        <?= $csrfField('review_interactive_'.$finding->getId()) ?>
-                        <input type="hidden" name="return_query" value="<?= $escape($interactiveReturnQueryString) ?>">
-                        <button class="review-button" type="submit" aria-describedby="review-interactive-retry-help"><?= $escape($t('Interaktiv erneut öffnen')) ?></button>
-                        <p id="review-interactive-retry-help"><?= $escape($t('Öffnet einen frischen Chromium-Kontext. Löse den Schutz aus und speichere danach die Zielseite als zusätzliche Aufnahme.')) ?></p>
-                      </form>
-                    <?php endif; ?>
+
                   </div>
                 <?php endif; ?>
                 <?php if (count($detail->screenshots) > 1): ?>
@@ -205,8 +188,10 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
                     <?php endforeach; ?>
                   </nav>
                 <?php endif; ?>
-                <?php if ($detail->screenshots === []): ?>
-                  <div class="review-image-empty"><svg width="42" height="42" viewBox="0 0 48 48" fill="none" aria-hidden="true"><rect x="7" y="8" width="34" height="31" rx="3" stroke="currentColor" stroke-width="1.4"/><circle cx="17" cy="18" r="3" stroke="currentColor" stroke-width="1.4"/><path d="m8 34 10-10 8 7 6-6 9 9" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg><h4><?= $escape($t('Noch kein Bildbeleg')) ?></h4><p><?= $escape($t($latestJob !== null && in_array($latestJob->getStatus(), ['queued', 'running'], true) ? 'Der Screenshot entsteht im Hintergrund. Vorhandene Angaben kannst du schon ansehen.' : 'Für diesen Fall ist kein Screenshot gespeichert. Du kannst ihn überspringen oder anhand eigener Prüfung bewerten.')) ?></p></div>
+                <?php if (!$hasReadableImage): ?>
+                  <div class="review-vnc-primary">
+                    <?php $returnPath = $view->currentPath; require __DIR__.'/review-novnc-panel.php'; ?>
+                  </div>
                 <?php else: ?>
                   <?php foreach ($detail->screenshots as $index => $shot): ?>
                     <?php $localImage = $shot['available'] && is_string($shot['url']) && str_starts_with($shot['url'], '/artifacts/'); ?>

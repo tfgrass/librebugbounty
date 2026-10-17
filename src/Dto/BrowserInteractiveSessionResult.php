@@ -22,6 +22,10 @@ final readonly class BrowserInteractiveSessionResult
         public ?string $initialUrl = null,
         public ?int $initialHttpStatus = null,
         public array $dialogObservation = [],
+        public ?int $generation = null,
+        public bool $captureLocked = false,
+        public ?string $captureId = null,
+        public ?int $captureGeneration = null,
     ) {
     }
 }

@@ -47,12 +47,11 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
         [$finding, $trigger, $image] = $this->fixture();
         $before = $this->neutralState();
         $review = $this->request('/review');
-        $form = $this->xpath($review->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->item(0);
-        self::assertInstanceOf(\DOMElement::class, $form);
-        $parameters = [];
-        foreach ($form->getElementsByTagName('input') as $input) {
-            $parameters[$input->getAttribute('name')] = $input->getAttribute('value');
-        }
+        $query = $this->interactiveEntryReturnQuery($review->getContent(), $finding);
+        $parameters = [
+            '_token' => $this->token($finding->getId()),
+            'return_query' => http_build_query($query + ['evidence' => $image->getId()], '', '&', PHP_QUERY_RFC3986),
+        ];
         $parameters['return_query'] .= '&return_to=https%3A%2F%2Fevil.invalid&assessment=confirmed&message=forged';
         $started = $this->request($this->path($finding, 'start'), 'POST', $parameters);
         self::assertSame(303, $started->getStatusCode());
@@ -65,7 +64,7 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
         self::assertSame(0, $record['manual_action_count']);
         self::assertSame($this->browser->createdAt->format('Y-m-d\TH:i:s.vP'), $record['created_at']);
         self::assertSame(429, $record['initial_http_status']);
-        self::assertSame(['kind', 'images', 'trail', 'evidence', 'card'], array_keys($record['return_query']));
+        self::assertEqualsCanonicalizing(['kind', 'images', 'trail', 'evidence', 'card'], array_keys($record['return_query']));
 
         $show = $this->request($started->headers->get('Location'));
         self::assertSame(200, $show->getStatusCode());
@@ -354,7 +353,7 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
     }
 
     #[DataProvider('hiddenStartStates')]
-    public function testReviewHidesInteractiveStartWithoutReadableExplicitChallenge(string $state): void
+    public function testPermanentEntryRemainsAvailableWhileLegacyStartRequiresItsTrigger(string $state): void
     {
         [$finding, $job, $evidence] = $this->fixture();
         switch ($state) {
@@ -363,9 +362,11 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
             case 'unknown': $job->setCaptureMetadata(['challengeDetected' => true]); break;
         }
         $this->entityManager->flush();
-        $review = $this->request('/review');
+        $review = $this->request('/review?images=all');
         self::assertSame(200, $review->getStatusCode());
-        self::assertSame(0, $this->xpath($review->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->length);
+        $this->interactiveEntryReturnQuery($review->getContent(), $finding);
+        self::assertSame([], $this->browser->calls, 'Rendering the permanent entry never starts a worker');
+        // Retain direct coverage of the older PNG API's trigger validation.
         self::assertSame(409, $this->post($finding, 'start')->getStatusCode());
     }
 
@@ -376,7 +377,7 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
         yield 'unknown clearance' => ['unknown'];
     }
 
-    public function testReviewStartFormTargetsLatestEvidenceWhileOlderImageIsSelected(): void
+    public function testPermanentEntryPreservesSelectedImageAndLegacyStartValidatesLatestTrigger(): void
     {
         [$finding, , $older] = $this->fixture();
         $stored = self::getContainer()->get(EvidenceStorageInterface::class)->storeContents($finding, base64_decode(self::PNG, true), 'latest.png');
@@ -390,11 +391,15 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
         $this->entityManager->flush();
         $review = $this->request('/review?evidence='.$older->getId());
         self::assertSame(200, $review->getStatusCode());
-        $form = $this->xpath($review->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->item(0);
-        self::assertInstanceOf(\DOMElement::class, $form);
-        parse_str($this->xpath($review->getContent())->evaluate('string(//form[contains(@action, "/interactive-session/start")]/input[@name="return_query"]/@value)'), $query);
-        self::assertSame($latestEvidence->getId(), $query['evidence']);
-        self::assertSame(409, $this->post($finding, 'start', ['return_query' => 'evidence='.$older->getId()])->getStatusCode());
+        $query = $this->interactiveEntryReturnQuery($review->getContent(), $finding);
+        self::assertSame($older->getId(), $query['evidence']);
+        self::assertSame(409, $this->post($finding, 'start', ['return_query' => http_build_query($query, '', '&', PHP_QUERY_RFC3986)])->getStatusCode());
+        self::assertSame([], $this->browser->calls);
+        // A compatibility caller can still explicitly select the latest trigger.
+        $query['evidence'] = $latestEvidence->getId();
+        self::assertSame(303, $this->post($finding, 'start', ['return_query' => http_build_query($query, '', '&', PHP_QUERY_RFC3986)])->getStatusCode());
+        self::assertSame($latestJob->getId(), $this->record($finding)['trigger_job_id']);
+        self::assertSame($latestEvidence->getId(), $this->record($finding)['trigger_evidence_id']);
     }
 
     #[DataProvider('invalidInputs')]
@@ -643,6 +648,24 @@ final class StudioReviewInteractiveControllerTest extends DatabaseTestCase
         } finally {
             $stack->pop();
         }
+    }
+
+    private function interactiveEntryReturnQuery(string $html, Finding $finding): array
+    {
+        $xpath = $this->xpath($html);
+        $entries = $xpath->query('//a[@data-review-interactive-entry]');
+        self::assertSame(1, $entries->length);
+        $entry = $entries->item(0);
+        self::assertInstanceOf(\DOMElement::class, $entry);
+        self::assertSame('/review/'.$finding->getId().'/interactive', parse_url($entry->getAttribute('href'), PHP_URL_PATH));
+        self::assertSame('Interaktiv prüfen', trim($entry->textContent));
+        self::assertSame(0, $xpath->query('ancestor::details | ancestor::*[@hidden]', $entry)->length);
+        self::assertSame(0, $xpath->query('//form[contains(@action, "/interactive-session/start")]')->length);
+        parse_str((string) parse_url($entry->getAttribute('href'), PHP_URL_QUERY), $entryQuery);
+        self::assertSame('/review', parse_url($entryQuery['return_to'], PHP_URL_PATH));
+        parse_str((string) parse_url($entryQuery['return_to'], PHP_URL_QUERY), $query);
+
+        return $query;
     }
 
     private function request(string $path, string $method = 'GET', array $parameters = []): Response

@@ -107,6 +107,14 @@ jobs:
         run: python tests/browser/run_preferences.py
       - name: Test Review focus and assessment transitions with isolated fixtures
         run: python tests/browser/run_review.py
+      - name: Test embedded noVNC controls with synthetic RFB fixtures
+        run: node tests/browser/studio-review-novnc-ui.cjs
+        env:
+          STUDIO_BROWSER_OUTPUT: var/novnc-ui-acceptance
+      - name: Test composed PHP, lease and noVNC review flow
+        run: node tests/browser/studio-review-novnc-e2e.cjs
+        env:
+          STUDIO_BROWSER_OUTPUT: var/novnc-e2e-acceptance
       - name: Keep browser screenshots and fixture logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,4 +123,6 @@ jobs:
           path: |
             var/preferences-acceptance-*/
             var/review-focus-acceptance-*/
+            var/novnc-ui-acceptance/
+            var/novnc-e2e-acceptance/
           if-no-files-found: ignore

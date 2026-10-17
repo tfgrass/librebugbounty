@@ -86,12 +86,28 @@ try:
               // trail; the fresh fixture puts this finding first normally.
               await page.goto(base + "/review?images=ready");
               assert.equal(await page.locator('body').getAttribute('data-current-id'), findingId);
-              if (await page.locator(".review-interactive-start button").count() === 0) {
-                console.error("Interactive retry trigger absent at", page.url(), "title:", await page.title());
-                await page.screenshot({ path: path.join(process.env.STUDIO_BROWSER_OUTPUT, "interactive-trigger-missing.png"), fullPage: true });
-              }
-              await page.locator(".review-interactive-start button").click();
-              await page.waitForURL(/\/interactive-session$/);
+              const entry = page.locator("[data-review-interactive-entry]");
+              assert.equal(await entry.isVisible(), true);
+              const entryUrl = new URL(await entry.getAttribute("href"), base);
+              assert.equal(entryUrl.origin, base);
+              assert.equal(entryUrl.pathname, `/review/${findingId}/interactive`);
+              const returnQuery = new URL(page.url()).search.slice(1);
+              // The visible entry now opens noVNC. Fetch its CSRF token without
+              // running that UI; this fixture covers the legacy PNG flow only.
+              const interactivePage = await page.request.get(entryUrl.href);
+              assert.ok(interactivePage.ok());
+              const csrfToken = await page.evaluate(html => new DOMParser()
+                .parseFromString(html, "text/html")
+                .querySelector("[data-review-novnc][data-csrf-token]")
+                ?.getAttribute("data-csrf-token"), await interactivePage.text());
+              assert.ok(csrfToken);
+              const started = await page.request.post(base + `/review/${findingId}/interactive-session/start`, {
+                form: { _token: csrfToken, return_query: returnQuery },
+                maxRedirects: 0,
+              });
+              assert.equal(started.status(), 303, await started.text());
+              assert.equal(started.headers().location, `/review/${findingId}/interactive-session`);
+              await page.goto(base + started.headers().location);
 
               await page.locator("[data-initial-state]").waitFor();
               assert.equal(await page.locator("[data-initial-state]").getAttribute("data-initial-state"), "detected");

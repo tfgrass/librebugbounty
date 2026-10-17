@@ -33,6 +33,7 @@ services:
   App\Service\BrowserRetestTransportInterface: '@App\Service\PlaywrightBrowserRetestClient'
   App\Service\BrowserScreenshotClientInterface: '@App\Service\PlaywrightBrowserScreenshotClient'
   App\Service\BrowserInteractiveClientInterface: '@App\Service\PlaywrightBrowserInteractiveClient'
+  App\Service\FencedBrowserInteractiveClientInterface: '@App\Service\PlaywrightBrowserInteractiveClient'
   App\Service\EvidenceStorageInterface: '@App\Service\LocalEvidenceStorage'
   App\Service\ScreenshotEnqueuerInterface: '@App\Service\ScreenshotQueueService'
 
@@ -56,8 +57,21 @@ services:
 
   App\Service\PlaywrightBrowserInteractiveClient:
     arguments:
-      $workerUrl: '%app.playwright_worker_url%'
+      $workerUrl: '%env(default:app.playwright_worker_url:PLAYWRIGHT_INTERACTIVE_URL)%'
       $workerToken: '%env(default::PLAYWRIGHT_WORKER_TOKEN)%'
+
+  App\Service\InteractiveBrowserLeaseService:
+    arguments:
+      $ownerKey: '%env(APP_SECRET)%'
+
+  App\Service\InteractiveGatewayControlClient:
+    arguments:
+      $workerUrl: '%env(default:app.playwright_worker_url:PLAYWRIGHT_INTERACTIVE_URL)%'
+      $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'
+
+  App\Controller\InteractiveGatewayAuthController:
+    arguments:
+      $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'
 
   app.security_txt_transport:
     class: Symfony\Contracts\HttpClient\HttpClientInterface

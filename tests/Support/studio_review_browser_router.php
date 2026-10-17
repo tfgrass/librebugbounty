@@ -14,7 +14,9 @@ foreach ([
     'DATABASE_URL' => 'sqlite:///'.$root.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => $root.'/artifacts',
     'PLAYWRIGHT_WORKER_URL' => (string) (getenv('STUDIO_BROWSER_WORKER_BASE') ?: 'http://127.0.0.1:1'),
+    'PLAYWRIGHT_INTERACTIVE_URL' => (string) (getenv('STUDIO_BROWSER_WORKER_BASE') ?: 'http://127.0.0.1:1'),
     'PLAYWRIGHT_WORKER_TOKEN' => (string) (getenv('STUDIO_BROWSER_WORKER_TOKEN') ?: ''),
+    'PLAYWRIGHT_GATEWAY_TOKEN' => 'p8-isolated-gateway-token',
     'RETEST_DEFAULT_TIMEOUT_MS' => '1000',
 ] as $key => $value) {
     putenv($key.'='.$value);

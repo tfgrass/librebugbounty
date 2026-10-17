@@ -3,7 +3,8 @@
 /**
  * German phrases are the source keys of the UI; English is its default. Keeping the
  * source phrases as stable keys makes omissions visible instead of hiding them
- * behind generated identifiers.
+ * behind generated identifiers. This includes the shared noVNC panel: new
+ * source phrases in ui.en.php automatically remain identical in German.
  *
  * @var array<string, string> $english
  */

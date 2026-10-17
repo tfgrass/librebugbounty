@@ -16,8 +16,12 @@ web_environment:
   - DATABASE_URL=sqlite:////var/www/html/storage/database/app.sqlite
   - EVIDENCE_STORAGE_DIR=/var/www/html/storage/artifacts
   - PLAYWRIGHT_WORKER_URL=http://playwright:3000
+  - PLAYWRIGHT_INTERACTIVE_URL=http://playwright-interactive:3000
   # Development-only shared token; keep web, base worker and all shot lanes in sync.
   - PLAYWRIGHT_WORKER_TOKEN=local-ddev-playwright-worker-token
+  # Development-only private callback/control credential, distinct from APP_SECRET
+  # and PLAYWRIGHT_WORKER_TOKEN. Never deploy this literal as a production secret.
+  - PLAYWRIGHT_GATEWAY_TOKEN=local-ddev-interactive-gateway-token
   - RETEST_DEFAULT_TIMEOUT_MS=10000
 hooks:
   post-start:

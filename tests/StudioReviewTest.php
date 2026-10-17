@@ -17,13 +17,15 @@ use App\Service\FindingNavigation;
 use App\Service\FindingService;
 use App\Service\ReviewQueueService;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
+use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
 
 final class StudioReviewTest extends DatabaseTestCase
 {
-    public function testInteractiveRetryUsesNewestAvailableJobRatherThanNewerFailedAttempt(): void
+    public function testPermanentInteractiveEntryUsesNewestAvailableJobOnlyForItsRecommendation(): void
     {
         $finding = $this->finding('interactive-trigger-selection');
         $image = $this->image($finding);
@@ -39,9 +41,10 @@ final class StudioReviewTest extends DatabaseTestCase
         $this->entityManager->flush();
         $response = $this->request('/review?images=ready');
         self::assertSame(200, $response->getStatusCode());
-        self::assertSame(1, $this->xpath($response->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->length);
+        $entry = $this->interactiveEntry($response->getContent(), $finding);
+        self::assertStringContainsString('review-interactive-recommended', $entry->getAttribute('class'));
 
-        // A newer successful result must prevent falling back to the older challenge.
+        // A newer clear result removes the recommendation, while manual entry stays available.
         $newer = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())->setStatus('available')
             ->setRequestedAt(new \DateTimeImmutable('2026-01-03'))
             ->setCapturedAt(new \DateTimeImmutable('2026-01-03 00:00:01'))
@@ -51,7 +54,8 @@ final class StudioReviewTest extends DatabaseTestCase
         $this->entityManager->flush();
         $response = $this->request('/review?images=ready');
         self::assertSame(200, $response->getStatusCode());
-        self::assertSame(0, $this->xpath($response->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->length);
+        $entry = $this->interactiveEntry($response->getContent(), $finding);
+        self::assertStringNotContainsString('review-interactive-recommended', $entry->getAttribute('class'));
     }
 
     private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1sAAAAASUVORK5CYII=';
@@ -107,12 +111,15 @@ final class StudioReviewTest extends DatabaseTestCase
 
         $review = $this->request('/review?images=ready');
         self::assertSame(200, $review->getStatusCode());
-        $startForm = $this->xpath($review->getContent())->query('//form[contains(@action, "/interactive-session/start")]')->item(0);
-        self::assertInstanceOf(\DOMElement::class, $startForm);
-        $startParameters = [];
-        foreach ($startForm->getElementsByTagName('input') as $input) {
-            $startParameters[$input->getAttribute('name')] = $input->getAttribute('value');
-        }
+        $entry = $this->interactiveEntry($review->getContent(), $finding);
+        parse_str((string) parse_url($entry->getAttribute('href'), PHP_URL_QUERY), $entryQuery);
+        parse_str((string) parse_url($entryQuery['return_to'], PHP_URL_QUERY), $returnQuery);
+        // Exercise the retained PNG compatibility API directly; Review now links
+        // to the read-only noVNC page rather than submitting this start route.
+        $startParameters = [
+            '_token' => $this->interactiveToken($finding),
+            'return_query' => http_build_query($returnQuery + ['evidence' => $image->getId()], '', '&', PHP_QUERY_RFC3986),
+        ];
 
         $started = $this->request('/review/'.$finding->getId().'/interactive-session/start', 'POST', $startParameters);
         self::assertSame(303, $started->getStatusCode());
@@ -593,6 +600,34 @@ final class StudioReviewTest extends DatabaseTestCase
     private function submit(Finding $finding, array $parameters): Response
     {
         return $this->request('/review/'.$finding->getId().'/assessment', 'POST', $parameters);
+    }
+
+    private function interactiveEntry(string $html, Finding $finding): \DOMElement
+    {
+        $xpath = $this->xpath($html);
+        $entries = $xpath->query('//a[@data-review-interactive-entry]');
+        self::assertSame(1, $entries->length);
+        $entry = $entries->item(0);
+        self::assertInstanceOf(\DOMElement::class, $entry);
+        self::assertSame('/review/'.$finding->getId().'/interactive', parse_url($entry->getAttribute('href'), PHP_URL_PATH));
+        self::assertSame('Interaktiv prüfen', trim($entry->textContent));
+        self::assertSame(0, $xpath->query('ancestor::details | ancestor::*[@hidden]', $entry)->length);
+        self::assertSame(0, $xpath->query('//form[contains(@action, "/interactive-session/start")]')->length);
+
+        return $entry;
+    }
+
+    private function interactiveToken(Finding $finding): string
+    {
+        $request = Request::create('/review');
+        $request->setSession($this->session);
+        $stack = self::getContainer()->get(RequestStack::class);
+        $stack->push($request);
+        try {
+            return self::getContainer()->get(CsrfTokenManagerInterface::class)->getToken('review_interactive_'.$finding->getId())->getValue();
+        } finally {
+            $stack->pop();
+        }
     }
 
     private function form(string $html): array

@@ -444,7 +444,16 @@
 
 .review-trail-limit { display: block; margin-top: 2px; color: #9aafc9; font-size: 9px; }
 
-.review-capture-state:has(.review-interactive-start) { max-height: none; }
-.review-interactive-start { display: grid; flex-basis: 100%; min-width: 0; gap: 4px; justify-items: start; }
-.review-interactive-start p { margin: 0; color: var(--studio-muted); font-size: 10px; overflow-wrap: anywhere; }
 .review-shot figcaption .review-interactive-label { color: var(--studio-amber); }
+
+/* Interactivity is discoverable without opening the inspector, in either mode. */
+.review-interactive-entry { flex-shrink: 0; min-height: 32px; white-space: nowrap; }
+[data-review-focus-mode="true"] .review-case-heading > .review-interactive-entry { display: inline-flex; max-width: none; }
+.review-interactive-recommended { border-color: var(--studio-amber); color: var(--studio-amber); }
+.review-vnc-primary { width: 100%; min-width: 0; min-height: 0; flex: 1 1 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.review-vnc-primary .novnc-panel { height: 100%; min-height: 0; overflow: auto; }
+.review-vnc-primary .novnc-viewport { height: auto; min-height: 220px; flex: 1 0 220px; }
+[data-review-focus-mode="true"] .review-vnc-primary { position: absolute; inset: 104px 194px 132px 12px; width: auto; z-index: 2; background: #080d13; border-radius: 12px; }
+[data-review-focus-mode="true"] .review-vnc-primary .novnc-panel { min-height: 100%; }
+@media (max-width: 760px) { [data-review-focus-mode="true"] .review-vnc-primary { inset: 176px 8px 180px; } }
+@media (max-width: 640px) { .review-case-heading { flex-wrap: wrap; } .review-interactive-entry { font-size: 10px !important; padding: 5px 8px; } }

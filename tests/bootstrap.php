@@ -15,6 +15,9 @@ foreach ([
     'DATABASE_URL' => 'sqlite:///'.APP_TEST_ROOT.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => APP_TEST_ROOT.'/artifacts',
     'PLAYWRIGHT_WORKER_URL' => 'http://127.0.0.1:1',
+    'PLAYWRIGHT_INTERACTIVE_URL' => 'http://127.0.0.1:1',
+    'PLAYWRIGHT_WORKER_TOKEN' => 'isolated-phpunit-worker-token',
+    'PLAYWRIGHT_GATEWAY_TOKEN' => 'isolated-phpunit-gateway-token',
 ] as $key => $value) {
     putenv($key.'='.$value);
     $_SERVER[$key] = $_ENV[$key] = $value;

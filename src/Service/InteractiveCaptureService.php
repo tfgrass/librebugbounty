@@ -70,7 +70,16 @@ final class InteractiveCaptureService
         return new InteractiveCaptureSaveResult($saved->job, $saved->evidence, $closeError === null, $closeError);
     }
 
-    private function persistCapture(Finding $finding, string $sessionId, array $context): InteractiveCaptureSaveResult
+    /** Capture/files occur outside the lease lock; evidence and closing commit together. */
+    public function persistForLease(Finding $finding, string $sessionId, array $context, InteractiveBrowserLeaseService $lease, int $generation): InteractiveCaptureSaveResult
+    {
+        $context['manual_entry'] = true;
+        $context['input_method'] = 'vnc';
+        $context['lease_generation'] = $generation;
+        return $this->persistCapture($finding, $sessionId, $context, $lease, $generation);
+    }
+
+    private function persistCapture(Finding $finding, string $sessionId, array $context, ?InteractiveBrowserLeaseService $lease = null, ?int $generation = null): InteractiveCaptureSaveResult
     {
         $manager = $this->entityManager();
         $connection = $manager->getConnection();
@@ -91,7 +100,14 @@ final class InteractiveCaptureService
         $storedPath = null;
         $ownsTransaction = false;
         try {
-            $result = $this->client->captureInteractive($sessionId);
+            if ($lease !== null) {
+                if (!$this->client instanceof FencedBrowserInteractiveClientInterface || $generation === null) {
+                    throw new \LogicException('A generation-aware browser client is required.');
+                }
+                $result = $this->client->captureFenced($sessionId, $generation);
+            } else {
+                $result = $this->client->captureInteractive($sessionId);
+            }
             $binary = base64_decode($result->screenshotBase64, true);
             $image = $binary === false ? false : @getimagesizefromstring($binary);
             if ($image === false || $image[2] !== IMAGETYPE_PNG) {
@@ -123,19 +139,27 @@ final class InteractiveCaptureService
                 ->setScreenshotPath($stored->relativePath)
                 ->setCaptureMetadata(array_replace($this->metadata($result, $context), ['sha256' => $stored->sha256]));
 
-            $connection->beginTransaction();
-            $ownsTransaction = true;
-            $this->assertAllowed($finding);
-            $this->assertContext($finding, $context, $connection);
-            $writer->persist($job);
-            $writer->persist($evidence);
-            $writer->flush();
-            // Evidence and job have been written before completion is stamped.
-            // Both flushes commit atomically; either failure rolls both back.
-            $job->setFinishedAt(new \DateTimeImmutable());
-            $writer->flush();
-            $connection->commit();
-            $ownsTransaction = false;
+            $persist = function () use ($finding, $context, $connection, $writer, $job, $evidence): void {
+                $this->assertAllowed($finding);
+                $this->assertContext($finding, $context, $connection);
+                $writer->persist($job);
+                $writer->persist($evidence);
+                $writer->flush();
+                $job->setFinishedAt(new \DateTimeImmutable());
+                $writer->flush();
+            };
+            if ($lease !== null && $generation !== null) {
+                $lease->withLeaseLock($finding->getId(), $generation, function (Connection $lockedConnection) use ($persist, $connection): void {
+                    if ($lockedConnection !== $connection) { throw new \LogicException('Lease and evidence must share one connection.'); }
+                    $persist();
+                });
+            } else {
+                $connection->beginTransaction();
+                $ownsTransaction = true;
+                $persist();
+                $connection->commit();
+                $ownsTransaction = false;
+            }
 
             return new InteractiveCaptureSaveResult($job, $evidence);
         } catch (\Throwable $error) {
@@ -195,32 +219,34 @@ final class InteractiveCaptureService
         }
         $jobId = $context['trigger_job_id'] ?? null;
         $evidenceId = $context['trigger_evidence_id'] ?? null;
-        if (!is_string($jobId) || $jobId === '' || !is_string($evidenceId) || $evidenceId === '') {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture requires its triggering screenshot job and evidence.');
-        }
-        $job = $connection->fetchAssociative(
-            'SELECT url, status, screenshot_path, capture_metadata FROM screenshot_job WHERE id = ? AND finding_id = ?', [$jobId, $finding->getId()]);
-        $evidence = $connection->fetchAssociative(
-            'SELECT file_path, sha256 FROM evidence WHERE id = ? AND finding_id = ? AND kind = ?', [$evidenceId, $finding->getId(), EvidenceKind::SCREENSHOT]);
-        if ($job === false || $evidence === false || $job['url'] !== $context['start_url']
-            || $job['status'] !== ScreenshotJobStatus::AVAILABLE
-            || !is_string($job['screenshot_path']) || $job['screenshot_path'] === ''
-            || $job['screenshot_path'] !== $evidence['file_path']
-            || !$this->storage->exists($evidence['file_path'])) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture trigger no longer matches an available screenshot for the start URL.');
-        }
-        $metadata = $job['capture_metadata'] === null ? [] : json_decode($job['capture_metadata'], true);
-        if (!is_array($metadata) || ($metadata['challengeDetected'] ?? null) !== true
-            || ($metadata['challengeCleared'] ?? null) !== false
-            || $this->latestEligibleTriggerId($finding, $context['start_url'], $connection) !== $jobId) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture trigger is no longer the latest eligible unresolved challenge screenshot.');
-        }
-        $hash = hash('sha256', json_encode([
-            $jobId, $job['url'], $job['status'], $job['screenshot_path'], $metadata,
-            $evidenceId, $evidence['file_path'], $evidence['sha256'],
-        ], JSON_THROW_ON_ERROR));
-        if (($context['trigger_hash'] ?? null) !== $hash) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture trigger changed since session start.');
+        if (($context['manual_entry'] ?? false) !== true || $jobId !== null || $evidenceId !== null) {
+            if (!is_string($jobId) || $jobId === '' || !is_string($evidenceId) || $evidenceId === '') {
+                throw new InteractiveCaptureInvalidatedException('Interactive capture requires its triggering screenshot job and evidence.');
+            }
+            $job = $connection->fetchAssociative(
+                'SELECT url, status, screenshot_path, capture_metadata FROM screenshot_job WHERE id = ? AND finding_id = ?', [$jobId, $finding->getId()]);
+            $evidence = $connection->fetchAssociative(
+                'SELECT file_path, sha256 FROM evidence WHERE id = ? AND finding_id = ? AND kind = ?', [$evidenceId, $finding->getId(), EvidenceKind::SCREENSHOT]);
+            if ($job === false || $evidence === false || $job['url'] !== $context['start_url']
+                || $job['status'] !== ScreenshotJobStatus::AVAILABLE
+                || !is_string($job['screenshot_path']) || $job['screenshot_path'] === ''
+                || $job['screenshot_path'] !== $evidence['file_path']
+                || !$this->storage->exists($evidence['file_path'])) {
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger no longer matches an available screenshot for the start URL.');
+            }
+            $metadata = $job['capture_metadata'] === null ? [] : json_decode($job['capture_metadata'], true);
+            if (!is_array($metadata) || (($context['manual_entry'] ?? false) !== true
+                && (($metadata['challengeDetected'] ?? null) !== true || ($metadata['challengeCleared'] ?? null) !== false
+                || $this->latestEligibleTriggerId($finding, $context['start_url'], $connection) !== $jobId))) {
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger is no longer the latest eligible unresolved challenge screenshot.');
+            }
+            $hash = hash('sha256', json_encode([
+                $jobId, $job['url'], $job['status'], $job['screenshot_path'], $metadata,
+                $evidenceId, $evidence['file_path'], $evidence['sha256'],
+            ], JSON_THROW_ON_ERROR));
+            if (($context['trigger_hash'] ?? null) !== $hash) {
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger changed since session start.');
+            }
         }
         if (array_key_exists('initial_challenge', $context) && !is_array($context['initial_challenge'])) {
             throw new InteractiveCaptureInvalidatedException('Initial challenge inspection must be an array.');
@@ -288,8 +314,10 @@ final class InteractiveCaptureService
             'workerMetadata' => $worker,
             'interactive' => true,
             'manual' => true,
-            'manualActionCount' => $context['manual_action_count'] ?? null,
-            'manualInteraction' => ($context['manual_action_count'] ?? 0) > 0,
+            'inputMethod' => $context['input_method'] ?? 'bounded-input',
+            'manualActionCount' => ($context['input_method'] ?? null) === 'vnc' ? null : ($context['manual_action_count'] ?? null),
+            'manualInteraction' => ($context['input_method'] ?? null) === 'vnc' ? null : (($context['manual_action_count'] ?? 0) > 0),
+            'saveGeneration' => $context['lease_generation'] ?? null,
             'freshContext' => true,
             'retryOf' => $trigger,
             'triggeredBy' => $trigger,
