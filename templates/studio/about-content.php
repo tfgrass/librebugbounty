@@ -48,9 +48,9 @@
       <section class="studio-about-release-notes" data-release-notes aria-labelledby="release-notes-title">
         <h3 id="release-notes-title"><?= $escape($t('Neu in {version}', ['version' => $app['version']])) ?></h3>
         <ul>
-          <li><strong><?= $escape($t('Interaktiv im Worker-Browser prüfen')) ?></strong><p><?= $escape($t('Öffne einen frischen Chromium-Kontext direkt im Review – eingebettet per noVNC, bei Bedarf im Vollbild. Die bestehende Screenshot-Ansicht bleibt erhalten.')) ?></p></li>
-          <li><strong><?= $escape($t('Dialogbelege gezielt sichern')) ?></strong><p><?= $escape($t('Festgehaltene Dialogbilder bleiben neben dem Live-Browser sichtbar. Du speicherst den Beleg und wählst ihn ausdrücklich als Grundlage deiner Bewertung.')) ?></p></li>
-          <li><strong><?= $escape($t('Worker-Status auf einen Blick')) ?></strong><p><?= $escape($t('Recheck- und Screenshot-Worker, Warteschlangen und Fehler sind direkt sichtbar. Einstellungen, Status und Projektinformationen haben eigene Zugänge im Footer.')) ?></p></li>
+          <li><strong><?= $escape($t('Dialog-Recovery und PoC-Übernahme')) ?></strong><p><?= $escape($t('Erreiche den Alert im interaktiven Browser, wiederhole fehlgeschlagene Aufnahmen und übernimm eine geänderte URL für PoC und Rechecks. Original und Bildquelle bleiben nachvollziehbar.')) ?></p></li>
+          <li><strong><?= $escape($t('Review gezielt zurückstellen')) ?></strong><p><?= $escape($t('Parke vorübergehend nicht prüfbare Fälle mit Grund und Termin. Zum Termin wird einmal getestet; ein erneuter Fehler lässt den Fall zurückgestellt.')) ?></p></li>
+          <li><strong><?= $escape($t('Sitzungsfortschritt und Arbeitskorb')) ?></strong><p><?= $escape($t('Behalte Erfassungstempo und letzte Einträge im Blick, klappe Statistiken bei Bedarf ein und arbeite offene Wiedervorlagen nach Termin ab. Hilfe und Updatehinweise stehen direkt bereit.')) ?></p></li>
         </ul>
       </section>
 

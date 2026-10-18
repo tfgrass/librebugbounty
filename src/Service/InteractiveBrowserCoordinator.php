@@ -21,8 +21,10 @@ final class InteractiveBrowserCoordinator
     public function status(Finding $finding, string $owner, ?string $channel): array
     {
         $row = $this->leases->current();
-        $payload = $this->view($row, $finding->getId(), $owner, $channel);
-        try { $this->assertAllowed($finding->getId(), $finding->getUrl()); }
+        $payload = array_replace($this->view($row, $finding->getId(), $owner, $channel), [
+            'pocUrl' => $finding->getPocUrl(), 'pocRevision' => $finding->getPocRevision(),
+        ]);
+        try { $this->assertAllowed($finding->getId(), $finding->getPocUrl()); }
         catch (\Throwable) { return array_replace($payload, ['state' => 'revoked', 'reason' => 'checks_blocked', 'canTakeover' => false, 'reconnect' => false]); }
         if ($row['state'] === 'available' || ($row['finding_id'] ?? null) !== $finding->getId()) { return $payload; }
         if (!$this->bindingAllowed($row)) {
@@ -41,6 +43,8 @@ final class InteractiveBrowserCoordinator
             $payload['dialogObservation'] = $this->dialogView($worker->dialogObservation);
             $payload['retainedDialog'] = $this->retainedDialogView($worker->retainedDialog);
             $payload['dialogCapture'] = $this->dialogCaptureView($worker->dialogCapture);
+            $payload['urlCandidates'] = $this->urlCandidatesView($worker->urlCandidates);
+            $payload['urlCandidatesTruncated'] = $worker->urlCandidatesTruncated;
         } catch (\Throwable $error) {
             $payload['state'] = in_array((int) $error->getCode(), [404, 410], true) ? 'expired' : 'worker_unavailable';
             $payload['reconnect'] = false;
@@ -70,10 +74,10 @@ final class InteractiveBrowserCoordinator
         if ($revision < 1) { throw new \RuntimeException('Interactive revision required.', 400); }
         $row = $this->ownedRow($finding->getId(), $owner, $channel ?? '', $revision);
         if (($row['expires_at'] ?? 0) <= time()) { throw new \RuntimeException('Interactive session expired.', 410); }
-        $this->assertAllowed($finding->getId(), $finding->getUrl());
+        $this->assertAllowed($finding->getId(), $finding->getPocUrl());
         if (!$this->bindingAllowed($row) || !is_string($row['worker_id'] ?? null)
             || ($row['binding']['finding_id'] ?? null) !== $finding->getId()
-            || ($row['binding']['start_url'] ?? null) !== $finding->getUrl()
+            || ($row['binding']['start_url'] ?? null) !== $finding->getPocUrl()
             || ($before !== null && ($row['binding'] !== $before['binding'] || $row['worker_id'] !== $before['worker_id']))) {
             throw new \RuntimeException('Interactive binding changed.', 409);
         }
@@ -82,7 +86,7 @@ final class InteractiveBrowserCoordinator
 
     public function acquire(Finding $finding, string $owner, string $channel, ?int $revision): array
     {
-        $this->assertAllowed($finding->getId(), $finding->getUrl());
+        $this->assertAllowed($finding->getId(), $finding->getPocUrl());
         $row = $this->leases->current();
         if ($row['state'] === 'activating' && $this->owns($row, $owner, $channel) && $row['finding_id'] === $finding->getId()) {
             $this->assertRevision($row, $revision);
@@ -110,15 +114,15 @@ final class InteractiveBrowserCoordinator
             }
         }
         $binding = [
-            'finding_id' => $finding->getId(), 'start_url' => $finding->getUrl(),
-            'start_url_hash' => hash('sha256', $finding->getUrl()), 'manual_entry' => true,
-            'input_method' => 'vnc',
+            'finding_id' => $finding->getId(), 'start_url' => $finding->getPocUrl(),
+            'start_url_hash' => hash('sha256', $finding->getPocUrl()), 'manual_entry' => true,
+            'input_method' => 'vnc', 'poc_revision' => $finding->getPocRevision(),
         ];
         $row = $this->leases->acquire($binding, $owner, $channel, $revision);
         $sessionId = bin2hex(random_bytes(24));
         $this->leases->attach($row['generation'], $sessionId, time(), time() + 1200);
         try {
-            $worker = $this->browser->startFenced($finding->getUrl(), $this->settings->getReviewScanTimeoutMs(), $row['generation'], $sessionId);
+            $worker = $this->browser->startFenced($finding->getPocUrl(), $this->settings->getReviewScanTimeoutMs(), $row['generation'], $sessionId);
             $row = $this->leases->attach($row['generation'], $worker->id, $worker->createdAt->getTimestamp(), $worker->expiresAt->getTimestamp(), [
                 'created_at' => $worker->createdAt->format('Y-m-d\TH:i:s.vP'),
                 'initial_challenge' => $worker->initialChallenge, 'initial_http_status' => $worker->initialHttpStatus,
@@ -133,7 +137,7 @@ final class InteractiveBrowserCoordinator
 
     public function takeover(Finding $finding, string $owner, string $channel, int $revision): array
     {
-        $this->assertAllowed($finding->getId(), $finding->getUrl());
+        $this->assertAllowed($finding->getId(), $finding->getPocUrl());
         $row = $this->leases->current();
         if (!$this->bindingAllowed($row)) { throw new \RuntimeException('Interactive binding changed; restart required.', 409); }
         $row = $this->leases->takeover($finding->getId(), $owner, $channel, $revision);
@@ -148,7 +152,7 @@ final class InteractiveBrowserCoordinator
 
     public function endAndStart(Finding $finding, string $owner, string $channel, int $revision): array
     {
-        $this->assertAllowed($finding->getId(), $finding->getUrl());
+        $this->assertAllowed($finding->getId(), $finding->getPocUrl());
         $row = $this->leases->current();
         $this->assertRevision($row, $revision);
         if ($row['state'] === 'closing') { throw new \RuntimeException('Interactive session is closing.', 409); }
@@ -156,13 +160,13 @@ final class InteractiveBrowserCoordinator
         return $this->acquire($finding, $owner, $channel, $this->leases->current()['generation']);
     }
 
-    public function save(Finding $finding, string $owner, string $channel, int $revision, ?string $expectedCandidateId): InteractiveCaptureSaveResult
+    public function save(Finding $finding, string $owner, string $channel, int $revision, ?string $expectedCandidateId, array $pocSelection = []): InteractiveCaptureSaveResult
     {
         $row = $this->ownedRow($finding->getId(), $owner, $channel, $revision);
-        $this->assertAllowed($finding->getId(), $row['binding']['start_url']);
+        $this->assertAllowed($finding->getId(), $row['binding']['start_url'], (int) ($row['binding']['poc_revision'] ?? 0));
         // No finally-close: losing a generation race must not destroy the new
         // owner's browser. File/RPC work is outside the final SQLite lock.
-        $saved = $this->captures->persistForLease($finding, $row['worker_id'], $row['binding'], $this->leases, $row['generation'], $expectedCandidateId);
+        $saved = $this->captures->persistForLease($finding, $row['worker_id'], $row['binding'], $this->leases, $row['generation'], $expectedCandidateId, $pocSelection);
         $closed = true;
         $closeError = null;
         try { $this->closeRow($row); }
@@ -182,16 +186,17 @@ final class InteractiveBrowserCoordinator
         return ['decision' => 'allow', 'generation' => $row['generation'], 'grantMs' => 1000];
     }
 
-    public function assertAllowed(string $findingId, string $url): void
+    public function assertAllowed(string $findingId, string $url, ?int $pocRevision = null): void
     {
         $parts = parse_url($url);
         if (!is_array($parts) || !in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
             || ($parts['host'] ?? '') === '' || preg_match('/[\x00-\x20\x7f]/', str_replace(' ', '%20', $url))) {
             throw new \RuntimeException('Unsupported interactive URL.', 409);
         }
-        $row = $this->connection->fetchAssociative('SELECT url, status, manual_assessment, '
+        $row = $this->connection->fetchAssociative('SELECT COALESCE(poc_url, url) AS active_url, poc_revision, method, status, manual_assessment, '
             .FindingWorkPolicy::checksAllowedSql($this->connection, 'finding').' AS checks_allowed FROM finding WHERE id = ?', [$findingId]);
-        if (!$row || $row['url'] !== $url || in_array($row['status'], ['discarded', 'duplicate'], true)
+        if (!$row || $row['active_url'] !== $url || ($pocRevision !== null && (int) $row['poc_revision'] !== $pocRevision)
+            || strtoupper($row['method']) !== 'GET' || in_array($row['status'], ['discarded', 'duplicate'], true)
             || $row['manual_assessment'] === 'discarded' || !(bool) $row['checks_allowed']) {
             throw new \RuntimeException('Interactive checks are not allowed or the finding changed.', 409);
         }
@@ -202,7 +207,7 @@ final class InteractiveBrowserCoordinator
         try {
             if (!is_string($row['finding_id'] ?? null) || !is_string($row['binding']['start_url'] ?? null)
                 || ($row['binding']['start_url_hash'] ?? null) !== hash('sha256', $row['binding']['start_url'])) { return false; }
-            $this->assertAllowed($row['finding_id'], $row['binding']['start_url']);
+            $this->assertAllowed($row['finding_id'], $row['binding']['start_url'], (int) ($row['binding']['poc_revision'] ?? 0));
             return true;
         } catch (\Throwable) { return false; }
     }
@@ -287,6 +292,19 @@ final class InteractiveBrowserCoordinator
         }
         if (is_string($dialog['id'] ?? null) && preg_match('/^[a-f0-9]{48}$/D', $dialog['id']) === 1) {
             $view['id'] = $dialog['id'];
+        }
+        $view['urlCandidates'] = $this->urlCandidatesView($dialog['urlCandidates'] ?? []);
+        $view['urlCandidatesTruncated'] = ($dialog['urlCandidatesTruncated'] ?? false) === true;
+        return $view;
+    }
+
+    private function urlCandidatesView(array $candidates): array
+    {
+        $view = [];
+        foreach (array_slice($candidates, 0, 24) as $candidate) {
+            if (!is_array($candidate) || !is_string($candidate['url'] ?? null) || strlen($candidate['url']) > 10000
+                || !is_string($candidate['observedAt'] ?? null) || !is_array($candidate['roles'] ?? null)) { continue; }
+            $view[] = array_intersect_key($candidate, array_flip(['url', 'roles', 'observedAt', 'pageId', 'pageType', 'openerPageId', 'navigationSequence']));
         }
         return $view;
     }

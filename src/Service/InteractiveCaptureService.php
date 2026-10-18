@@ -24,6 +24,7 @@ final class InteractiveCaptureService
         private readonly ManagerRegistry $doctrine,
         private readonly SettingsService $settings,
         private readonly FindingWorkPolicy $workPolicy,
+        private readonly ?FindingPocService $poc = null,
     ) {
     }
 
@@ -33,7 +34,7 @@ final class InteractiveCaptureService
         $this->client->waitUntilReady();
         $this->assertAllowed($finding);
 
-        return $this->client->startInteractive($finding->getUrl(), $this->settings->getReviewScanTimeoutMs());
+        return $this->client->startInteractive($finding->getPocUrl(), $this->settings->getReviewScanTimeoutMs());
     }
 
     /**
@@ -54,7 +55,7 @@ final class InteractiveCaptureService
             try {
                 $this->client->closeInteractive($sessionId);
             } catch (\Throwable $closeError) {
-                throw new InteractiveCaptureInvalidatedException($error->getMessage().' Worker session close also failed: '.$closeError->getMessage(), 0, $error);
+                throw new InteractiveCaptureInvalidatedException($error->getMessage().' Worker session close also failed: '.$closeError->getMessage(), 409, $error);
             }
             throw $error;
         }
@@ -71,11 +72,12 @@ final class InteractiveCaptureService
     }
 
     /** Capture/files occur outside the lease lock; evidence and closing commit together. */
-    public function persistForLease(Finding $finding, string $sessionId, array $context, InteractiveBrowserLeaseService $lease, int $generation, ?string $expectedCandidateId): InteractiveCaptureSaveResult
+    public function persistForLease(Finding $finding, string $sessionId, array $context, InteractiveBrowserLeaseService $lease, int $generation, ?string $expectedCandidateId, array $pocSelection = []): InteractiveCaptureSaveResult
     {
         $context['manual_entry'] = true;
         $context['input_method'] = 'vnc';
         $context['lease_generation'] = $generation;
+        $context['poc_selection'] = $pocSelection;
         return $this->persistCapture($finding, $sessionId, $context, $lease, $generation, $expectedCandidateId);
     }
 
@@ -89,6 +91,7 @@ final class InteractiveCaptureService
         $this->assertAllowed($finding);
         $this->assertContext($finding, $context, $connection);
 
+        $selection = $this->pocSelection($finding, $context);
         $captureRequestedAt = new \DateTimeImmutable();
         $sessionStartedAt = $this->sessionStartedAt($context);
         $requestedAt = $sessionStartedAt ?? $captureRequestedAt;
@@ -108,6 +111,7 @@ final class InteractiveCaptureService
             } else {
                 $result = $this->client->captureInteractive($sessionId);
             }
+            $this->assertSelectionObserved($selection, $result);
             $binary = base64_decode($result->screenshotBase64, true);
             $image = $binary === false ? false : @getimagesizefromstring($binary);
             if ($image === false || $image[2] !== IMAGETYPE_PNG) {
@@ -126,7 +130,8 @@ final class InteractiveCaptureService
             $this->assertContext($finding, $context, $connection);
             $stored = $this->storage->storeContents($finding, $binary, 'interactive-'.$job->getId().'.png');
             $storedPath = $stored->relativePath;
-            $boundFinding = $writer->getReference(Finding::class, $finding->getId());
+            $boundFinding = $writer->find(Finding::class, $finding->getId());
+            if (!$boundFinding instanceof Finding) { throw new InteractiveCaptureInvalidatedException('Finding no longer exists.', 409); }
             $evidence = (new Evidence())
                 ->setFinding($boundFinding)
                 ->setKind(EvidenceKind::SCREENSHOT)
@@ -137,13 +142,20 @@ final class InteractiveCaptureService
                 ->setStatus(ScreenshotJobStatus::AVAILABLE)
                 ->setCapturedAt($capturedAt)
                 ->setScreenshotPath($stored->relativePath)
-                ->setCaptureMetadata(array_replace($this->metadata($result, $context), ['sha256' => $stored->sha256]));
+                ->setCaptureMetadata(array_replace($this->metadata($result, $context), [
+                    'sha256' => $stored->sha256,
+                    'pocUrl' => $selection['mode'] === 'keep' ? $context['start_url'] : $selection['url'],
+                    'queuedPocRevision' => $selection['revision'] + ($selection['mode'] !== 'keep' && $selection['url'] !== $context['start_url'] ? 1 : 0),
+                ]));
 
-            $persist = function () use ($finding, $context, $connection, $writer, $job, $evidence): void {
+            $persist = function () use ($finding, $boundFinding, $context, $selection, $connection, $writer, $job, $evidence): void {
                 $this->assertAllowed($finding);
                 $this->assertContext($finding, $context, $connection);
                 $writer->persist($job);
                 $writer->persist($evidence);
+                if ($selection['mode'] !== 'keep') {
+                    ($this->poc ?? new FindingPocService($this->entityManager()->getConnection()))->apply($boundFinding, $selection['url'], $selection['revision'], $selection['mode'], $evidence, $job, $writer);
+                }
                 $writer->flush();
                 $job->setFinishedAt(new \DateTimeImmutable());
                 $writer->flush();
@@ -156,11 +168,18 @@ final class InteractiveCaptureService
             } else {
                 $connection->beginTransaction();
                 $ownsTransaction = true;
+                // Reserve SQLite's writer before the final binding reads.
+                $connection->executeStatement('UPDATE finding SET id = id WHERE 1 = 0');
                 $persist();
                 $connection->commit();
                 $ownsTransaction = false;
             }
 
+            // Update only the PoC fields in the caller's unit of work after commit;
+            // pending assessments/notes remain untouched.
+            if ($selection['mode'] !== 'keep') {
+                $finding->setPocUrl($boundFinding->getPocUrl(), $boundFinding->getPocRevision());
+            }
             return new InteractiveCaptureSaveResult($job, $evidence);
         } catch (\Throwable $error) {
             try {
@@ -177,9 +196,9 @@ final class InteractiveCaptureService
                 // Cleanup failure must not turn a hard invalidation into a
                 // retryable error and bypass the worker close in save().
                 if ($error instanceof InteractiveCaptureInvalidatedException) {
-                    throw new InteractiveCaptureInvalidatedException($message, 0, $error);
+                    throw new InteractiveCaptureInvalidatedException($message, 409, $error);
                 }
-                throw new \RuntimeException($message, 0, $error);
+                throw new \RuntimeException($message, 409, $error);
             }
             throw $error;
         } finally {
@@ -187,97 +206,141 @@ final class InteractiveCaptureService
         }
     }
 
+
+    /** @return array{mode:string, url:?string, revision:int} */
+    private function pocSelection(Finding $finding, array $context): array
+    {
+        $selection = $context['poc_selection'] ?? [];
+        if ($selection === []) {
+            // Compatibility for the bounded-input path; its binding still fences
+            // the PoC revision and it never changes the active URL.
+            return ['mode' => 'keep', 'url' => null, 'revision' => (int) ($context['poc_revision'] ?? 0)];
+        }
+        if (!is_array($selection) || !is_int($selection['revision'] ?? null)
+            || $selection['revision'] !== $finding->getPocRevision()
+            || !in_array($selection['mode'] ?? null, ['keep', 'observed', 'manual'], true)) {
+            throw new InteractiveCaptureInvalidatedException('Interactive PoC selection is stale or invalid.', 409);
+        }
+        if ($selection['mode'] !== 'keep') {
+            if (!is_string($selection['url'] ?? null)) { throw new \RuntimeException('PoC URL required.', 400); }
+            try { ($this->poc ?? new FindingPocService($this->entityManager()->getConnection()))->validate($finding, $selection['url']); }
+            catch (\InvalidArgumentException $error) { throw new \RuntimeException($error->getMessage(), 400, $error); }
+        }
+        return ['mode' => $selection['mode'], 'url' => $selection['url'] ?? null, 'revision' => $selection['revision']];
+    }
+
+    private function assertSelectionObserved(array $selection, BrowserScreenshotResult $result): void
+    {
+        if ($selection['mode'] !== 'observed') { return; }
+        foreach ($result->metadata['urlCandidates'] ?? [] as $candidate) {
+            if (is_array($candidate) && ($candidate['url'] ?? null) === $selection['url']) { return; }
+        }
+        throw new \RuntimeException('Selected PoC URL was not observed in the immutable capture context.', 409);
+    }
+
     private function assertAllowed(Finding $finding): void
     {
         if ($finding->isDiscarded()) {
-            throw new InteractiveCaptureInvalidatedException('Verworfene Fälle werden im normalen Arbeiten ignoriert.');
+            throw new InteractiveCaptureInvalidatedException('Verworfene Fälle werden im normalen Arbeiten ignoriert.', 409);
         }
         try {
             $this->workPolicy->assertChecksAllowed($finding);
         } catch (\LogicException $error) {
-            throw new InteractiveCaptureInvalidatedException($error->getMessage(), 0, $error);
+            throw new InteractiveCaptureInvalidatedException($error->getMessage(), 409, $error);
         }
         $connection = $this->entityManager()->getConnection();
-        $state = $connection->fetchAssociative('SELECT url, status, manual_assessment, '
+        $state = $connection->fetchAssociative('SELECT COALESCE(poc_url, url) AS active_url, poc_revision, status, manual_assessment, '
             .FindingWorkPolicy::checksAllowedSql($connection, 'finding').' AS checks_allowed FROM finding WHERE id = ?', [$finding->getId()]);
-        if ($state === false || $state['url'] !== $finding->getUrl()
+        if ($state === false || $state['active_url'] !== $finding->getPocUrl() || (int) $state['poc_revision'] !== $finding->getPocRevision()
             || $state['manual_assessment'] === 'discarded'
             || in_array($state['status'], ['discarded', 'duplicate'], true)
             || !(bool) $state['checks_allowed']) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture finding changed, was discarded, or no longer permits checks.');
+            throw new InteractiveCaptureInvalidatedException('Interactive capture finding changed, was discarded, or no longer permits checks.', 409);
         }
     }
 
     private function assertContext(Finding $finding, array $context, Connection $connection): void
     {
-        if (!is_string($context['start_url'] ?? null) || $context['start_url'] !== $finding->getUrl()) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture requires the exact start_url recorded at session start.');
+        if (!is_string($context['start_url'] ?? null) || $context['start_url'] !== $finding->getPocUrl()) {
+            throw new InteractiveCaptureInvalidatedException('Interactive capture requires the exact start_url recorded at session start.', 409);
+        }
+        if ((int) ($context['poc_revision'] ?? 0) !== $finding->getPocRevision()) {
+            throw new InteractiveCaptureInvalidatedException('Interactive PoC revision changed.', 409);
         }
         if (($context['finding_id'] ?? null) !== $finding->getId()
             || ($context['start_url_hash'] ?? null) !== hash('sha256', $context['start_url'])) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture session binding does not match the finding.');
+            throw new InteractiveCaptureInvalidatedException('Interactive capture session binding does not match the finding.', 409);
         }
         $jobId = $context['trigger_job_id'] ?? null;
         $evidenceId = $context['trigger_evidence_id'] ?? null;
         if (($context['manual_entry'] ?? false) !== true || $jobId !== null || $evidenceId !== null) {
             if (!is_string($jobId) || $jobId === '' || !is_string($evidenceId) || $evidenceId === '') {
-                throw new InteractiveCaptureInvalidatedException('Interactive capture requires its triggering screenshot job and evidence.');
+                throw new InteractiveCaptureInvalidatedException('Interactive capture requires its triggering screenshot job and evidence.', 409);
             }
             $job = $connection->fetchAssociative(
                 'SELECT url, status, screenshot_path, capture_metadata FROM screenshot_job WHERE id = ? AND finding_id = ?', [$jobId, $finding->getId()]);
             $evidence = $connection->fetchAssociative(
                 'SELECT file_path, sha256 FROM evidence WHERE id = ? AND finding_id = ? AND kind = ?', [$evidenceId, $finding->getId(), EvidenceKind::SCREENSHOT]);
-            if ($job === false || $evidence === false || $job['url'] !== $context['start_url']
+            if ($job === false || $evidence === false || !$this->jobMatchesPoc($job, $context['start_url'], (int) ($context['poc_revision'] ?? 0))
                 || $job['status'] !== ScreenshotJobStatus::AVAILABLE
                 || !is_string($job['screenshot_path']) || $job['screenshot_path'] === ''
                 || $job['screenshot_path'] !== $evidence['file_path']
                 || !$this->storage->exists($evidence['file_path'])) {
-                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger no longer matches an available screenshot for the start URL.');
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger no longer matches an available screenshot for the start URL.', 409);
             }
             $metadata = $job['capture_metadata'] === null ? [] : json_decode($job['capture_metadata'], true);
             if (!is_array($metadata) || (($context['manual_entry'] ?? false) !== true
                 && (($metadata['challengeDetected'] ?? null) !== true || ($metadata['challengeCleared'] ?? null) !== false
-                || $this->latestEligibleTriggerId($finding, $context['start_url'], $connection) !== $jobId))) {
-                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger is no longer the latest eligible unresolved challenge screenshot.');
+                || $this->latestEligibleTriggerId($finding, $context['start_url'], (int) ($context['poc_revision'] ?? 0), $connection) !== $jobId))) {
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger is no longer the latest eligible unresolved challenge screenshot.', 409);
             }
             $hash = hash('sha256', json_encode([
                 $jobId, $job['url'], $job['status'], $job['screenshot_path'], $metadata,
                 $evidenceId, $evidence['file_path'], $evidence['sha256'],
             ], JSON_THROW_ON_ERROR));
             if (($context['trigger_hash'] ?? null) !== $hash) {
-                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger changed since session start.');
+                throw new InteractiveCaptureInvalidatedException('Interactive capture trigger changed since session start.', 409);
             }
         }
         if (array_key_exists('initial_challenge', $context) && !is_array($context['initial_challenge'])) {
-            throw new InteractiveCaptureInvalidatedException('Initial challenge inspection must be an array.');
+            throw new InteractiveCaptureInvalidatedException('Initial challenge inspection must be an array.', 409);
         }
         if (isset($context['initial_http_status']) && (!is_int($context['initial_http_status']) || $context['initial_http_status'] < 100 || $context['initial_http_status'] > 599)) {
-            throw new InteractiveCaptureInvalidatedException('Initial HTTP status must be an HTTP status code or null.');
+            throw new InteractiveCaptureInvalidatedException('Initial HTTP status must be an HTTP status code or null.', 409);
         }
         if (array_key_exists('manual_action_count', $context)
             && (!is_int($context['manual_action_count']) || $context['manual_action_count'] < 0)) {
-            throw new InteractiveCaptureInvalidatedException('Manual action count must be a nonnegative integer.');
+            throw new InteractiveCaptureInvalidatedException('Manual action count must be a nonnegative integer.', 409);
         }
         if (array_key_exists('trigger_challenge', $context) && !is_array($context['trigger_challenge'])) {
-            throw new InteractiveCaptureInvalidatedException('Trigger challenge metadata must be an array.');
+            throw new InteractiveCaptureInvalidatedException('Trigger challenge metadata must be an array.', 409);
         }
         try {
             $this->sessionStartedAt($context);
         } catch (\InvalidArgumentException $error) {
-            throw new InteractiveCaptureInvalidatedException('Interactive capture session creation time is invalid.', 0, $error);
+            throw new InteractiveCaptureInvalidatedException('Interactive capture session creation time is invalid.', 409, $error);
         }
     }
 
-    private function latestEligibleTriggerId(Finding $finding, string $url, Connection $connection): ?string
+    private function jobMatchesPoc(array $job, string $url, int $revision): bool
     {
-        // Decide which available job is newest before testing its challenge or
-        // evidence. Otherwise a newer cleared/missing image revives an old trigger.
-        $id = $connection->fetchOne('SELECT id FROM screenshot_job '
-            .'WHERE finding_id = ? AND url = ? AND status = ? '
-            .'ORDER BY requested_at DESC, id DESC LIMIT 1',
-            [$finding->getId(), $url, ScreenshotJobStatus::AVAILABLE]);
+        $metadata = is_string($job['capture_metadata'] ?? null) ? json_decode($job['capture_metadata'], true) : [];
+        $metadata = is_array($metadata) ? $metadata : [];
+        return ($metadata['pocUrl'] ?? $job['url']) === $url
+            && (int) ($metadata['queuedPocRevision'] ?? 0) === $revision;
+    }
 
-        return is_string($id) ? $id : null;
+    private function latestEligibleTriggerId(Finding $finding, string $url, int $revision, Connection $connection): ?string
+    {
+        // An interactive proof keeps its immutable entry URL while its metadata
+        // records the chosen PoC. Only the current revision participates; an old
+        // URL revisited later must not revive another revision's challenge.
+        foreach ($connection->fetchAllAssociative('SELECT id, url, capture_metadata FROM screenshot_job '
+            .'WHERE finding_id = ? AND status = ? ORDER BY requested_at DESC, id DESC',
+            [$finding->getId(), ScreenshotJobStatus::AVAILABLE]) as $job) {
+            if ($this->jobMatchesPoc($job, $url, $revision)) { return $job['id']; }
+        }
+        return null;
     }
 
     private function sessionStartedAt(array $context): ?\DateTimeImmutable

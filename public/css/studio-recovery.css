@@ -1,0 +1,14 @@
+.studio-review-recovery { margin: 1rem 0; padding: .8rem 0; border-block: 1px solid var(--studio-border, #363b40); scroll-margin-top: 80px; }
+.studio-review-recovery p { font-size: 12px; line-height: 1.5; color: var(--studio-muted, #a6afb9); }
+.review-recovery-fold > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--studio-text, #e6edf4); }
+.review-recovery-form { display: grid; gap: .75rem; margin-top: 1rem; }
+.review-recovery-form label { display: grid; gap: .35rem; font-size: 12px; }
+.review-recovery-form :is(select, textarea, input) { box-sizing: border-box; width: 100%; min-width: 0; padding: .6rem; color: inherit; font: inherit; background: #181c20; border: 1px solid #525962; border-radius: 6px; }
+.review-recovery-form textarea { resize: vertical; }
+.review-recovery-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-recovery-prompt { display: block; }
+.review-recovery-prompt summary { cursor: pointer; }
+.review-recovery-prompt summary > span { float: right; margin-left: 1rem; font-size: 11px; }
+.review-recovery-prompt p { margin: .65rem 0; font-size: 12px; line-height: 1.5; }
+[data-review-focus-mode="true"] .review-recovery-prompt { z-index: 9; top: 80px; max-height: calc(100dvh - 250px); overflow: auto; }
+@media (max-width: 720px) { .studio-review-recovery { scroll-margin-top: 150px; } }

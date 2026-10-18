@@ -11,6 +11,7 @@ use App\Service\BrowserInteractiveClientInterface;
 use App\Service\FindingDetailService;
 use App\Service\InteractiveCaptureService;
 use App\Service\ReviewQueueService;
+use App\Service\ReviewDispositionService;
 use App\Service\ReviewTrail;
 use App\Service\SettingsService;
 use App\Service\UiTranslator;
@@ -41,6 +42,7 @@ final class ReviewController
         private readonly InteractiveCaptureService $interactiveCapture,
         private readonly BrowserInteractiveClientInterface $browserInteractive,
         private readonly FindingDetailService $details,
+        private readonly ReviewDispositionService $dispositions,
     ) {
     }
 
@@ -187,17 +189,99 @@ final class ReviewController
             // projection; a foreign image cannot become the return destination.
             $view = $this->queue->get(array_replace($this->cardQuery($card, $trail['id']), ['evidence' => $parameters['displayed_evidence_id'] ?: $card['evidence']]), $id, $card['explicit']);
             $card = $this->card($view, $card['explicit']);
-            // Skip has no write lock: retain the state the user actually saw,
-            // never upgrade its reset permission to a later concurrent state.
+            // Retain the state the user actually saw; recording the skip must
+            // never upgrade reset permission to a later concurrent state.
             $card['fingerprint'] = $fingerprint;
+            $prompt = $this->dispositions->recordSkip($id, $parameters['context_token'], $trail['id'].':'.$trail['version']);
+            if ($prompt) {
+                $request->getSession()->set('review_recovery_prompt', ['id' => $id, 'fingerprint' => $fingerprint]);
+            }
             $this->trails->forward($request->getSession(), $trail, $card);
-            return new RedirectResponse($this->queue->path($view->kind, $view->images, $id, null, $trail['id']), Response::HTTP_SEE_OTHER, ['Cache-Control' => 'no-store']);
+            $path = $this->queue->path($view->kind, $view->images, $id, null, $trail['id']);
+            return new RedirectResponse($path.($prompt ? '&prompt='.rawurlencode($id) : ''), Response::HTTP_SEE_OTHER, ['Cache-Control' => 'no-store']);
         } catch (\InvalidArgumentException $exception) {
             return $this->plain($this->i18n->trans($exception->getMessage()), Response::HTTP_BAD_REQUEST);
         } catch (\UnexpectedValueException $exception) {
             return isset($trail) ? $this->navigationFailure($request, $trail, $exception->getMessage(), Response::HTTP_CONFLICT)
                 : $this->plain($this->i18n->trans($exception->getMessage()), Response::HTTP_CONFLICT);
         }
+    }
+
+    #[Route(path: '/review/{id}/defer', name: 'studio_review_defer', methods: ['POST'])]
+    public function defer(string $id, Request $request): Response
+    {
+        return $this->changeDisposition($id, $request, false);
+    }
+
+    #[Route(path: '/review/{id}/resume', name: 'studio_review_resume', methods: ['POST'])]
+    public function resume(string $id, Request $request): Response
+    {
+        return $this->changeDisposition($id, $request, true);
+    }
+
+    private function changeDisposition(string $id, Request $request, bool $resume): Response
+    {
+        if (!Uuid::isValid($id) || !$this->findings->find($id) instanceof Finding) {
+            return $this->plain($this->i18n->trans('Fall nicht gefunden.'), Response::HTTP_NOT_FOUND);
+        }
+        $trail = null;
+        try {
+            $parameters = $request->request->all();
+            foreach (['_token', 'context_token', 'trail_id', 'trail_version', 'reason', 'note', 'schedule', 'due_date'] as $field) {
+                if (isset($parameters[$field]) && !is_string($parameters[$field])) {
+                    throw new \InvalidArgumentException('Ungültige Angaben zur Zurückstellung.');
+                }
+            }
+            if (!$this->csrf->isTokenValid(new CsrfToken('review_'.($resume ? 'resume_' : 'defer_').$id, $parameters['_token'] ?? ''))) {
+                return $this->plain($this->i18n->trans('Die Änderung wurde nicht gespeichert. Formular bitte neu laden.'), Response::HTTP_FORBIDDEN);
+            }
+            if (($parameters['trail_id'] ?? '') !== '') {
+                $trail = $this->trails->check($request->getSession(), $parameters['trail_id'], $parameters['trail_version'] ?? '', $id);
+                $request->attributes->set('_review_trail', $trail);
+            }
+            $view = $trail === null ? null : $this->queue->get($this->cardQuery($trail['current'], $trail['id']), $id, $trail['current']['explicit']);
+            if ($resume) {
+                $this->dispositions->resume($id, $parameters['context_token'] ?? '');
+            } else {
+                $zone = new \DateTimeZone('Europe/Berlin');
+                $schedule = $parameters['schedule'] ?? 'manual';
+                $due = match ($schedule) {
+                    'manual' => null,
+                    'tomorrow' => new \DateTimeImmutable('tomorrow 09:00', $zone),
+                    'date' => $this->recoveryDueDate($parameters['due_date'] ?? '', $zone),
+                    default => throw new \InvalidArgumentException('Ungültiger Termin für die Zurückstellung.'),
+                };
+                $this->dispositions->defer($id, $parameters['reason'] ?? '', trim($parameters['note'] ?? ''), $due, $parameters['context_token'] ?? '');
+            }
+            $message = $this->i18n->trans($resume ? 'Fall wieder in die Sichtung aufgenommen.' : 'Fall zurückgestellt. Bewertung und Belege bleiben erhalten.');
+            if ($trail !== null && $view !== null) {
+                $card = $this->card($view, $trail['current']['explicit']);
+                // Deferral changes the fingerprint. Back may revisit the case,
+                // but must never restore reset permission for the older state.
+                $card['fingerprint'] = $this->queue->fingerprint($id);
+                $this->trails->forward($request->getSession(), $trail, $card);
+                $path = $this->queue->path($view->kind, $view->images, $id, null, $trail['id']);
+            } else {
+                $path = '/findings/'.$id;
+            }
+            return new RedirectResponse($path.(str_contains($path, '?') ? '&' : '?').'message='.rawurlencode($message), Response::HTTP_SEE_OTHER, ['Cache-Control' => 'no-store']);
+        } catch (\InvalidArgumentException $error) {
+            return $this->plain($this->i18n->trans($error->getMessage()), Response::HTTP_BAD_REQUEST);
+        } catch (\UnexpectedValueException $error) {
+            return $trail === null ? $this->plain($this->i18n->trans($error->getMessage()), Response::HTTP_CONFLICT)
+                : $this->navigationFailure($request, $trail, $error->getMessage(), Response::HTTP_CONFLICT);
+        } catch (\Throwable) {
+            return $this->plain($this->i18n->trans('Die Änderung konnte nicht gespeichert werden. Bitte neu laden und erneut versuchen.'), Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private function recoveryDueDate(string $date, \DateTimeZone $zone): \DateTimeImmutable
+    {
+        $due = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, $zone);
+        if ($due === false || $due->format('Y-m-d') !== $date) {
+            throw new \InvalidArgumentException('Ungültiger Termin für die Zurückstellung.');
+        }
+        return $due->setTime(9, 0);
     }
 
     #[Route(path: '/review/{id}/interactive-session/start', name: 'studio_review_interactive_start', methods: ['POST'])]
@@ -450,11 +534,11 @@ final class ReviewController
         }
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, string|int> */
     private function interactiveBinding(FindingDetailView $detail, ?string $evidenceId): array
     {
         $finding = $detail->finding;
-        $url = $finding->getUrl();
+        $url = $finding->getPocUrl();
         $parts = parse_url($url);
         if (!is_array($parts) || !in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
             || ($parts['host'] ?? '') === '' || preg_match('/[\x00-\x1f\x7f]/', $url)) {
@@ -465,7 +549,9 @@ final class ReviewController
         // selected image; an older challenge cannot override a newer result.
         $job = null;
         foreach ($detail->screenshotJobs as $candidate) {
-            if ($candidate->getStatus() === 'available' && $candidate->getUrl() === $url) {
+            $metadata = $candidate->getCaptureMetadata() ?? [];
+            if ($candidate->getStatus() === 'available' && ($metadata['pocUrl'] ?? $candidate->getUrl()) === $url
+                && ($metadata['queuedPocRevision'] ?? 0) === $finding->getPocRevision()) {
                 $job = $candidate;
                 break;
             }
@@ -489,6 +575,7 @@ final class ReviewController
             'finding_id' => $finding->getId(),
             'start_url' => $url,
             'start_url_hash' => hash('sha256', $url),
+            'poc_revision' => $finding->getPocRevision(),
             'trigger_job_id' => $job->getId(),
             'trigger_evidence_id' => $evidence->getId(),
             'trigger_hash' => hash('sha256', json_encode([$job->getId(), $job->getUrl(), $job->getStatus(),
@@ -736,6 +823,15 @@ final class ReviewController
         $i18nJson = $this->i18n->browserCatalogJson();
         $csrfField = fn (string $tokenId): string => '<input type="hidden" name="_token" value="'.$escape($this->csrf->getToken($tokenId)->getValue()).'">';
         $contextToken = $view->detail === null ? '' : $this->queue->contextToken($view->detail->finding->getId(), $view->stateFingerprint);
+        $recoveryPrompt = null;
+        $prompt = $request->getSession()->get('review_recovery_prompt');
+        $promptId = $request->query->all()['prompt'] ?? null;
+        if (is_array($prompt) && is_string($promptId)
+            && $promptId === ($prompt['id'] ?? null)
+            && $this->queue->exists($prompt['id'])
+            && hash_equals($this->queue->fingerprint($prompt['id']), $prompt['fingerprint'])) {
+            $recoveryPrompt = $prompt['id'];
+        }
         $lastReviewedId = $view->lastReviewedId;
         $selectedEvidenceId = $view->selectedEvidenceId;
         $interactiveCsrfToken = $view->detail === null ? '' : $this->csrf->getToken('review_interactive_'.$view->detail->finding->getId())->getValue();

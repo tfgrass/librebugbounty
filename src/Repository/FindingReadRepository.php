@@ -7,6 +7,8 @@ use App\Dto\FindingReadView;
 use App\Value\HostnameTld;
 use App\Service\ReviewNoticeService;
 use App\Service\AssessmentHistoryProjection;
+use App\Service\ReviewDispositionService;
+use App\Service\PocObservation;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 
@@ -35,7 +37,14 @@ final class FindingReadRepository
         }
         [$where, $parameters] = $this->where($filter);
         [$workColumns, $workJoins] = $this->workbasketProjection($filter);
-        $sql = 'SELECT f.id, d.hostname AS domain, f.title, f.url, f.type, f.severity, '
+        $hasReviewDisposition = ReviewDispositionService::available($this->connection);
+        $deferredColumns = $hasReviewDisposition
+            ? "CASE WHEN rd.state = 'deferred' THEN 1 ELSE 0 END AS review_deferred, CASE WHEN rd.state = 'deferred' THEN rd.due_at ELSE NULL END AS review_deferred_until, "
+            : '0 AS review_deferred, NULL AS review_deferred_until, ';
+        $deferredJoin = $hasReviewDisposition
+            ? ' LEFT JOIN finding_review_disposition rd ON rd.finding_id = f.id'
+            : '';
+        $sql = 'SELECT f.id, d.hostname AS domain, f.title, COALESCE(f.poc_url, f.url) AS url, f.url AS original_url, f.type, f.severity, '
             .'f.status AS legacy_status, f.review_state AS legacy_review_state, '
             .'f.manual_assessment AS assessment, f.discard_reason, f.assessed_at, '
             .'f.submitted_at, f.created_at, f.contacted_at, f.notified_owner_at AS sent_at, '
@@ -44,8 +53,8 @@ final class FindingReadRepository
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::pursuitActiveSql($this->connection)." THEN 'active' ELSE 'closed' END AS pursuit, "
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->connection).' THEN 0 ELSE 1 END AS checks_blocked, '
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).' THEN 0 ELSE 1 END AS contact_blocked, '
-            .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded, '.$workColumns
-            .self::FROM.$workJoins.$where
+            .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded, '.$deferredColumns.$workColumns
+            .$this->from().$workJoins.$deferredJoin.$where
             .' ORDER BY '.($filter->view === 'workbasket' ? 'reminder_due_on ASC, ' : '')
             .'f.submitted_at DESC, f.created_at DESC, f.rowid DESC LIMIT :limit OFFSET :offset';
         $rows = $this->connection->fetchAllAssociative(
@@ -64,7 +73,7 @@ final class FindingReadRepository
 
         // A count without an observation predicate needs no per-case run sort.
         // The shared WHERE still has exactly the same filter semantics.
-        $from = $filter->observation !== '' ? self::FROM : self::BASE_FROM;
+        $from = $filter->observation !== '' ? $this->from() : self::BASE_FROM;
 
         return (int) $this->connection->fetchOne('SELECT COUNT(*)'.$from.$where, $parameters);
     }
@@ -91,7 +100,12 @@ final class FindingReadRepository
             $columns[] = 'COALESCE(SUM(CASE WHEN '.$condition.' THEN 1 ELSE 0 END), 0) AS '.$name;
         }
 
-        return array_map('intval', $this->connection->fetchAssociative('SELECT '.implode(', ', $columns).self::FROM));
+        return array_map('intval', $this->connection->fetchAssociative('SELECT '.implode(', ', $columns).$this->from()));
+    }
+
+    private function from(): string
+    {
+        return str_replace('WHERE latest.finding_id = f.id', 'WHERE latest.finding_id = f.id AND '.PocObservation::currentSql($this->connection), self::FROM);
     }
 
     /** @return array{string, array<string, string>} */
@@ -104,6 +118,10 @@ final class FindingReadRepository
             'all' => [],
         };
         $parameters = [];
+        if (in_array($filter->review, ['open', 'deferred'], true)) {
+            $activeReview = ReviewDispositionService::activeSql($this->connection);
+            $conditions[] = $filter->review === 'deferred' ? 'NOT ('.$activeReview.')' : '('.$activeReview.')';
+        }
         if ($filter->reminder !== '' || $filter->view === 'workbasket') {
             if (!\App\Service\DisclosureRecordService::available($this->connection)) $conditions[] = '1 = 0';
             else {
@@ -130,7 +148,7 @@ final class FindingReadRepository
         if ($search !== '') {
             // Search terms are literal substrings, including URL punctuation.
             // The shared WHERE keeps page results and counts in agreement.
-            $conditions[] = "(LOWER(d.hostname) LIKE :search ESCAPE '!' OR LOWER(f.title) LIKE :search ESCAPE '!' OR LOWER(f.url) LIKE :search ESCAPE '!')";
+            $conditions[] = "(LOWER(d.hostname) LIKE :search ESCAPE '!' OR LOWER(f.title) LIKE :search ESCAPE '!' OR LOWER(f.url) LIKE :search ESCAPE '!' OR LOWER(f.poc_url) LIKE :search ESCAPE '!')";
             $parameters['search'] = '%'.strtr($search, ['!' => '!!', '%' => '!%', '_' => '!_']).'%';
         }
         if ($filter->assessment === 'unknown') {
@@ -274,6 +292,9 @@ final class FindingReadRepository
             contactRouteDestination: $row['contact_route_destination'],
             lastDisclosureActivity: $row['last_disclosure_activity'],
             lastDisclosureActivityOn: $row['last_disclosure_activity_on'],
+            reviewDeferred: (bool) $row['review_deferred'],
+            reviewDeferredUntil: $this->date($row['review_deferred_until']),
+            originalUrl: $row['original_url'],
         );
     }
 

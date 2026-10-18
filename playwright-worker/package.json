@@ -2,7 +2,7 @@
   "name": "playwright-worker",
   "private": true,
   "type": "commonjs",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Small HTTP API for browser retests and screenshots inside the DDEV Playwright sidecar.",
   "scripts": {
     "start": "node server.js",

@@ -5,6 +5,7 @@ namespace App\Tests;
 use App\AppInfo;
 use App\Service\ReleaseUpdateService;
 use App\Service\UiTranslator;
+use App\Tests\Support\ReleaseVersionFixture;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -21,7 +22,7 @@ final class StudioReleaseUpdateTest extends DatabaseTestCase
     private ReleaseUpdateService $updates;
     private string $releaseCache;
     private int $releaseStatus = 200;
-    private string $releaseTag = 'v2.1.1';
+    private string $releaseTag;
     private string $locale = 'de';
 
     protected function usesGermanCopy(): bool
@@ -32,6 +33,7 @@ final class StudioReleaseUpdateTest extends DatabaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->releaseTag = ReleaseVersionFixture::newerTag();
         $this->session = new Session(new MockArraySessionStorage());
         $this->releaseCache = APP_TEST_ROOT.'/controller-release-'.bin2hex(random_bytes(6));
         $this->client = new MockHttpClient(fn () => new MockResponse(json_encode([
@@ -126,7 +128,7 @@ final class StudioReleaseUpdateTest extends DatabaseTestCase
     public static function cachedStates(): iterable
     {
         foreach (['de', 'en'] as $locale) {
-            foreach (['current' => 'v'.AppInfo::VERSION, 'ahead' => 'v2.0.0', 'stale' => 'v2.1.1'] as $state => $tag) {
+            foreach (['current' => 'v'.AppInfo::VERSION, 'ahead' => 'v2.0.0', 'stale' => ReleaseVersionFixture::newerTag()] as $state => $tag) {
                 yield $locale.' '.$state => [$locale, $state, $tag];
             }
         }
@@ -154,11 +156,11 @@ final class StudioReleaseUpdateTest extends DatabaseTestCase
         $xpath = $this->xpath($html);
         $link = $xpath->query('//*[contains(@class,"studio-about-update-available")]/a')->item(0);
         self::assertNotNull($link);
-        self::assertSame(AppInfo::REPOSITORY.'/releases/tag/v2.1.1', $link->getAttribute('href'));
+        self::assertSame(AppInfo::REPOSITORY.'/releases/tag/'.ReleaseVersionFixture::newerTag(), $link->getAttribute('href'));
         self::assertSame('_blank', $link->getAttribute('target'));
         self::assertSame('noopener noreferrer', $link->getAttribute('rel'));
-        self::assertStringContainsString('2.1.1', $link->textContent);
-        self::assertSame("git status --short\ngit fetch --tags origin\ngit switch --detach refs/tags/v2.1.1", $xpath->evaluate('string(//details[contains(@class,"studio-about-update-instructions")]//code)'));
+        self::assertStringContainsString(ReleaseVersionFixture::newerVersion(), $link->textContent);
+        self::assertSame("git status --short\ngit fetch --tags origin\ngit switch --detach refs/tags/".ReleaseVersionFixture::newerTag(), $xpath->evaluate('string(//details[contains(@class,"studio-about-update-instructions")]//code)'));
         self::assertSame(1, $xpath->query('//a[@href="/docs/readme#upgrade-an-existing-workspace"]')->length);
     }
 

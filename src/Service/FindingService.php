@@ -254,6 +254,12 @@ final class FindingService
             // existing Doctrine connection. Remove every dependent record
             // explicitly so deleting a finding cannot create new orphans.
             $relatedClasses = [FindingAssessment::class, ScreenshotJob::class, Evidence::class, RetestRun::class];
+            if ($this->entityManager->getConnection()->fetchOne("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'finding_poc_revision'")) {
+                array_unshift($relatedClasses, \App\Entity\FindingPocRevision::class);
+            }
+            if (ReviewDispositionService::available($this->entityManager->getConnection())) {
+                array_unshift($relatedClasses, \App\Entity\ReviewDisposition::class, \App\Entity\ReviewSkip::class);
+            }
             if (FindingWorkPolicy::available($this->entityManager->getConnection())) {
                 array_unshift($relatedClasses, \App\Entity\FindingFollowUp::class, \App\Entity\ContactDiscovery::class);
             }

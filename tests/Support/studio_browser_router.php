@@ -33,7 +33,7 @@ final class StudioReleaseAcceptanceClient
             $root = (string) getenv('STUDIO_BROWSER_ROOT');
             file_put_contents($root.'/release-requests', json_encode(['method' => $method, 'url' => $url], JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
             $scenario = @file_get_contents($root.'/release-response') ?: 'available';
-            $tag = $scenario === 'current' ? 'v'.App\AppInfo::VERSION : 'v2.1.1';
+            $tag = $scenario === 'current' ? 'v'.App\AppInfo::VERSION : App\Tests\Support\ReleaseVersionFixture::newerTag();
 
             return new Symfony\Component\HttpClient\Response\MockResponse(json_encode([
                 'tag_name' => $tag,
@@ -116,7 +116,7 @@ if (in_array($path, ['/__studio_acceptance_release', '/__studio_acceptance_relea
             $at = time() - ($scenario === 'stale' ? 2 * 86400 : 120);
             file_put_contents($cacheDirectory.'/release.json', json_encode([
                 'schema' => 1,
-                'latestTag' => !$hasCandidate ? null : ($scenario === 'current' ? 'v'.App\AppInfo::VERSION : ($scenario === 'ahead' ? 'v2.0.0' : 'v2.1.1')),
+                'latestTag' => !$hasCandidate ? null : ($scenario === 'current' ? 'v'.App\AppInfo::VERSION : ($scenario === 'ahead' ? 'v2.0.0' : App\Tests\Support\ReleaseVersionFixture::newerTag())),
                 'checkedAt' => $hasCandidate ? $at : null,
                 'attemptedAt' => $at,
                 'failed' => in_array($scenario, ['error', 'offline-candidate'], true),
@@ -131,6 +131,7 @@ if (in_array($path, ['/__studio_acceptance_release', '/__studio_acceptance_relea
     header('Cache-Control: no-store');
     echo json_encode([
         'isolated' => true,
+        'availableVersion' => App\Tests\Support\ReleaseVersionFixture::newerVersion(),
         'requests' => is_file($root.'/release-requests') ? count(file($root.'/release-requests', FILE_IGNORE_NEW_LINES)) : 0,
         'cacheHash' => is_file($cache) ? hash_file('sha256', $cache) : null,
     ], JSON_THROW_ON_ERROR);

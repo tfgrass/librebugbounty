@@ -153,7 +153,7 @@ final class StudioExportService
     private function details(array $page, bool $includeNotes): array
     {
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT id, domain_id, method, request_params, payload, expected_evidence, report_url, '
+            'SELECT id, domain_id, url, poc_revision, method, request_params, payload, expected_evidence, report_url, '
             .'reported_at, last_retested_at, updated_at'.($includeNotes ? ', private_notes' : '')
             .' FROM finding WHERE id IN (:ids)',
             ['ids' => array_map(static fn (FindingReadView $finding): string => $finding->id, $page)],
@@ -185,6 +185,8 @@ final class StudioExportService
             'type' => $finding->type,
             'severity' => $finding->severity,
             'url' => $finding->url,
+            'originalUrl' => $detail['url'],
+            'pocRevision' => (int) $detail['poc_revision'],
             'method' => $detail['method'],
             'requestParams' => $detail['request_params'] === null ? null : json_decode($detail['request_params'], true, 512, JSON_THROW_ON_ERROR),
             'payload' => $detail['payload'],

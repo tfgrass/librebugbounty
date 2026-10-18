@@ -4,6 +4,7 @@ namespace App\Tests;
 
 use App\AppInfo;
 use App\Service\ReleaseUpdateService;
+use App\Tests\Support\ReleaseVersionFixture;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
@@ -50,7 +51,7 @@ final class ReleaseUpdateServiceTest extends TestCase
         $request = null;
         $client = new MockHttpClient(function (string $method, string $url, array $options) use (&$request): MockResponse {
             $request = [$method, $url, $options];
-            return $this->response(['tag_name' => 'v2.1.10', 'draft' => false, 'prerelease' => false,
+            return $this->response(['tag_name' => ReleaseVersionFixture::newerTag(), 'draft' => false, 'prerelease' => false,
                 'html_url' => 'javascript:alert(1)', 'body' => 'PRIVATE UNTRUSTED RELEASE BODY']);
         });
         $service = new ReleaseUpdateService($client, $this->directory);
@@ -69,8 +70,8 @@ final class ReleaseUpdateServiceTest extends TestCase
         self::assertEmpty($options['auth_bearer'] ?? null);
         self::assertTrue($snapshot['performed']);
         self::assertSame('available', $snapshot['state']);
-        self::assertSame('2.1.10', $snapshot['latestVersion']);
-        self::assertSame(AppInfo::REPOSITORY.'/releases/tag/v2.1.10', $snapshot['releaseUrl']);
+        self::assertSame(ReleaseVersionFixture::newerVersion(), $snapshot['latestVersion']);
+        self::assertSame(AppInfo::REPOSITORY.'/releases/tag/'.ReleaseVersionFixture::newerTag(), $snapshot['releaseUrl']);
         self::assertEquals($this->now, $snapshot['checkedAt']);
         $stored = file_get_contents($this->directory.'/release.json');
         self::assertStringNotContainsString('PRIVATE', $stored);
@@ -94,7 +95,7 @@ final class ReleaseUpdateServiceTest extends TestCase
         yield 'current' => [AppInfo::VERSION, 'current', false];
         yield 'prefixed current' => ['v'.AppInfo::VERSION, 'current', false];
         yield 'older release' => ['1.99.99', 'ahead', false];
-        yield 'new release' => ['v2.1.10', 'available', true];
+        yield 'new release' => [ReleaseVersionFixture::newerTag(), 'available', true];
         yield 'large integer does not overflow' => ['999999999999999999999.0.0', 'available', true];
     }
 
@@ -175,7 +176,7 @@ final class ReleaseUpdateServiceTest extends TestCase
 
     public function testNormalChecksAreDailyAndForcedChecksShareAMinuteCooldown(): void
     {
-        $client = new MockHttpClient(fn () => $this->release('v2.1.1'));
+        $client = new MockHttpClient(fn () => $this->release(ReleaseVersionFixture::newerTag()));
         $service = new ReleaseUpdateService($client, $this->directory);
 
         self::assertTrue($service->check(now: $this->now)['performed']);
@@ -203,7 +204,7 @@ final class ReleaseUpdateServiceTest extends TestCase
 
     public function testStaleSnapshotPreservesTheCandidateWithoutCallingHttp(): void
     {
-        $client = new MockHttpClient($this->release('v2.1.1'));
+        $client = new MockHttpClient($this->release(ReleaseVersionFixture::newerTag()));
         $service = new ReleaseUpdateService($client, $this->directory);
         $service->check(now: $this->now);
         $before = file_get_contents($this->directory.'/release.json');

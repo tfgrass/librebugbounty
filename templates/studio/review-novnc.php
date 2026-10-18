@@ -21,7 +21,7 @@
       <div>
         <p class="studio-eyebrow"><?= $escape($t('Interaktiv prüfen')) ?></p>
         <h1><?= $escape($finding->getDomain()->getHostname()) ?></h1>
-        <p class="interactive-url"><?= $escape($finding->getUrl()) ?></p>
+        <p class="interactive-url"><?= $escape($finding->getPocUrl()) ?></p>
       </div>
       <?php
       // The controller validates return_to; also keep standalone template use local.

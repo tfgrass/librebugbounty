@@ -44,7 +44,7 @@ class RetestRunRepository extends ServiceEntityRepository
     public function hasObservationAfterAssessment(Finding $finding, array $knownObservationIds): bool
     {
         $currentIds = $this->getEntityManager()->getConnection()->fetchFirstColumn(
-            'SELECT id FROM retest_run WHERE finding_id = ?', [$finding->getId()],
+            'SELECT latest.id FROM retest_run latest INNER JOIN finding f ON f.id = latest.finding_id WHERE latest.finding_id = ? AND '.\App\Service\PocObservation::currentSql($this->getEntityManager()->getConnection()), [$finding->getId()],
         );
 
         return array_diff($currentIds, $knownObservationIds) !== [];

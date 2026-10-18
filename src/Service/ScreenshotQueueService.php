@@ -56,34 +56,63 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
 
     private function enqueueWithLock(Finding $finding): ScreenshotEnqueueResult
     {
+        $connection = $this->entityManager()->getConnection();
+        return $connection->transactional(function () use ($connection, $finding): ScreenshotEnqueueResult {
+            // PoC updates use a DB transaction rather than this process lock.
+            // Reserve the writer before reading the active URL and revision.
+            $connection->executeStatement('UPDATE finding SET id = id WHERE 1 = 0');
+            return $this->enqueueCurrentPocWithLock($finding);
+        });
+    }
+
+    private function enqueueCurrentPocWithLock(Finding $finding): ScreenshotEnqueueResult
+    {
         $this->assertNotDiscarded($finding);
         $connection = $this->entityManager()->getConnection();
-        $findingExists = $connection->fetchOne(
-            'SELECT 1 FROM finding WHERE id = :id',
+        $currentPoc = $connection->fetchAssociative(
+            'SELECT COALESCE(poc_url, url) AS url, poc_revision FROM finding WHERE id = :id',
             ['id' => $finding->getId()],
         );
-        if ($findingExists === false) {
+        if ($currentPoc === false) {
             throw new \RuntimeException('Finding no longer exists; screenshot job was not queued.');
         }
 
         $jobs = $this->jobs();
         $active = $jobs->findActiveForFinding($finding);
         if ($active instanceof ScreenshotJob) {
-            return new ScreenshotEnqueueResult($active, false);
+            if ($this->matchesPoc($active, $currentPoc)) {
+                return new ScreenshotEnqueueResult($active, false);
+            }
+
+            // A previously queued/running request belongs to its original PoC.
+            // Release its slot without rewriting its immutable source URL.
+            $connection->executeStatement(
+                'UPDATE screenshot_job SET status = :status, active_key = NULL, finished_at = :now, updated_at = :now, error_message = :error WHERE id = :id',
+                [
+                    'status' => ScreenshotJobStatus::FAILED,
+                    'now' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
+                    'error' => 'The active PoC changed; request a screenshot for the current URL.',
+                    'id' => $active->getId(),
+                ],
+            );
+            $this->entityManager()->refresh($active);
         }
 
         $candidate = new ScreenshotJob();
         $now = new \DateTimeImmutable();
         $inserted = $connection->executeStatement(
-            'INSERT INTO screenshot_job (id, finding_id, url, status, active_key, requested_at, attempts, created_at, updated_at) '
-            .'SELECT :id, id, :url, :status, id, :requested, 0, :created, :updated FROM finding WHERE id = :finding '
+            'INSERT INTO screenshot_job (id, finding_id, url, status, active_key, requested_at, attempts, created_at, updated_at, capture_metadata) '
+            .'SELECT :id, id, COALESCE(poc_url, url), :status, id, :requested, 0, :created, :updated, :metadata FROM finding WHERE id = :finding '
             ."AND (manual_assessment IS NULL OR manual_assessment <> 'discarded') AND status NOT IN ('discarded', 'duplicate') "
+            .'AND poc_revision = :revision AND COALESCE(poc_url, url) = :url '
             .'AND '.FindingWorkPolicy::checksAllowedSql($connection, 'finding').' '
             .'ON CONFLICT(active_key) DO NOTHING',
             [
                 'id' => $candidate->getId(),
                 'finding' => $finding->getId(),
-                'url' => $finding->getUrl(),
+                'url' => $currentPoc['url'],
+                'revision' => (int) $currentPoc['poc_revision'],
+                'metadata' => json_encode(['queuedPocRevision' => (int) $currentPoc['poc_revision']], JSON_THROW_ON_ERROR),
                 'status' => ScreenshotJobStatus::QUEUED,
                 'requested' => $now->format('Y-m-d H:i:s'),
                 'created' => $now->format('Y-m-d H:i:s'),
@@ -148,6 +177,8 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
         $storedPath = null;
         try {
             $this->assertNotDiscarded($job->getFinding());
+            $this->assertCurrentPoc($job);
+            $this->assertCurrentReviewDisposition($job);
             $result = $this->client->capture(new BrowserScreenshotRequest(
                 url: $job->getUrl(),
                 timeoutMs: $this->settings->getReviewScanTimeoutMs(),
@@ -157,33 +188,51 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
                 throw new \RuntimeException('Browser worker returned an invalid screenshot image.');
             }
 
+            $this->assertCurrentPoc($job);
+            $this->assertCurrentReviewDisposition($job);
+
             $stored = $this->storage->storeContents($job->getFinding(), $binary, 'capture-'.$job->getId().'.png');
             $storedPath = $stored->relativePath;
-            $evidence = (new Evidence())
-                ->setFinding($job->getFinding())
-                ->setKind(EvidenceKind::SCREENSHOT)
-                ->setFilePath($stored->relativePath)
-                ->setSha256($stored->sha256);
-            $capturedAt = $result->capturedAt->setTimezone(new \DateTimeZone(date_default_timezone_get()));
-            $job
-                ->setStatus(ScreenshotJobStatus::AVAILABLE)
-                ->setActiveKey(null)
-                ->setCapturedAt($capturedAt)
-                ->setFinishedAt(new \DateTimeImmutable())
-                ->setErrorMessage(null)
-                ->setScreenshotPath($stored->relativePath)
-                ->setCaptureMetadata(array_merge($result->metadata, [
-                    'httpStatus' => $result->httpStatus,
-                    'finalUrl' => $result->finalUrl,
-                    'dialogSeen' => $result->dialogSeen,
-                    'dialogType' => $result->dialogType,
-                    'dialogText' => $result->dialogText,
-                    'captureMethod' => $result->captureMethod,
-                ]));
+            $this->operationLock->synchronizedQueueMutation(function () use ($job, $stored, $result): void {
+                // A browser request can outlive a manual PoC update. Validate
+                // inside a writer transaction, so a concurrent PoC update
+                // cannot commit between this check and the evidence commit.
+                $entityManager = $this->entityManager();
+                $entityManager->getConnection()->transactional(function () use ($entityManager, $job, $stored, $result): void {
+                    $entityManager->getConnection()->executeStatement('UPDATE finding SET id = id WHERE 1 = 0');
+                    $this->assertNotDiscarded($job->getFinding());
+                    $this->assertCurrentPoc($job);
+                    $this->assertCurrentReviewDisposition($job);
+                    $evidence = (new Evidence())
+                        ->setFinding($job->getFinding())
+                        ->setKind(EvidenceKind::SCREENSHOT)
+                        ->setFilePath($stored->relativePath)
+                        ->setSha256($stored->sha256);
+                    $capturedAt = $result->capturedAt->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+                    $job
+                        ->setStatus(ScreenshotJobStatus::AVAILABLE)
+                        ->setActiveKey(null)
+                        ->setCapturedAt($capturedAt)
+                        ->setFinishedAt(new \DateTimeImmutable())
+                        ->setErrorMessage(null)
+                        ->setScreenshotPath($stored->relativePath)
+                        ->setCaptureMetadata(array_merge($job->getCaptureMetadata() ?? [], $result->metadata, [
+                            'queuedPocRevision' => $this->jobPocRevision($job),
+                            'captureDispositionRevision' => (int) ($job->getCaptureMetadata()['captureDispositionRevision'] ?? 0),
+                            'requestedUrl' => $job->getUrl(),
+                            'sourceUrl' => $result->finalUrl,
+                            'httpStatus' => $result->httpStatus,
+                            'finalUrl' => $result->finalUrl,
+                            'dialogSeen' => $result->dialogSeen,
+                            'dialogType' => $result->dialogType,
+                            'dialogText' => $result->dialogText,
+                            'captureMethod' => $result->captureMethod,
+                        ]));
 
-            $entityManager = $this->entityManager();
-            $entityManager->persist($evidence);
-            $entityManager->flush();
+                    $entityManager->persist($evidence);
+                    $entityManager->flush();
+                });
+            });
         } catch (\Throwable $error) {
             $failureMessage = $error->getMessage();
             if ($storedPath !== null) {
@@ -224,6 +273,43 @@ final class ScreenshotQueueService implements ScreenshotEnqueuerInterface
         }
 
         return $job;
+    }
+
+    /** @param array<string, mixed> $currentPoc */
+    private function matchesPoc(ScreenshotJob $job, array $currentPoc): bool
+    {
+        return $job->getUrl() === $currentPoc['url']
+            && $this->jobPocRevision($job) === (int) $currentPoc['poc_revision'];
+    }
+
+    private function jobPocRevision(ScreenshotJob $job): int
+    {
+        // Pre-2.1.1 jobs belong to the unchanged original PoC (revision zero).
+        return (int) ($job->getCaptureMetadata()['queuedPocRevision'] ?? 0);
+    }
+
+    private function assertCurrentPoc(ScreenshotJob $job): void
+    {
+        $currentPoc = $this->entityManager()->getConnection()->fetchAssociative(
+            'SELECT COALESCE(poc_url, url) AS url, poc_revision FROM finding WHERE id = :id',
+            ['id' => $job->getFinding()->getId()],
+        );
+        if ($currentPoc === false || !$this->matchesPoc($job, $currentPoc)) {
+            throw new \LogicException('The active PoC changed; request a screenshot for the current URL.');
+        }
+    }
+
+    private function assertCurrentReviewDisposition(ScreenshotJob $job): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $disposition = ReviewDispositionService::available($connection)
+            ? $connection->fetchAssociative('SELECT revision, state FROM finding_review_disposition WHERE finding_id = ?', [$job->getFinding()->getId()])
+            : false;
+        $revision = $disposition === false ? 0 : (int) $disposition['revision'];
+        if (($disposition['state'] ?? null) === 'deferred'
+            || $revision !== (int) ($job->getCaptureMetadata()['captureDispositionRevision'] ?? 0)) {
+            throw new \LogicException('The review disposition changed during capture; request a new screenshot after resuming the finding.');
+        }
     }
 
     private function jobs(): ScreenshotJobRepository

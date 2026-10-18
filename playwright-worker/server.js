@@ -18,6 +18,7 @@ const MAX_INTERACTIVE_SESSIONS = 1;
 const INTERACTIVE_DIALOG_CAPTURE_TIMEOUT_MS = 6000;
 const MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS = 2;
 const MAX_INTERACTIVE_DIALOG_EVENTS_PER_ARM = 20;
+const MAX_INTERACTIVE_URL_CANDIDATES = 24;
 const INTERACTIVE_SWEEP_MS = 30000;
 const INTERACTIVE_OPERATION_TIMEOUT_MS = 15000;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -437,7 +438,43 @@ function currentTime(dependencies = {}) {
   return dependencies.now ? dependencies.now().getTime() : Date.now();
 }
 
+// Browser URLs are evidence: never canonicalize their spelling or collapse
+// payload encodings while collecting a small, session-local choice list.
+function observeInteractiveUrl(session, page, url, role, dependencies = {}) {
+  if (session.closed || session.captureResult || typeof url !== 'string' || url.length > 8192) return;
+  try {
+    if (!['http:', 'https:'].includes(new URL(url).protocol)) return;
+  } catch { return; }
+  const provenance = session.pageProvenance.get(page);
+  if (!provenance) return;
+  const existing = session.urlCandidates.find((candidate) => candidate.pageId === provenance.pageId && candidate.url === url);
+  if (existing) {
+    if (!existing.roles.includes(role)) existing.roles.push(role);
+    return;
+  }
+  if (session.urlCandidates.length >= MAX_INTERACTIVE_URL_CANDIDATES) {
+    // Retain the exact submitted entry; recent observed URLs displace the
+    // oldest other entry. Captured snapshots are independent immutable copies.
+    const index = session.urlCandidates.findIndex((candidate) => !candidate.roles.includes('entry'));
+    if (index < 0) return;
+    session.urlCandidates.splice(index, 1);
+    session.urlCandidatesTruncated = true;
+  }
+  session.urlCandidates.push({
+    url, roles: [role], observedAt: new Date(currentTime(dependencies)).toISOString(),
+    pageId: provenance.pageId, pageType: provenance.pageType, openerPageId: provenance.openerPageId,
+    navigationSequence: session.pageNavigationSequence.get(page) ?? 0,
+  });
+}
+
+function interactiveUrlSnapshot(session) {
+  return Object.freeze(session.urlCandidates.map((candidate) => Object.freeze({
+    ...candidate, roles: Object.freeze([...candidate.roles]),
+  })));
+}
+
 function interactiveSessionView(session) {
+  const urlCandidates = session.captureResult?.metadata.urlCandidates || interactiveUrlSnapshot(session);
   return {
     id: session.id,
     generation: session.generation,
@@ -458,6 +495,8 @@ function interactiveSessionView(session) {
     challenge: session.lastChallenge,
     initialChallenge: session.initialChallenge,
     navigationError: session.navigationError,
+    urlCandidates,
+    urlCandidatesTruncated: session.captureResult?.metadata.urlCandidatesTruncated ?? session.urlCandidatesTruncated,
     dialogSeen: session.dialogInfo !== null,
     dialogObservation: session.dialogInfo ? { ...session.dialogInfo } : null,
     dialogCapture: {
@@ -471,6 +510,8 @@ function interactiveSessionView(session) {
       id: session.dialogFrame.id,
       capturedAt: session.dialogFrame.capturedAt, detectedAt: session.dialogFrame.detectedAt,
       pageUrl: session.dialogFrame.pageUrl, type: session.dialogFrame.type, message: session.dialogFrame.message,
+      urlCandidates: session.dialogFrame.urlCandidates,
+      urlCandidatesTruncated: session.dialogFrame.urlCandidatesTruncated,
     } : null,
     dialogFrameCapturedAt: session.dialogFrame?.capturedAt || null,
     dialogFramePageUrl: session.dialogFrame?.pageUrl || null,
@@ -573,6 +614,7 @@ async function captureInteractiveDialog(session, item, dependencies = {}) {
       navigationSequence: session.pageNavigationSequence.get(item.sourcePage),
       detectedAt: item.info.detectedAt, type: item.info.type, message: item.info.message,
       http: item.sourcePage === session.page ? { ...session.currentHttp } : emptyHttp(item.info.pageUrl),
+      urlCandidates: item.urlCandidates, urlCandidatesTruncated: item.urlCandidatesTruncated,
     });
     session.dialogCaptureArmed = false;
     updateDialogCapture(session, 'captured');
@@ -641,6 +683,7 @@ function closeInteractiveSession(session, dependencies = {}) {
       for (const [page, handler] of session.pageHandlers || []) {
         page.off('dialog', handler.dialog);
         page.off('framenavigated', handler.navigation);
+        page.off('request', handler.request);
       }
     }
   })();
@@ -757,6 +800,8 @@ async function launchInteractiveSession(payload, dependencies = {}) {
     heldDialog: null, openDialogs: new Set(), dialogHoldWaiters: new Set(),
     dialogWorkTail: Promise.resolve(),
     pageNavigationSequence: new WeakMap(), pageHandlers: new Map(),
+    pageProvenance: new WeakMap(), pageSequence: 0,
+    urlCandidates: [], urlCandidatesTruncated: false,
     closed: false, captureResult: null,
   };
   if (!SESSION_ID_PATTERN.test(record.id)) throw new Error('Invalid generated interactive session ID.');
@@ -801,9 +846,34 @@ async function launchInteractiveSession(payload, dependencies = {}) {
       record.contextPageHandler = (newPage) => {
         if (record.pageHandlers.has(newPage)) return;
         record.pageNavigationSequence.set(newPage, 0);
+        const main = record.pageSequence === 0;
+        const provenance = {
+          pageId: `page-${++record.pageSequence}`, pageType: main ? 'main' : 'popup', openerPageId: null,
+        };
+        record.pageProvenance.set(newPage, provenance);
+        if (main) observeInteractiveUrl(record, newPage, payload.url, 'entry', dependencies);
+        // Playwright resolves opener asynchronously. Resolve it only into the
+        // live list; already captured image context must remain immutable.
+        if (!main && newPage.opener) {
+          void Promise.resolve().then(() => newPage.opener()).then((opener) => {
+            if (record.closed || record.captureResult) return;
+            provenance.openerPageId = record.pageProvenance.get(opener)?.pageId || null;
+            for (const candidate of record.urlCandidates) {
+              if (candidate.pageId === provenance.pageId) candidate.openerPageId = provenance.openerPageId;
+            }
+          }).catch(() => {});
+        }
+        const request = (request) => {
+          try {
+            if (request.isNavigationRequest() && request.frame() === newPage.mainFrame()) {
+              observeInteractiveUrl(record, newPage, request.url(), request.redirectedFrom?.() ? 'redirect' : 'navigation', dependencies);
+            }
+          } catch { /* A detached frame has no useful navigation context. */ }
+        };
         const navigation = (frame) => {
           if (frame === newPage.mainFrame()) {
             record.pageNavigationSequence.set(newPage, record.pageNavigationSequence.get(newPage) + 1);
+            observeInteractiveUrl(record, newPage, frame.url(), 'navigation', dependencies);
           }
         };
         const dialogHandler = (dialog) => {
@@ -816,6 +886,7 @@ async function launchInteractiveSession(payload, dependencies = {}) {
             return;
           }
           const sourcePage = dialog.page?.() || newPage;
+          observeInteractiveUrl(record, sourcePage, sourcePage.url(), 'dialog', dependencies);
           const info = {
             seen: true,
             type: dialog.type(), message: dialog.message().slice(0, 10000),
@@ -824,7 +895,10 @@ async function launchInteractiveSession(payload, dependencies = {}) {
           };
           record.dialogInfo = info;
           record.dialogEventsSinceArm += 1;
-          const item = { dialog, sourcePage, info, releaseInput: null, gateError: null, held: false };
+          const item = {
+            dialog, sourcePage, info, releaseInput: null, gateError: null, held: false,
+            urlCandidates: interactiveUrlSnapshot(record), urlCandidatesTruncated: record.urlCandidatesTruncated,
+          };
           record.openDialogs.add(item);
           updateDialogCapture(record);
           try { item.releaseInput = record.runtime?.quiesce(record); }
@@ -872,8 +946,9 @@ async function launchInteractiveSession(payload, dependencies = {}) {
           }
         };
         newPage.on('framenavigated', navigation);
+        newPage.on('request', request);
         newPage.on('dialog', dialogHandler);
-        record.pageHandlers.set(newPage, { navigation, dialog: dialogHandler });
+        record.pageHandlers.set(newPage, { navigation, request, dialog: dialogHandler });
       };
       record.contextDialogHandler = (dialog) => {
         const sourcePage = dialog.page?.() || record.page;
@@ -941,6 +1016,7 @@ async function launchInteractiveSession(payload, dependencies = {}) {
         }
       }
       record.initialFinalUrl = record.initialHttp.url || page.url();
+      observeInteractiveUrl(record, page, record.initialFinalUrl, 'navigation', dependencies);
       await drainActiveDialogs(record);
       if (!record.openDialogs.size) await page.bringToFront();
       const initialInspectionNavigation = record.pageNavigationSequence.get(page);
@@ -1270,9 +1346,33 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
     const inspectionSequence = session.pageNavigationSequence.get(session.page);
     const view = interactiveSessionView(session);
     let normalImage = null;
+    let pageImageContext = null;
     if (!session.dialogFrame) {
+      const pageSequenceBeforeFocus = session.pageSequence;
+      await session.page.bringToFront();
+      checkCandidate();
+      if (session.openDialogs.size) throw heldDialogError();
+      if (session.pageSequence !== pageSequenceBeforeFocus) {
+        throw httpError(409, 'Another browser page opened during screenshot capture; refresh the preview before saving.');
+      }
+      const sourceURL = session.page.url();
+      observeInteractiveUrl(session, session.page, sourceURL, 'navigation', dependencies);
+      pageImageContext = {
+        sourceURL, navigationSequence: session.pageNavigationSequence.get(session.page),
+        pageSequence: session.pageSequence,
+        urlCandidates: interactiveUrlSnapshot(session), urlCandidatesTruncated: session.urlCandidatesTruncated,
+      };
       normalImage = await captureDesktop();
       checkCandidate();
+      // A popup can take the X11 foreground without navigating the main page.
+      // Even one already closed again makes these desktop bytes ambiguous.
+      if (session.pageSequence !== pageImageContext.pageSequence) {
+        throw httpError(409, 'Another browser page opened during screenshot capture; refresh the preview before saving.');
+      }
+      if (session.pageNavigationSequence.get(session.page) !== pageImageContext.navigationSequence
+          || session.page.url() !== pageImageContext.sourceURL) {
+        throw httpError(409, 'Page navigated during screenshot capture; refresh the preview before saving.');
+      }
     }
     await drainActiveDialogs(session);
     checkCandidate();
@@ -1282,7 +1382,9 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
     if (!screenshotBase64) throw new Error('Interactive screenshot capture completed without an image.');
     if (session.closed) throw httpError(410, 'Interactive browser session closed.');
     const navigationAfterInspection = session.pageNavigationSequence.get(session.page) !== inspectionSequence;
-    const sourceURL = useDialogFrame ? session.dialogFrame.pageUrl : session.page.url();
+    const sourceURL = useDialogFrame ? session.dialogFrame.pageUrl : pageImageContext.sourceURL;
+    const urlCandidates = useDialogFrame ? session.dialogFrame.urlCandidates : pageImageContext.urlCandidates;
+    const urlCandidatesTruncated = useDialogFrame ? session.dialogFrame.urlCandidatesTruncated : pageImageContext.urlCandidatesTruncated;
     const imageHttp = useDialogFrame ? session.dialogFrame.http
       : session.currentHttp.url === sourceURL ? { ...session.currentHttp } : emptyHttp(sourceURL);
     const imageChallenge = useDialogFrame || navigationAfterInspection
@@ -1297,6 +1399,8 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
       capturedAt: useDialogFrame ? session.dialogFrame.capturedAt : new Date(currentTime(dependencies)).toISOString(),
       dialogCapturedAt: useDialogFrame ? session.dialogFrame.capturedAt : null,
       sourceURL,
+      urlCandidates,
+      urlCandidatesTruncated,
       captureSelection,
       finalUrl: sourceURL,
       httpStatus: imageHttp.status,
@@ -1316,6 +1420,8 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
         initialFinalUrl: view.initialFinalUrl,
         finalUrl: sourceURL,
         sourceURL,
+        urlCandidates,
+        urlCandidatesTruncated,
         captureSelection,
         dialogCapturedAt: useDialogFrame ? session.dialogFrame.capturedAt : null,
         captureInspectionAt,

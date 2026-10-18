@@ -74,14 +74,15 @@ async function main() {
     if (modal) assert.equal(await page.locator(dialogSelector).evaluate(node => node.open), true);
   }
   async function instructions(page, modal = false) {
+    const { availableVersion } = await requestState(page.context());
     const section = page.locator((modal ? dialogSelector + ' ' : '') + '[data-release-update]');
     const link = section.locator('.studio-about-update-available a');
-    assert.equal(await link.getAttribute('href'), repository + '/releases/tag/v2.1.1');
+    assert.equal(await link.getAttribute('href'), repository + '/releases/tag/v' + availableVersion);
     assert.equal(await link.getAttribute('target'), '_blank');
     assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
-    assert.match(await link.innerText(), /2\.1\.1/);
+    assert.equal((await link.innerText()).includes(availableVersion), true);
     await section.locator('details summary').click();
-    assert.equal(await section.locator('code').innerText(), 'git status --short\ngit fetch --tags origin\ngit switch --detach refs/tags/v2.1.1');
+    assert.equal(await section.locator('code').innerText(), 'git status --short\ngit fetch --tags origin\ngit switch --detach refs/tags/v' + availableVersion);
     assert.equal(await section.locator('a[href="/docs/readme#upgrade-an-existing-workspace"]').count(), 1);
     assert.equal(await page.evaluate(() => window.__releaseInjected), undefined);
     assert.equal(await section.locator('script, img').count(), 0);

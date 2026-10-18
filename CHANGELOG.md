@@ -3,10 +3,23 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
-## Unreleased
+## 2.1.1 — Moneta (Conatus) (unreleased)
 
 ### Added
 
+- Interactive review can adopt a changed same-host HTTP(S) URL for a GET case as
+  the active PoC and target for future checks. Observed browser URLs have explicit
+  roles; an ambiguous choice asks the user, with manual entry and keeping the old
+  PoC as recovery options. The original intake URL and exact screenshot source
+  remain separate, with a traceable PoC revision history.
+- Review deferral records a reason and optional due date independently of the
+  manual assessment or disclosure reminder. Deferred cases stay out of the
+  normal review loop and can be found and resumed explicitly. A due date runs
+  one bounded retest; only matching native-dialog evidence with a saved image
+  returns it to Review. A renewed checking problem leaves the case deferred,
+  without an automatic fixed assessment or another automatic attempt. After
+  three confirmed skips of an unchanged case, a dismissible suggestion offers
+  deferral while Enter keeps its normal skip behavior.
 - About shows cached stable-release availability, a manual check, release link
   and upgrade guidance with commands for the exact published tag. A supervised
   update worker checks daily with bounded GitHub requests and preserves the

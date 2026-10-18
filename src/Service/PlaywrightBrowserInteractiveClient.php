@@ -273,7 +273,7 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             'finalUrl' => 'string', 'httpStatus' => 'integer', 'challenge' => 'array',
             'initialChallenge' => 'array', 'navigationError' => 'string',
             'initialUrl' => 'string', 'initialHttpStatus' => 'integer', 'dialogObservation' => 'array', 'retainedDialog' => 'array',
-            'captureFinalized' => 'boolean', 'dialogCapture' => 'array',
+            'captureFinalized' => 'boolean', 'dialogCapture' => 'array', 'urlCandidates' => 'array', 'urlCandidatesTruncated' => 'boolean',
         ]);
         if (isset($data['dialogCapture'])) {
             $dialog = $data['dialogCapture'];
@@ -309,6 +309,8 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             retainedDialog: $data['retainedDialog'] ?? null,
             captureFinalized: $data['captureFinalized'] ?? false,
             dialogCapture: $data['dialogCapture'] ?? [],
+            urlCandidates: $data['urlCandidates'] ?? [],
+            urlCandidatesTruncated: $data['urlCandidatesTruncated'] ?? false,
         );
     }
 

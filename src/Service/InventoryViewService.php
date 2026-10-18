@@ -124,6 +124,7 @@ final class InventoryViewService
             'assessment' => ['Manuelle Bewertung', ['unknown' => FindingReadLabels::assessment(null), 'confirmed' => FindingReadLabels::assessment('confirmed'), 'fixed' => FindingReadLabels::assessment('fixed'), 'discarded' => FindingReadLabels::assessment('discarded')]],
             'observation' => ['Technische Beobachtung', array_combine([...RetestResult::values(), 'none'], array_map(static fn (string $value): string => FindingReadLabels::observation($value === 'none' ? null : $value), [...RetestResult::values(), 'none']))],
             'contact' => ['Kontakt', ['yes' => 'Kontaktiert', 'no' => 'Nicht kontaktiert']],
+            'review' => ['Review-Verfügbarkeit', ['open' => 'Nicht zurückgestellt', 'deferred' => 'Zurückgestellt']],
             'legacy_status' => ['Historischer Status', array_combine(FindingStatus::values(), FindingStatus::values())],
             'legacy_bucket' => ['Historische Gruppe', array_combine(['open', 'fixed', 'manual_review', 'unchecked'], ['open', 'fixed', 'manual_review', 'unchecked'])],
             'legacy_review' => ['Frühere Review-Markierung', ['confirmed_fixed' => 'Als behoben markiert', 'manually_checked' => 'Als geprüft markiert']],

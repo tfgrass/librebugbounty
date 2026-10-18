@@ -18,14 +18,14 @@ final class ReviewNoticeService
         if (!$this->available() || $ids === []) {
             return [];
         }
-        $where = "f.manual_assessment IN ('confirmed', 'fixed') AND f.status NOT IN ('duplicate', 'discarded') AND ".FindingWorkPolicy::pursuitActiveSql($this->connection);
+        $where = "f.manual_assessment IN ('confirmed', 'fixed') AND f.status NOT IN ('duplicate', 'discarded') AND ".FindingWorkPolicy::pursuitActiveSql($this->connection).' AND '.ReviewDispositionService::activeSql($this->connection);
         $parameters = [];
         if ($ids !== null) {
             $where .= ' AND f.id IN ('.implode(',', array_fill(0, count($ids), '?')).')';
             $parameters = $ids;
         }
         $findings = $this->connection->fetchAllAssociative(
-            'SELECT f.id, f.manual_assessment, f.assessed_at, a.id AS decision_id, a.assessment AS decision_assessment, a.assessed_at AS decision_at, a.known_observation_ids, a.known_observation_states '
+            'SELECT f.id, '.(in_array('poc_revision', array_column($this->connection->fetchAllAssociative('PRAGMA table_info(finding)'), 'name'), true) ? 'f.url, f.poc_url, f.poc_revision, ' : '').'f.manual_assessment, f.assessed_at, a.id AS decision_id, a.assessment AS decision_assessment, a.assessed_at AS decision_at, a.known_observation_ids, a.known_observation_states '
             .'FROM finding f LEFT JOIN finding_assessment a ON a.id = (SELECT latest.id FROM finding_assessment latest WHERE latest.finding_id = f.id AND '.AssessmentHistoryProjection::activeSql($this->connection, 'latest').' ORDER BY latest.assessed_at DESC, latest.id DESC LIMIT 1) WHERE '.$where,
             $parameters,
         );
@@ -53,6 +53,7 @@ final class ReviewNoticeService
             $knownIds = $matchingHistory ? json_decode($finding['known_observation_ids'], true, 512, JSON_THROW_ON_ERROR) : null;
             $triggers = [];
             foreach ($runsByFinding[$finding['id']] ?? [] as $run) {
+                if (!PocObservation::current($run, $finding)) continue;
                 $reason = $this->reason($finding['manual_assessment'], $run['result']);
                 if ($reason === null) { continue; }
                 if ($states !== null) {

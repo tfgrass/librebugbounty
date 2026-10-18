@@ -57,10 +57,28 @@ $novncMessages = [
     'previewError' => $t('Dialogbild konnte nicht geladen werden. Erneut versuchen.'),
     'fullscreen' => $t('Vollbild'),
     'exitFullscreen' => $t('Vollbild verlassen'),
+    'pocKeep' => $t('PoC unverändert lassen'),
+    'pocSuggested' => $t('Erkannte URL übernehmen · Vorschlag'),
+    'pocObserved' => $t('Erkannte URL übernehmen'),
+    'pocManual' => $t('Andere PoC-URL eingeben'),
+    'pocEntry' => $t('Einstieg'),
+    'pocNavigation' => $t('Aufruf'),
+    'pocRedirect' => $t('Weiterleitung'),
+    'pocDialog' => $t('Dialogseite'),
+    'pocMainPage' => $t('Hauptseite'),
+    'pocPopup' => $t('Popup'),
+    'pocIneligible' => $t('Nicht übernehmbar: nur HTTP(S)-URLs auf dem ursprünglichen Host für GET-Funde.'),
+    'pocInvalid' => $t('Gib eine HTTP(S)-URL auf dem ursprünglichen Host ohne Zugangsdaten oder Leerzeichen ein.'),
+    'pocDialogSnapshot' => $t('URLs bis zu diesem Dialogbild'),
+    'pocLiveSnapshot' => $t('In dieser Browser-Session erkannte URLs'),
+    'pocImageSource' => $t('Unveränderte Bildquelle'),
+    'pocPageSource' => $t('Die Bildquelle wird bei der Aufnahme festgehalten.'),
+    'pocAmbiguous' => $t('{value} neue URLs erkannt. Welche soll der aktive PoC sein? Du kannst den bisherigen PoC behalten.'),
+    'pocHint' => $t('Die Auswahl aktualisiert PoC und künftige Rechecks. Original und Bildquelle bleiben erhalten.'),
 ];
 ?>
 <link rel="stylesheet" href="/css/studio-review-interactive.css">
-<section class="novnc-panel" data-review-novnc data-finding-id="<?= $escape($finding->getId()) ?>" data-csrf-token="<?= $escape($interactiveCsrfToken ?? '') ?>" data-return-path="<?= $escape($returnPath ?? '/review') ?>" data-state="loading" aria-label="<?= $escape($t('Interaktiv prüfen')) ?>" tabindex="-1">
+<section class="novnc-panel" data-review-novnc data-finding-id="<?= $escape($finding->getId()) ?>" data-csrf-token="<?= $escape($interactiveCsrfToken ?? '') ?>" data-return-path="<?= $escape($returnPath ?? '/review') ?>" data-original-url="<?= $escape($finding->getUrl()) ?>" data-poc-url="<?= $escape($finding->getPocUrl()) ?>" data-method="<?= $escape($finding->getMethod()) ?>" data-state="loading" aria-label="<?= $escape($t('Interaktiv prüfen')) ?>" tabindex="-1">
   <script type="application/json" data-novnc-messages><?= json_encode($novncMessages, JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
   <header class="novnc-heading">
     <div><strong><?= $escape($t('Interaktiv prüfen')) ?></strong><p><?= $escape($t('Live-Browser im Review · Start nur per Klick')) ?></p></div>
@@ -81,6 +99,19 @@ $novncMessages = [
   </div>
   <div class="novnc-confirm" data-novnc-confirm role="group" aria-label="<?= $escape($t('Aktion bestätigen')) ?>" hidden>
     <p data-novnc-confirm-message></p>
+    <fieldset class="novnc-poc" data-novnc-poc hidden>
+      <legend><?= $escape($t('PoC für künftige Rechecks')) ?></legend>
+      <p data-novnc-poc-context></p>
+      <p data-novnc-poc-source></p>
+      <p data-novnc-poc-hint></p>
+      <div class="novnc-poc-choices" data-novnc-poc-choices></div>
+      <label class="novnc-poc-manual-label" data-novnc-poc-manual-label hidden><?= $escape($t('Manuell angegebene PoC-URL')) ?>
+        <input type="url" data-novnc-poc-manual maxlength="8192" spellcheck="false" autocomplete="off" aria-describedby="novnc-poc-error-<?= $escape($finding->getId()) ?>" disabled>
+      </label>
+      <p data-novnc-poc-error id="novnc-poc-error-<?= $escape($finding->getId()) ?>" role="status"></p>
+      <p class="novnc-description" data-novnc-poc-truncated hidden><?= $escape($t('Die Auswahl enthält die letzten 24 URL-Beobachtungen. Eine andere URL kannst du manuell angeben.')) ?></p>
+      <p class="novnc-description"><?= $escape($t('Eine erkannte oder manuell gewählte URL bestätigt keine erneute Reproduzierbarkeit.')) ?></p>
+    </fieldset>
     <button type="button" class="novnc-primary" data-novnc-confirm-yes><?= $escape($t('Bestätigen')) ?></button>
     <button type="button" data-novnc-confirm-no><?= $escape($t('Zurück')) ?></button>
   </div>

@@ -14,7 +14,7 @@ final class FindingListService
         'q', 'domain', 'assessment', 'observation', 'contact', 'scope',
         'legacy_status', 'legacyStatus', 'legacy_bucket', 'legacyBucket',
         'status', 'bucket', 'type', 'severity', 'exact_domain', 'exactDomain',
-        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review', 'pursuit', 'closure_reason', 'contact_work', 'reminder', 'view',
+        'page', 'pageSize', 'event', 'from', 'to', 'tld', 'sent', 'legacy_review', 'pursuit', 'closure_reason', 'contact_work', 'reminder', 'view', 'review',
     ];
 
     public function __construct(
@@ -101,6 +101,7 @@ final class FindingListService
             'contact_work' => $filter->contactWork,
             'reminder' => $filter->reminder,
             'view' => $filter->view,
+            'review' => $filter->review === 'all' ? '' : $filter->review,
         ], static fn (string $value): bool => $value !== '');
     }
 
@@ -197,6 +198,7 @@ final class FindingListService
             contactWork: $get('contact_work'),
             reminder: $get('reminder') === '' && $get('view') === 'workbasket' ? 'open' : $get('reminder'),
             view: $get('view'),
+            review: $get('review'),
         );
 
         return [$filter, $page, $pageSize];

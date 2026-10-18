@@ -160,7 +160,9 @@ final class IntakeActivityTest extends DatabaseTestCase
         $times = ['2026-10-17 21:59:59', '2026-10-17 22:00:00', '2026-10-17 22:14:59', '2026-10-17 22:15:01'];
         foreach ($times as $index => $time) {
             $finding = $this->intake->createFinding('https://day.example.test/'.$index);
-            $this->entityManager->getConnection()->executeStatement('UPDATE finding SET submitted_at = ? WHERE id = ?', [$time, $finding->getId()]);
+            $stored = (new \DateTimeImmutable($time.'Z'))
+                ->setTimezone(new \DateTimeZone(date_default_timezone_get()))->format('Y-m-d H:i:s');
+            $this->entityManager->getConnection()->executeStatement('UPDATE finding SET submitted_at = ? WHERE id = ?', [$stored, $finding->getId()]);
         }
         $today = $this->activity->snapshot($this->browser, 'today', 15, 'all', $now);
         self::assertSame(2, $today['stats']['count']);

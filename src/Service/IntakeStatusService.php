@@ -24,7 +24,13 @@ final class IntakeStatusService
 
     public function status(Finding $finding): array
     {
-        $run = $this->runs->findRecentByFinding($finding, 1)[0] ?? null;
+        $runId = $this->connection->fetchOne(
+            'SELECT latest.id FROM retest_run latest INNER JOIN finding f ON f.id = latest.finding_id '
+            .'WHERE latest.finding_id = ? AND '.PocObservation::currentSql($this->connection)
+            .' ORDER BY COALESCE(latest.finished_at, latest.started_at) DESC, latest.rowid DESC LIMIT 1',
+            [$finding->getId()],
+        );
+        $run = $runId === false ? null : $this->runs->find($runId);
 
         return [
             'id' => $finding->getId(),
@@ -51,9 +57,16 @@ final class IntakeStatusService
 
     private function screenshot(Finding $finding): array
     {
+        // Interactive saves may promote a selected URL while preserving the
+        // job's original request URL. Its PoC metadata identifies the saved
+        // revision; pre-2.1.1 jobs belong only to the original revision zero.
+        $metadata = "CASE WHEN json_valid(j.capture_metadata) THEN j.capture_metadata ELSE '{}' END";
         $job = $this->connection->fetchAssociative(
-            'SELECT status, requested_at, captured_at, screenshot_path, error_message '
-            .'FROM screenshot_job WHERE finding_id = ? ORDER BY requested_at DESC, rowid DESC LIMIT 1',
+            'SELECT j.status, j.requested_at, j.captured_at, j.screenshot_path, j.error_message '
+            .'FROM screenshot_job j INNER JOIN finding f ON f.id = j.finding_id WHERE j.finding_id = ? '
+            ."AND COALESCE(json_extract($metadata, '$.queuedPocRevision'), 0) = f.poc_revision "
+            ."AND COALESCE(json_extract($metadata, '$.pocUrl'), j.url) = COALESCE(f.poc_url, f.url) "
+            .'ORDER BY j.requested_at DESC, j.rowid DESC LIMIT 1',
             [$finding->getId()],
         );
         $base = [

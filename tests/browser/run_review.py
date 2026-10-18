@@ -18,7 +18,8 @@ import uuid
 project = Path(__file__).resolve().parents[2]
 run_id = uuid.uuid4().hex
 root = Path(tempfile.gettempdir()) / f"librebugbounty-studio-review-{run_id}"
-output = project / "var" / f"review-focus-acceptance-{run_id}"
+suite_name = "review-recovery" if os.environ.get("STUDIO_REVIEW_ONLY") == "recovery" else "review-focus"
+output = project / "var" / f"{suite_name}-acceptance-{run_id}"
 output.mkdir(parents=True)
 env = os.environ.copy()
 # Concurrent fixture requests must not wait behind an idle browser connection.
@@ -48,6 +49,12 @@ try:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("Fixture server did not start")
                 time.sleep(0.1)
+        if env.get("STUDIO_REVIEW_ONLY") == "recovery":
+            # Recovery mutates review state and must start with its own fixture,
+            # independently of the focus suite and interactive retry flow.
+            subprocess.run(["node", "tests/browser/studio-review-recovery.cjs"], cwd=project, env=env, check=True, timeout=300)
+            print(f"Review recovery artifacts: {output}", flush=True)
+            sys.exit(0)
         if env.get("STUDIO_REVIEW_ONLY") != "interactive":
             subprocess.run(["node", "tests/browser/studio-review-focus.cjs"], cwd=project, env=env, check=True, timeout=300)
             # The focus suite intentionally reviews/resets/skips cards. Run the

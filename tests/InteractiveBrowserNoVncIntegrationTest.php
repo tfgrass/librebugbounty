@@ -306,6 +306,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         $saved = $this->request($this->path('noImage').'/save', 'POST', [
             '_token' => $this->token('noImage'), 'channelId' => self::A, 'expectedRevision' => (string) $started['revision'],
             'expectedCandidateId' => '',
+            'expectedPocRevision' => '0', 'pocMode' => 'keep',
         ]);
         self::assertSame(303, $saved->getStatusCode(), $saved->getContent());
         $after = $this->snapshot();
@@ -366,10 +367,179 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         self::assertSame($committed, $this->snapshot(), 'Close retry never duplicates or rolls back committed proof');
     }
 
+    public function testPocSelectionContractRejectsMissingMalformedAndStaleInputBeforeCapture(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $before = $this->snapshot(); $calls = $this->mutations();
+        $base = ['_token' => $this->token('noImage'), 'channelId' => self::A, 'expectedRevision' => (string) $started['revision'], 'expectedCandidateId' => ''];
+        foreach ([
+            [], ['pocMode' => 'keep'], ['expectedPocRevision' => '0'],
+            ['expectedPocRevision' => '-1', 'pocMode' => 'keep'], ['expectedPocRevision' => ['0'], 'pocMode' => 'keep'],
+            ['expectedPocRevision' => '0', 'pocMode' => 'unknown'], ['expectedPocRevision' => '0', 'pocMode' => ['keep']],
+            ['expectedPocRevision' => '0', 'pocMode' => 'observed'], ['expectedPocRevision' => '0', 'pocMode' => 'manual', 'pocUrl' => []],
+        ] as $selection) {
+            $response = $this->request($this->path('noImage').'/save', 'POST', $selection + $base, ['HTTP_ACCEPT' => 'application/json']);
+            self::assertSame(400, $response->getStatusCode(), $response->getContent());
+        }
+        self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'], ['expectedPocRevision' => '1'])->getStatusCode());
+        foreach (['http://elsewhere.invalid/test', 'http://user:pass@127.0.0.1/test', 'javascript:alert(1)', "http://127.0.0.1/test\n"] as $url) {
+            self::assertSame(400, $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'manual', 'pocUrl' => $url])->getStatusCode());
+        }
+        self::assertSame($calls, $this->mutations()); self::assertNull($this->worker->state['capture']);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testObservedPocPreservesExactEncodingOriginalHistoryAndScreenshotSourceAndStartsNextSessionAtNewUrl(): void
+    {
+        $original = $this->fixtures['noImage']['url'];
+        $selected = 'http://127.0.0.1/echo?z=%252f&x=%3Cscript%3Ealert(1)%3C%2Fscript%3E&x=%2f#%25';
+        $source = 'http://127.0.0.1/after-dialog?redirected=1';
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->worker->state['session']['urlCandidates'][] = \StudioReviewNoVncWorkerFixture::urlCandidate($selected, ['navigation', 'dialog']);
+        $this->worker->state['session']['finalUrl'] = $source;
+        $status = $this->panelStatus('noImage', self::A);
+        self::assertSame($selected, $status['urlCandidates'][2]['url']);
+        self::assertSame($original, $status['pocUrl']); self::assertSame(0, $status['pocRevision']);
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $selected]), 200);
+        $db = $this->entityManager->getConnection();
+        $finding = $db->fetchAssociative('SELECT url, poc_url, poc_revision FROM finding WHERE id = ?', [$this->id('noImage')]);
+        self::assertSame(['url' => $original, 'poc_url' => $selected, 'poc_revision' => 1], $finding);
+        $history = $db->fetchAllAssociative('SELECT * FROM finding_poc_revision WHERE finding_id = ?', [$this->id('noImage')]);
+        self::assertCount(1, $history); self::assertSame($original, $history[0]['previous_url']); self::assertSame($selected, $history[0]['url']);
+        self::assertSame('observed', $history[0]['source']); self::assertSame($source, $history[0]['source_url']);
+        $job = $db->fetchAssociative('SELECT * FROM screenshot_job WHERE id = ?', [$history[0]['screenshot_job_id']]);
+        $evidence = $db->fetchAssociative('SELECT * FROM evidence WHERE id = ?', [$history[0]['evidence_id']]);
+        $metadata = json_decode($job['capture_metadata'], true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame($original, $job['url'], 'The saved source job retains the session entry URL');
+        self::assertSame($source, $metadata['finalUrl']); self::assertSame($selected, $metadata['pocUrl']);
+        self::assertSame($evidence['sha256'], $history[0]['sha256']); self::assertSame($job['screenshot_path'], $evidence['file_path']);
+        self::assertSame($job['captured_at'], $history[0]['captured_at']);
+        $reopened = $this->json($this->post('noImage', 'lease/acquire', self::A, $this->lease()['generation']), 200);
+        self::assertSame('own_active', $reopened['state']); self::assertSame($selected, $this->worker->state['session']['initialUrl']);
+        self::assertSame($selected, $this->lease()['binding']['start_url']); self::assertSame(1, $this->lease()['binding']['poc_revision']);
+    }
+
+    public function testObservedPocMustBelongToImmutableCaptureAndManualRecoveryCanReuseThatProof(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $manual = 'http://127.0.0.1/echo?chosen=%252F'; $before = $this->snapshot();
+        $response = $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $manual]);
+        self::assertSame(409, $response->getStatusCode(), $response->getContent());
+        self::assertSame($before, $this->snapshot()); $proof = $this->worker->state['capture']; self::assertNotNull($proof);
+        $this->worker->state['session']['urlCandidates'][] = \StudioReviewNoVncWorkerFixture::urlCandidate($manual);
+        self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $manual])->getStatusCode());
+        self::assertSame($before, $this->snapshot()); self::assertSame($proof, $this->worker->state['capture']);
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'manual', 'pocUrl' => $manual]), 200);
+        self::assertSame($proof, $this->worker->state['capture']);
+        $history = $this->entityManager->getConnection()->fetchAllAssociative('SELECT url, source FROM finding_poc_revision WHERE finding_id = ?', [$this->id('noImage')]);
+        self::assertSame([['url' => $manual, 'source' => 'manual']], $history);
+    }
+
+    public function testRetainedDialogSuppliesItsOwnObservedUrlsAndSourceAfterTheBrowserRedirects(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog(); $candidate = str_repeat('a', 48);
+        $selected = 'http://127.0.0.1/earlier?x=%253C';
+        $dialogUrl = 'http://127.0.0.1/dialog?x=%3C';
+        $redirected = 'http://127.0.0.1/after-dialog';
+        $this->worker->state['session']['retainedDialog'] = array_replace($this->worker->state['session']['retainedDialog'], [
+            'id' => $candidate, 'pageUrl' => $dialogUrl,
+            'urlCandidates' => [\StudioReviewNoVncWorkerFixture::urlCandidate($selected), \StudioReviewNoVncWorkerFixture::urlCandidate($dialogUrl, ['dialog'])],
+        ]);
+        $this->worker->state['session']['finalUrl'] = $redirected;
+        $this->worker->state['session']['urlCandidates'] = [\StudioReviewNoVncWorkerFixture::urlCandidate($redirected, ['current'])];
+        $status = $this->panelStatus('noImage', self::A);
+        self::assertSame($redirected, $status['urlCandidates'][0]['url']);
+        self::assertSame($selected, $status['retainedDialog']['urlCandidates'][0]['url']);
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], [
+            'expectedCandidateId' => $candidate, 'pocMode' => 'observed', 'pocUrl' => $selected,
+        ]), 200);
+        $history = $this->entityManager->getConnection()->fetchAssociative('SELECT url, source_url FROM finding_poc_revision WHERE finding_id = ?', [$this->id('noImage')]);
+        self::assertSame(['url' => $selected, 'source_url' => $dialogUrl], $history);
+        self::assertSame($candidate, $this->worker->state['capture']['metadata']['dialogCandidateId']);
+        self::assertSame($dialogUrl, $this->worker->state['capture']['finalUrl']);
+    }
+
+    public function testConcurrentPocRevisionDuringCaptureRejectsTheWholeOldSave(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $db = $this->entityManager->getConnection(); $before = $this->snapshot();
+        $files = self::getContainer()->get(EvidenceStorageInterface::class)->listPaths();
+        $this->worker->afterCapture = function () use ($db): void {
+            $db->update('finding', ['poc_url' => 'http://127.0.0.1/changed-elsewhere', 'poc_revision' => 1], ['id' => $this->id('noImage')]);
+        };
+        self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'manual', 'pocUrl' => 'http://127.0.0.1/old-tab'])->getStatusCode());
+        $after = $this->snapshot();
+        foreach (['evidence', 'screenshot_job', 'finding_poc_revision'] as $table) self::assertSame($before[$table], $after[$table]);
+        self::assertSame('http://127.0.0.1/changed-elsewhere', $db->fetchOne('SELECT poc_url FROM finding WHERE id = ?', [$this->id('noImage')]));
+        self::assertNotContains('close', $this->operations());
+        self::assertSame($files, self::getContainer()->get(EvidenceStorageInterface::class)->listPaths());
+    }
+
+    #[DataProvider('keepPocCases')]
+    public function testKeepingOrSelectingTheCurrentPocNeverCreatesARevision(string $mode): void
+    {
+        $original = $this->fixtures['noImage']['url'];
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->worker->state['session']['finalUrl'] = 'http://127.0.0.1/changed?actual=1';
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => $mode, 'pocUrl' => $original]), 200);
+        $db = $this->entityManager->getConnection();
+        self::assertSame($original, $db->fetchOne('SELECT COALESCE(poc_url, url) FROM finding WHERE id = ?', [$this->id('noImage')]));
+        self::assertSame(0, (int) $db->fetchOne('SELECT poc_revision FROM finding WHERE id = ?', [$this->id('noImage')]));
+        self::assertSame(0, (int) $db->fetchOne('SELECT COUNT(*) FROM finding_poc_revision'));
+    }
+
+    public static function keepPocCases(): iterable
+    {
+        foreach (['keep', 'observed', 'manual'] as $mode) yield $mode => [$mode];
+    }
+
+    #[DataProvider('pocFailureCases')]
+    public function testPocAndEvidenceCommitTogetherAndRetryCreatesExactlyOneRevision(string $failure): void
+    {
+        $db = $this->entityManager->getConnection(); $local = self::getContainer()->get(EvidenceStorageInterface::class);
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $selected = 'http://127.0.0.1/echo?new=%3Csvg%3E';
+        $this->worker->state['session']['urlCandidates'][] = \StudioReviewNoVncWorkerFixture::urlCandidate($selected);
+        $before = $this->snapshot(); $files = $local->listPaths();
+        $storageBlocker = APP_TEST_ROOT.'/artifacts/'.$this->id('noImage');
+        if ($failure === 'storage') {
+            // A real filesystem failure: the per-finding directory cannot be
+            // created while a file occupies its path. No permission assumptions.
+            file_put_contents($storageBlocker, 'deliberate capture outage');
+        } else {
+            $table = $failure === 'history' ? 'finding_poc_revision' : 'evidence';
+            $db->executeStatement("CREATE TRIGGER reject_poc_capture BEFORE INSERT ON $table BEGIN SELECT RAISE(ABORT, 'Temporary PoC capture database failure'); END");
+        }
+        try {
+            self::assertSame(502, $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $selected])->getStatusCode());
+        } finally {
+            if ($failure === 'storage') unlink($storageBlocker);
+            else $db->executeStatement('DROP TRIGGER reject_poc_capture');
+        }
+        self::assertSame($before, $this->snapshot()); self::assertSame($files, $local->listPaths());
+        $proof = $this->worker->state['capture']; self::assertNotNull($proof);
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $selected]), 200);
+        self::assertSame($proof, $this->worker->state['capture']);
+        self::assertSame(1, (int) $db->fetchOne('SELECT poc_revision FROM finding WHERE id = ?', [$this->id('noImage')]));
+        self::assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM finding_poc_revision WHERE finding_id = ?', [$this->id('noImage')]));
+        self::assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM evidence WHERE finding_id = ?', [$this->id('noImage')]));
+        self::assertSame(1, (int) $db->fetchOne('SELECT COUNT(*) FROM screenshot_job WHERE finding_id = ?', [$this->id('noImage')]));
+        $after = $this->snapshot();
+        self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'], ['pocMode' => 'observed', 'pocUrl' => $selected])->getStatusCode());
+        self::assertSame($after, $this->snapshot());
+    }
+
+    public static function pocFailureCases(): iterable
+    {
+        foreach (['storage', 'evidence', 'history'] as $failure) yield $failure => [$failure];
+    }
+
     private function retainDialog(): array
     {
         $retained = ['capturedAt' => '2026-10-17T12:01:01.000Z', 'detectedAt' => '2026-10-17T12:01:00.000Z',
-            'pageUrl' => $this->fixtures['noImage']['url'], 'type' => 'alert', 'message' => 'first retained proof'];
+            'pageUrl' => $this->fixtures['noImage']['url'], 'type' => 'alert', 'message' => 'first retained proof',
+            'urlCandidates' => [], 'urlCandidatesTruncated' => false];
         $this->worker->state['session']['retainedDialog'] = $retained + ['screenshotBase64' => \StudioReviewNoVncWorkerFixture::PNG, 'secret' => 'hidden'];
         $this->worker->state['session']['dialogObservation'] = ['message' => 'later failed observation', 'captureSucceeded' => false];
         return $retained;
@@ -488,7 +658,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         $this->worker->state['session']['dialogCapture']['secret'] = 'hidden';
         $lease = $this->lease(); $before = $this->snapshot();
         $status = $this->panelStatus('noImage', self::A);
-        self::assertSame($retained + ['id' => $candidateId], $status['retainedDialog']);
+        self::assertEquals($retained + ['id' => $candidateId], $status['retainedDialog']);
         self::assertSame(['state' => 'waiting', 'revision' => 0, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2], $status['dialogCapture']);
         self::assertFalse($status['captureFinalized']);
         self::assertStringNotContainsString('hidden', json_encode($status));
@@ -634,7 +804,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
 
     private function post(string $name, string $operation, string $channel, int $revision, array $extra = []): Response
     {
-        if ($operation === 'save') { $extra += ['expectedCandidateId' => '']; }
+        if ($operation === 'save') { $extra += ['expectedCandidateId' => '', 'expectedPocRevision' => '0', 'pocMode' => 'keep']; }
         return $this->request($this->path($name).'/'.$operation, 'POST', $extra + [
             '_token' => $this->token($name), 'channelId' => $channel, 'expectedRevision' => (string) $revision,
         ], ['HTTP_ACCEPT' => 'application/json']);
@@ -674,7 +844,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
     private function snapshot(): array
     {
         $result = [];
-        foreach (['finding', 'finding_assessment', 'finding_review_acknowledgement', 'finding_assessment_reset', 'retest_run', 'evidence', 'screenshot_job'] as $table) {
+        foreach (['finding', 'finding_poc_revision', 'finding_assessment', 'finding_review_acknowledgement', 'finding_assessment_reset', 'retest_run', 'evidence', 'screenshot_job'] as $table) {
             $result[$table] = $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM '.$table.' ORDER BY rowid');
         }
         return $result;

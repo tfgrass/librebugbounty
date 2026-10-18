@@ -36,6 +36,9 @@ final readonly class FindingReadView
         public ?string $contactRouteDestination = null,
         public ?string $lastDisclosureActivity = null,
         public ?string $lastDisclosureActivityOn = null,
+        public bool $reviewDeferred = false,
+        public ?\DateTimeImmutable $reviewDeferredUntil = null,
+        public string $originalUrl = '',
     ) {
     }
 }

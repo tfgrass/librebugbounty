@@ -56,7 +56,8 @@ final class ReviewService
 
     private function shouldReview(Finding $finding): bool
     {
-        if ($finding->isDiscarded()) {
+        if ($finding->isDiscarded() || ReviewDispositionService::isDeferred($this->entityManager->getConnection(), $finding->getId())
+            || !(new FindingWorkPolicy($this->entityManager->getConnection()))->checksAllowed($finding)) {
             return false;
         }
 
@@ -88,15 +89,17 @@ final class ReviewService
         if ($this->entityManager->contains($finding)) {
             $this->entityManager->refresh($finding);
         }
-        if ($finding->isDiscarded()) {
+        if ($finding->isDiscarded() || ReviewDispositionService::isDeferred($this->entityManager->getConnection(), $finding->getId())) {
             return;
         }
+        (new FindingWorkPolicy($this->entityManager->getConnection()))->assertChecksAllowed($finding);
 
         $wasManualCheck = $finding->getReviewState() === ReviewState::MANUAL_CHECKING;
         $preserveAssessment = $wasManualCheck || $finding->hasProtectedAssessment();
 
+        $context = $this->retestService->captureContext($finding);
         $chromiumRequest = new \App\Dto\BrowserRetestRequest(
-            url: $finding->getUrl(),
+            url: $finding->getPocUrl(),
             expectedEvidence: $finding->getExpectedEvidence(),
             timeoutMs: $timeoutMs,
             screenshot: $captureScreenshots,
@@ -104,7 +107,7 @@ final class ReviewService
             browser: 'chromium',
         );
         $firefoxRequest = new \App\Dto\BrowserRetestRequest(
-            url: $finding->getUrl(),
+            url: $finding->getPocUrl(),
             expectedEvidence: $finding->getExpectedEvidence(),
             timeoutMs: $timeoutMs,
             screenshot: $captureScreenshots,
@@ -115,10 +118,46 @@ final class ReviewService
         $chromium = $this->retestBrowser($chromiumRequest);
         $firefox = $this->retestBrowser($firefoxRequest);
 
-        $this->retestService->recordBrowserResult($finding, $chromium, $captureScreenshots, true);
-        $this->retestService->recordBrowserResult($finding, $firefox, $captureScreenshots, true);
+        $connection = $this->entityManager->getConnection();
+        $managed = $this->entityManager->contains($finding);
+        $ownsTransaction = $managed && !$connection->isTransactionActive();
+        if ($ownsTransaction) {
+            $connection->beginTransaction();
+        }
+        try {
+            if ($managed) {
+                $connection->executeStatement('UPDATE finding SET id = id WHERE id = ?', [$finding->getId()]);
+            }
+            $this->recordAndApplyResults($finding, $chromium, $firefox, $captureScreenshots, $context, $preserveAssessment, $wasManualCheck);
+            if ($ownsTransaction) {
+                $connection->commit();
+            }
+        } catch (\Throwable $error) {
+            if ($ownsTransaction && $connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            throw $error;
+        }
+    }
 
-        if ($preserveAssessment || $finding->hasProtectedAssessment() || $finding->isDiscarded()) {
+    private function recordAndApplyResults(
+        Finding $finding,
+        \App\Dto\RetestResultData $chromium,
+        \App\Dto\RetestResultData $firefox,
+        bool $captureScreenshots,
+        array $context,
+        bool $preserveAssessment,
+        bool $wasManualCheck,
+    ): void {
+        $chromiumRun = $this->retestService->recordBrowserResult($finding, $chromium, $captureScreenshots, true,
+            $context['active_poc_url'], $context['poc_revision'], $context);
+        $firefoxRun = $this->retestService->recordBrowserResult($finding, $firefox, $captureScreenshots, true,
+            $context['active_poc_url'], $context['poc_revision'], $context);
+
+        if (($chromiumRun->getRawResult()['stalePoc'] ?? false) || ($chromiumRun->getRawResult()['staleFindingContext'] ?? false)
+            || ($firefoxRun->getRawResult()['stalePoc'] ?? false) || ($firefoxRun->getRawResult()['staleFindingContext'] ?? false)
+            || $this->retestService->captureContext($finding) !== $context
+            || $preserveAssessment || $finding->hasProtectedAssessment() || $finding->isDiscarded()) {
             return;
         }
 

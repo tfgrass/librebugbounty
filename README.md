@@ -1,4 +1,4 @@
-# LibreBugBounty 2.1.0 “Moneta (Conatus)”
+# LibreBugBounty 2.1.1 “Moneta (Conatus)”
 
 **A self-hosted bug bounty workspace for reflected XSS research — an
 open-source, local-first OpenBugBounty alternative.**
@@ -84,11 +84,22 @@ has no detection prerequisite, and never starts on GET. Without a readable
 stored image, the noVNC panel is the primary view and starts only after the
 explicit click. The context is fresh and manual; saved evidence retains tri-state
 protection provenance, native dialog observations and immutable capture identity.
-An explicit capture/save attempt sets `captureLocked`; a retained dialog frame
-alone does not. Once locked, input stays locked until save or cancel. Select the
-saved image explicitly before using it as a decision basis. See [USAGE.md](USAGE.md#manual-review) and
+A failed native-dialog capture temporarily pauses input while that dialog stays
+open; retry the capture or explicitly dismiss it to continue. A retained image
+alone does not lock input. Finalizing a capture sets `captureFinalized` and keeps
+its result immutable through save retries or takeover, until save, cancel or
+expiry. Save confirms the selected image rather than silently adopting a newer
+dialog. Select the saved image explicitly before using it as a decision basis.
+See [USAGE.md](USAGE.md#manual-review) and
 [playwright-worker/README.md](playwright-worker/README.md) for takeover, expiry,
 save/cancel, shortcuts and recovery behavior.
+
+For GET cases, interactive work can save a different HTTP(S) URL on the original
+hostname as the active PoC for future checks, retaining the original import URL
+and immutable image source. Ambiguous observed URLs require a choice.
+Temporarily uncheckable cases can be deferred with a reason and optional date.
+One due retest returns a matching native-dialog image to Review; another failure
+leaves the case deferred without changing its assessment.
 
 <p>
   <a href="docs/screenshots/review.png"><img src="docs/screenshots/review.png" alt="Review shows the stored screenshot beside details and keyboard actions" width="680"></a>
@@ -179,7 +190,17 @@ also available offline under **About LibreBugBounty → Documentation**.
    so the worker dependencies match the release's browser image.
 6. Run `ddev start`. Startup installs the locked Composer and worker
    dependencies, applies pending database migrations, and starts the workers.
-7. Check that your existing cases, notes, assessments, and images are available.
+7. Reload open browser pages so that the PHP application, worker protocol and
+   browser controls use the same release. Check that your existing cases, notes,
+   assessments, and images are available.
+
+The 2.1.1 upgrade adds intake-session tracking (`Version20261018000000`), active
+PoC history (`Version20261018010000`), and review deferral
+(`Version20261018020000`). These migrations are additive: existing import URLs,
+assessments and image sources remain intact. Customized deployments must migrate
+the database and restart PHP and all Playwright workers together; the interactive
+save protocol now requires the explicitly confirmed image selection. End or save
+an active interactive session before stopping its worker.
 
 An upgrade preserves the stored workspace; it does not require a database
 reset. If you need to return to the earlier application version, use the
@@ -246,9 +267,11 @@ The service is reachable through the private worker network and the same-origin
 WebSocket route. The gateway callback on `web:8096` is internal only. The
 current runtime has exercised public WSS, same-finding takeover, and native alert
 capture in the built DDEV stack. Takeover retains the browser context and cached
-proof. A native dialog may be retained as provenance, but it does not lock input.
-An explicit capture/save attempt sets `captureLocked`; input then stays locked
-until the new owner explicitly saves or cancels. The saved proof keeps its
+proof. A successfully retained native dialog does not lock input. If its capture
+fails, the open native dialog holds input temporarily until explicit retry or
+dismissal. Once capture is finalized (`captureFinalized`), input stays locked
+until save, cancel or absolute expiry; a save failure or takeover preserves that
+immutable result. The saved proof keeps its
 original `captureId`, `captureGeneration`, capture time and URL; the current save
 authorization generation is separate and does not rewrite that immutable capture
 metadata.

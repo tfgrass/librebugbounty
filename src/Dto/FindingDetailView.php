@@ -30,6 +30,8 @@ final readonly class FindingDetailView
         public array $reviewResets = [],
         /** @var array<string, string> Assessment ID => explicit reset ID. */
         public array $cancelledAssessmentIds = [],
+        public ?array $reviewDisposition = null,
+        public array $pocHistory = [],
     ) {
     }
 }

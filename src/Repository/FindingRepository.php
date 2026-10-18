@@ -342,12 +342,20 @@ class FindingRepository extends ServiceEntityRepository
             ->addOrderBy('f.createdAt', 'ASC')
             ->setMaxResults($limit);
         $this->excludeDiscarded($qb);
+        $this->excludeDeferred($qb);
 
         return $qb->getQuery()->getResult();
     }
 
+    private function excludeDeferred(QueryBuilder $qb): void
+    {
+        if (!\App\Service\ReviewDispositionService::available($this->getEntityManager()->getConnection())) return;
+        $qb->andWhere('NOT EXISTS (SELECT rd.revision FROM App\\Entity\\ReviewDisposition rd WHERE rd.finding = f AND rd.state = :deferredReviewState)')->setParameter('deferredReviewState', 'deferred');
+    }
+
     private function excludeWorkRestricted(QueryBuilder $qb): void
     {
+        $this->excludeDeferred($qb);
         if (!\App\Service\FindingWorkPolicy::available($this->getEntityManager()->getConnection())) return;
         $qb->leftJoin(\App\Entity\FindingFollowUp::class, 'fw', Join::WITH, 'fw.finding = f')
             ->leftJoin(\App\Entity\DomainWorkRestriction::class, 'dw', Join::WITH, 'dw.hostname = LOWER(d.hostname)')

@@ -161,7 +161,7 @@ final class StudioExportProfileService
                     if ($legacyState) {
                         // Keep v1 keys and their order, adding provenance only to interactive images.
                         $record = array_replace(array_fill_keys([
-                            'id', 'domainId', 'title', 'type', 'severity', 'url', 'method', 'requestParams',
+                            'id', 'domainId', 'title', 'type', 'severity', 'url', 'originalUrl', 'pocRevision', 'method', 'requestParams',
                             'payload', 'expectedEvidence', 'reportUrl', 'reportedAt', 'submittedAt', 'createdAt',
                             'updatedAt', 'lastRetestedAt', 'manualAssessment', 'latestObservation', 'contactedAt',
                             'sentAt', 'discarded', 'legacy',
@@ -317,7 +317,7 @@ final class StudioExportProfileService
     private function details(array $page, bool $includeNotes): array
     {
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT id, domain_id, method, request_params, payload, expected_evidence, report_url, '
+            'SELECT id, domain_id, url, poc_revision, method, request_params, payload, expected_evidence, report_url, '
             .'reported_at, last_retested_at, updated_at'.($includeNotes ? ', private_notes' : '')
             .' FROM finding WHERE id IN (:ids)',
             ['ids' => array_map(static fn (FindingReadView $finding): string => $finding->id, $page)],
@@ -344,6 +344,7 @@ final class StudioExportProfileService
         $record = [
             'id' => $finding->id, 'domainId' => $detail['domain_id'], 'title' => $finding->title,
             'type' => $finding->type, 'severity' => $finding->severity, 'url' => $finding->url,
+            'originalUrl' => $detail['url'], 'pocRevision' => (int) $detail['poc_revision'],
         ];
         if ($options->includeRequestData) {
             $record += [
@@ -794,6 +795,11 @@ final class StudioExportProfileService
             $lines[] = '- '.$t('Schweregrad').': '.$this->markdown((string) $finding['severity']);
             $lines[] = '- URL:';
             $lines[] = $this->indentedCode((string) $finding['url']);
+            if ($finding['originalUrl'] !== $finding['url']) {
+                $lines[] = '- '.$t('Ursprüngliche URL').':';
+                $lines[] = $this->indentedCode((string) $finding['originalUrl']);
+                $lines[] = '- '.$t('PoC-Revision').': '.(int) $finding['pocRevision'];
+            }
             if (array_key_exists('method', $finding)) {
                 $lines[] = '- '.$t('Methode').': '.$this->markdown((string) ($finding['method'] ?? ''));
                 $lines[] = '- '.$t('Request-Parameter').':';

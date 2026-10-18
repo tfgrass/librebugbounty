@@ -4,6 +4,7 @@ namespace App\Repository;
 
 use App\Entity\Finding;
 use App\Entity\ScreenshotJob;
+use App\Service\ReviewDispositionService;
 use App\Value\FindingStatus;
 use App\Value\ScreenshotJobStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
@@ -40,6 +41,17 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
     public function claimNext(): ?ScreenshotJob
     {
         $connection = $this->getEntityManager()->getConnection();
+        return $connection->transactional(function () use ($connection): ?ScreenshotJob {
+            // Snapshot the disposition together with the claim, before a
+            // defer/resume can interleave between eligibility and capture.
+            $connection->executeStatement('UPDATE screenshot_job SET attempts = attempts WHERE 1 = 0');
+            return $this->claimNextWithWriter();
+        });
+    }
+
+    private function claimNextWithWriter(): ?ScreenshotJob
+    {
+        $connection = $this->getEntityManager()->getConnection();
         for ($attempt = 0; $attempt < 5; $attempt++) {
             $id = $connection->fetchOne(
                 // UUIDs are random and requested_at only has second precision. This is a
@@ -66,6 +78,12 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
             if ($updated === 1) {
                 $job = $this->find($id);
                 if ($job instanceof ScreenshotJob) {
+                    $this->getEntityManager()->refresh($job);
+                    $revision = ReviewDispositionService::available($connection)
+                        ? (int) $connection->fetchOne('SELECT revision FROM finding_review_disposition WHERE finding_id = ?', [$job->getFinding()->getId()])
+                        : 0;
+                    $metadata = array_merge($job->getCaptureMetadata() ?? [], ['captureDispositionRevision' => $revision]);
+                    $connection->executeStatement('UPDATE screenshot_job SET capture_metadata = ? WHERE id = ?', [json_encode($metadata, JSON_THROW_ON_ERROR), $id]);
                     $this->getEntityManager()->refresh($job);
                 }
 
@@ -143,7 +161,8 @@ final class ScreenshotJobRepository extends ServiceEntityRepository
 
     private function normalFindingSql(): string
     {
-        return '(f.manual_assessment IS NULL OR f.manual_assessment <> :discarded) AND f.status NOT IN (:duplicate, :discarded) AND '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->getEntityManager()->getConnection());
+        return '(f.manual_assessment IS NULL OR f.manual_assessment <> :discarded) AND f.status NOT IN (:duplicate, :discarded) AND '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->getEntityManager()->getConnection())
+            .' AND '.ReviewDispositionService::activeSql($this->getEntityManager()->getConnection());
     }
 
     /** @return array<string, string> */

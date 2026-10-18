@@ -41,6 +41,13 @@ class Finding extends AbstractTimestampedEntity
     #[ORM\Column(type: 'text')]
     private string $url;
 
+    /** Original url remains the intake/deduplication identity. */
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $pocUrl = null;
+
+    #[ORM\Column(type: 'integer', options: ['default' => 0])]
+    private int $pocRevision = 0;
+
     #[ORM\Column(type: 'string', length: 10)]
     private string $method = 'GET';
 
@@ -177,6 +184,28 @@ class Finding extends AbstractTimestampedEntity
     public function setUrl(string $url): self
     {
         $this->url = $url;
+
+        return $this;
+    }
+
+    public function getPocUrl(): string
+    {
+        return $this->pocUrl ?? $this->url;
+    }
+
+    public function getPocRevision(): int
+    {
+        return $this->pocRevision;
+    }
+
+    /** Persistence helper; user changes go through FindingPocService's revision check. */
+    public function setPocUrl(?string $url, int $revision): self
+    {
+        if ($revision < 0) {
+            throw new \InvalidArgumentException('The PoC revision must not be negative.');
+        }
+        $this->pocUrl = $url;
+        $this->pocRevision = $revision;
 
         return $this;
     }

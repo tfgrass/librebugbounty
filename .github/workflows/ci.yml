@@ -107,6 +107,10 @@ jobs:
         run: python tests/browser/run_preferences.py
       - name: Test Review focus and assessment transitions with isolated fixtures
         run: python tests/browser/run_review.py
+      - name: Test Review deferral and resume with a fresh isolated fixture
+        run: python tests/browser/run_review.py
+        env:
+          STUDIO_REVIEW_ONLY: recovery
       - name: Test intake sessions, help, compact statistics and release updates with fresh fixtures
         run: python tests/browser/run_intake.py
       - name: Test footer utilities and lazy accessible dialogs
@@ -129,6 +133,7 @@ jobs:
           path: |
             var/preferences-acceptance-*/
             var/review-focus-acceptance-*/
+            var/review-recovery-acceptance-*/
             var/intake-acceptance-*/
             var/utilities-ui-acceptance/
             var/novnc-ui-acceptance/

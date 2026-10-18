@@ -67,13 +67,13 @@ $messages = [
       <div>
         <p class="studio-eyebrow"><?= $escape($t('Interaktive Aufnahme')) ?></p>
         <h1><?= $escape($finding->getDomain()->getHostname()) ?></h1>
-        <p class="interactive-url" data-interactive-url><?= $escape($status->finalUrl ?? $finding->getUrl()) ?></p>
+        <p class="interactive-url" data-interactive-url><?= $escape($status->finalUrl ?? $finding->getPocUrl()) ?></p>
       </div>
       <a class="interactive-back" href="<?= $escape('/review'.($returnQueryString !== '' ? '?'.$returnQueryString : '')) ?>"><?= $escape($t('Zurück zum Review')) ?> ↩</a>
     </header>
 
     <p class="interactive-hint"><?= $escape($t('Dies ist ein interaktiver Wiederholungsversuch in einem frischen Chromium-Kontext. Cookies und Browser-Fingerabdruck der ursprünglichen Aufnahme werden nicht fortgesetzt.')) ?></p>
-    <p class="interactive-url" data-interactive-initial-url><?= $escape($t('Start-URL')) ?>: <?= $escape($status->initialUrl ?? $finding->getUrl()) ?></p>
+    <p class="interactive-url" data-interactive-initial-url><?= $escape($t('Start-URL')) ?>: <?= $escape($status->initialUrl ?? $finding->getPocUrl()) ?></p>
     <section class="interactive-status" aria-label="<?= $escape($t('Session-Status')) ?>">
       <span class="studio-status" data-initial-state="<?= $initialState ?>" data-tone="<?= $initialState === 'detected' ? 'pending' : 'neutral' ?>"><?= $escape($initialLabels[$initialState]) ?></span>
       <span class="studio-status" data-current-state="<?= $currentState ?>" data-tone="<?= $currentState === 'detected' ? 'pending' : 'neutral' ?>"><?= $escape($currentLabels[$currentState]) ?></span>

@@ -142,6 +142,13 @@
       preferences.hidden = false; applyPreferences(); savePreferences();
       if (inspector) { inspector.open = true; inspector.querySelector('summary').focus({ preventScroll: true }); }
     }));
+    root.querySelectorAll('[data-review-open-recovery]').forEach((link) => on(link, 'click', (event) => {
+      event.preventDefault();
+      preferences.hidden = false; applyPreferences(); savePreferences();
+      if (inspector) inspector.open = true;
+      const recovery = root.querySelector('#review-recovery details');
+      if (recovery) { recovery.open = true; recovery.querySelector('summary')?.focus({ preventScroll: true }); recovery.scrollIntoView({ block: 'nearest' }); }
+    }));
     on(document, 'keydown', (event) => {
       if (document.querySelector('dialog[open]')) return;
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;

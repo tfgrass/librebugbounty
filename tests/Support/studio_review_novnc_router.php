@@ -113,6 +113,8 @@ final class StudioReviewNoVncWorkerFixture
                 'initialChallenge' => ['state' => 'unknown', 'active' => null],
                 'dialogObservation' => [], 'captureLocked' => false, 'captureId' => null, 'captureGeneration' => null,
                 'captureFinalized' => false,
+                'urlCandidates' => [self::urlCandidate($body['url'], ['entry']), self::urlCandidate($body['url'].'#retained-fixture-context', ['current'])],
+                'urlCandidatesTruncated' => false,
                 'dialogCapture' => ['state' => 'waiting', 'revision' => 0, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2],
             ];
             return [201, $this->state['session']];
@@ -182,11 +184,15 @@ final class StudioReviewNoVncWorkerFixture
         if ($this->state['capture'] === null) {
             $this->state['capture'] = [
                 'generation' => $this->state['generation'], 'screenshotBase64' => self::PNG, 'capturedAt' => gmdate('Y-m-d\TH:i:s.000\Z'),
-                'httpStatus' => 200, 'finalUrl' => $session['finalUrl'], 'captureMethod' => 'desktop',
+                'httpStatus' => 200, 'finalUrl' => $selected === null ? $session['finalUrl'] : $session['retainedDialog']['pageUrl'], 'captureMethod' => 'desktop',
                 'dialogSeen' => false, 'metadata' => [
                     'inputMethod' => 'vnc', 'manualActionCount' => null, 'manualInteraction' => null,
                     'captureId' => 'p8-proof-'.$this->state['starts'], 'captureGeneration' => $this->state['generation'],
                     'dialogCandidateId' => $selected,
+                    // Finalized proof retains the URLs visible at capture time,
+                    // regardless of later fixture/session navigation.
+                    'urlCandidates' => $selected === null ? ($session['urlCandidates'] ?? []) : ($session['retainedDialog']['urlCandidates'] ?? []),
+                    'urlCandidatesTruncated' => $selected === null ? ($session['urlCandidatesTruncated'] ?? false) : ($session['retainedDialog']['urlCandidatesTruncated'] ?? false),
                     'challenge' => $session['challenge'], 'initialChallenge' => $session['initialChallenge'],
                 ],
             ];
@@ -202,6 +208,12 @@ final class StudioReviewNoVncWorkerFixture
             $hook();
         }
         return [200, $result];
+    }
+
+    public static function urlCandidate(string $url, array $roles = ['navigation']): array
+    {
+        return ['url' => $url, 'roles' => $roles, 'observedAt' => '2026-10-18T12:00:00.000Z', 'pageId' => 'p8-page-1',
+            'pageType' => 'main', 'openerPageId' => null, 'navigationSequence' => 1];
     }
 
     /** Use the actual additive migration, exclusively on an isolated database. */

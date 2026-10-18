@@ -40,6 +40,22 @@ export function mountInteractivePanel(element) {
     // A retained image without an identity must never silently select the page.
     return typeof id === 'string' && /^[a-f0-9]{48}$/.test(id) ? id : undefined;
   };
+  const pocRevision = (data = status) => Number.isSafeInteger(data?.pocRevision) && data.pocRevision >= 0 ? data.pocRevision : 0;
+  const pocUrl = (data = status) => typeof data?.pocUrl === 'string' ? data.pocUrl : element.dataset.pocUrl || '';
+  const urlCandidates = (data = status) => {
+    // A retained image belongs to its own navigation snapshot. Later browsing
+    // must never turn unrelated pages into apparent sources of that image.
+    const list = data?.retainedDialog ? data.retainedDialog.urlCandidates : data?.urlCandidates;
+    return Array.isArray(list) ? list.slice(0, 24).filter(item => item && typeof item.url === 'string' && item.url.length <= 10000) : [];
+  };
+  const pocSnapshot = (data = status) => JSON.stringify([pocRevision(data), pocUrl(data), urlCandidates(data)]);
+  const eligiblePoc = value => {
+    if (element.dataset.method !== 'GET' || !value || value.length > 8192 || !/^https?:\/\//i.test(value) || /[\u0000-\u0020\u007f\\]/.test(value)) return false;
+    try {
+      const url = new URL(value), original = new URL(element.dataset.originalUrl);
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && url.hostname.toLowerCase() === original.hostname.toLowerCase();
+    } catch (_) { return false; }
+  };
   const say = (name, text) => { get(name).textContent = text || ''; };
   const notice = text => { say('notice', text); get('notice').hidden = !text; };
   const on = (target, name, fn, options = {}) => target.addEventListener(name, fn, { ...options, signal: lifecycle.signal });
@@ -150,7 +166,70 @@ export function mountInteractivePanel(element) {
   const closeConfirmation = () => {
     confirmation = undefined;
     get('confirm').hidden = true;
+    get('poc').hidden = true;
+    get('confirm-yes').disabled = false;
   };
+  const selectedPoc = () => {
+    const input = get('poc').querySelector('input[type="radio"]:checked');
+    if (!input) return null;
+    if (input.value === 'keep') return { pocMode: 'keep' };
+    const value = input.value === 'manual' ? get('poc-manual').value : input.dataset.url;
+    return eligiblePoc(value) ? { pocMode: input.value === 'manual' ? 'manual' : 'observed', pocUrl: value } : null;
+  };
+  const updatePocSelection = () => {
+    if (confirmation?.action !== 'save') return;
+    const selected = selectedPoc();
+    get('poc-manual').disabled = get('poc').querySelector('input[value="manual"]').checked !== true;
+    get('poc-manual-label').hidden = get('poc-manual').disabled;
+    get('confirm-yes').disabled = !selected;
+    say('poc-error', !selected && !get('poc-manual').disabled ? messages.pocInvalid : '');
+  };
+  const showPocSelection = () => {
+    const current = pocUrl(), candidates = urlCandidates();
+    const groups = new Map();
+    for (const candidate of candidates) {
+      if (!groups.has(candidate.url)) groups.set(candidate.url, []);
+      groups.get(candidate.url).push(candidate);
+    }
+    const newEligible = [...groups.keys()].filter(url => url !== current && eligiblePoc(url));
+    const selected = newEligible.length === 1 ? newEligible[0] : newEligible.length === 0 ? 'keep' : null;
+    const list = get('poc-choices'); list.replaceChildren();
+    const metadata = candidate => {
+      const roles = Array.isArray(candidate.roles) ? candidate.roles.map(role => messages[{ entry: 'pocEntry', navigation: 'pocNavigation', redirect: 'pocRedirect', dialog: 'pocDialog' }[role]]).filter(Boolean) : [];
+      const page = candidate.pageType === 'popup' ? messages.pocPopup : candidate.pageType === 'main' ? messages.pocMainPage : '';
+      const time = typeof candidate.observedAt === 'string' ? candidate.observedAt : '';
+      return [...roles, page, time].filter(Boolean).join(' · ');
+    };
+    const add = (value, title, url, observations, disabled = false) => {
+      const label = document.createElement('label'); label.className = 'novnc-poc-choice';
+      const radio = document.createElement('input'); radio.type = 'radio'; radio.name = `novnc-poc-${element.dataset.findingId}`; radio.value = value;
+      radio.disabled = disabled; radio.checked = value === 'keep' ? selected === 'keep' : selected !== null && selected === url;
+      if (url) radio.dataset.url = url;
+      const details = document.createElement('span');
+      const heading = document.createElement('strong'); heading.textContent = title; details.append(heading);
+      if (url) { const code = document.createElement('code'); code.textContent = url; details.append(code); }
+      for (const candidate of observations) { const line = document.createElement('small'); line.textContent = metadata(candidate); details.append(line); }
+      if (disabled) { const reason = document.createElement('small'); reason.textContent = messages.pocIneligible; details.append(reason); }
+      label.append(radio, details); list.append(label);
+    };
+    add('keep', messages.pocKeep, current, groups.get(current) || []);
+    let index = 0;
+    for (const [url, observations] of groups) {
+      if (url === current) continue;
+      add(`observed-${index++}`, url === selected ? messages.pocSuggested : messages.pocObserved, url, observations, !eligiblePoc(url));
+    }
+    add('manual', messages.pocManual, null, [], element.dataset.method !== 'GET');
+    get('poc-manual').value = '';
+    say('poc-context', status.retainedDialog ? messages.pocDialogSnapshot : messages.pocLiveSnapshot);
+    say('poc-source', status.retainedDialog ? [messages.pocImageSource, status.retainedDialog.pageUrl, status.retainedDialog.capturedAt].filter(Boolean).join(' · ') : messages.pocPageSource);
+    say('poc-hint', newEligible.length > 1 ? messages.pocAmbiguous.replace('{value}', String(newEligible.length)) : messages.pocHint);
+    const truncated = status.retainedDialog ? status.retainedDialog.urlCandidatesTruncated : status.urlCandidatesTruncated;
+    get('poc-truncated').hidden = truncated !== true;
+    get('poc').hidden = false;
+    updatePocSelection();
+  };
+  on(get('poc'), 'change', updatePocSelection);
+  on(get('poc-manual'), 'input', updatePocSelection);
   const showButtons = () => {
     const own = status?.state === 'own_active';
     const capture = dialogCapture(), final = finalized();
@@ -240,7 +319,7 @@ export function mountInteractivePanel(element) {
     if (!states.has(data.state) || !Number.isSafeInteger(data.revision) || data.revision < 0 || (data.findingId && data.findingId !== element.dataset.findingId && data.state === 'own_active')) throw new Error('Invalid status');
     if (status && (status.revision !== data.revision || status.state !== data.state || Boolean(status.captureLocked) !== Boolean(data.captureLocked)
       || status.captureFinalized !== data.captureFinalized || status.dialogCapture?.revision !== data.dialogCapture?.revision
-      || selectedCandidate(status) !== selectedCandidate(data))) closeConfirmation();
+      || selectedCandidate(status) !== selectedCandidate(data) || pocSnapshot(status) !== pocSnapshot(data))) closeConfirmation();
     status = data;
     element.dataset.state = data.state;
     element.dataset.revision = String(data.revision);
@@ -317,6 +396,9 @@ export function mountInteractivePanel(element) {
     if (isDialogAction && (status.state !== 'own_active' || finalized() || !capture || expected.dialogRevision !== capture.revision)) { void refresh(); return; }
     if (action === 'save' && (status.state !== 'own_active' || expected.expectedCandidateId === undefined
       || expected.expectedCandidateId !== selectedCandidate() || capture?.pending || capture?.state === 'capturing'
+      || expected.expectedPocRevision !== pocRevision() || expected.pocSnapshot !== pocSnapshot()
+      || !['keep', 'observed', 'manual'].includes(expected.pocMode)
+      || (expected.pocMode !== 'keep' && !eligiblePoc(expected.pocUrl))
       || (status.captureLocked && !finalized()))) { void refresh(); return; }
     if (expected.revision !== undefined && expected.revision !== status.revision) { void refresh(); return; }
     const revision = status.revision;
@@ -331,7 +413,12 @@ export function mountInteractivePanel(element) {
     });
     if (action === 'end-and-start') body.set('confirm', '1');
     if (isDialogAction) body.set('dialogRevision', String(expected.dialogRevision));
-    if (action === 'save') body.set('expectedCandidateId', expected.expectedCandidateId ?? '');
+    if (action === 'save') {
+      body.set('expectedCandidateId', expected.expectedCandidateId ?? '');
+      body.set('expectedPocRevision', String(expected.expectedPocRevision));
+      body.set('pocMode', expected.pocMode);
+      if (expected.pocMode !== 'keep') body.set('pocUrl', expected.pocUrl);
+    }
     try {
       const response = await fetch(action === 'save' ? `${base}/save` : isDialogAction ? `${base}/dialog/${action.slice(7)}` : `${base}/lease/${action}`, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', body,
@@ -361,15 +448,21 @@ export function mountInteractivePanel(element) {
     if (action === 'refresh') { void refresh(); return; }
     if (action === 'reconnect') { void connect(true); return; }
     if (action === 'acquire') { void mutate(action); return; }
-    const expected = { revision: status.revision, dialogRevision: dialogCapture()?.revision, expectedCandidateId: selectedCandidate() };
+    const expected = { revision: status.revision, dialogRevision: dialogCapture()?.revision, expectedCandidateId: selectedCandidate(), expectedPocRevision: pocRevision(), pocSnapshot: pocSnapshot() };
     if (action === 'dialog-retry') { void mutate(action, expected); return; }
     confirmation = { action, ...expected };
     say('confirm-message', messages[{ takeover: 'confirmTakeover', 'end-and-start': 'confirmEndStart', save: 'confirmSave', release: 'confirmRelease', 'dialog-arm': 'confirmDialogArm', 'dialog-dismiss': 'confirmDialogDismiss' }[action]]);
-    get('confirm').hidden = false; showButtons(); get('confirm-yes').focus();
+    if (action === 'save') showPocSelection();
+    get('confirm').hidden = false; showButtons();
+    if (action === 'save') (get('poc').querySelector('input[type="radio"]:checked') || get('poc').querySelector('input[type="radio"]:not(:disabled)'))?.focus();
+    else get('confirm-yes').focus();
   });
   on(get('confirm-yes'), 'click', () => {
     if (confirmation && confirmation.revision === status?.revision && confirmation.dialogRevision === dialogCapture()?.revision
-      && confirmation.expectedCandidateId === selectedCandidate()) void mutate(confirmation.action, confirmation);
+      && confirmation.expectedCandidateId === selectedCandidate()) {
+      const selection = confirmation.action === 'save' ? selectedPoc() : {};
+      if (selection) void mutate(confirmation.action, { ...confirmation, ...selection });
+    }
   });
   on(get('confirm-no'), 'click', () => {
     const action = confirmation?.action;

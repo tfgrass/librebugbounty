@@ -17,6 +17,8 @@ const id = '11111111-1111-4111-8111-111111111111';
 const basePath = `/review/${id}/interactive`;
 const token = 'synthetic-csrf-token';
 const candidateIds = { first: 'a'.repeat(48), second: 'b'.repeat(48), retried: 'c'.repeat(48) };
+const originalUrl = 'https://fixture.invalid/?x=<script>alert(1)</script>';
+const observation = (url, roles = ['navigation'], pageType = 'main') => ({ url, roles, observedAt: '2026-10-18T10:15:31Z', pageId: pageType === 'main' ? 'page-1' : 'page-2', pageType, openerPageId: pageType === 'main' ? null : 'page-1', navigationSequence: 2 });
 const output = process.env.STUDIO_BROWSER_OUTPUT || '/tmp/librebugbounty-review-novnc-ui';
 const renderPhp = String.raw`
 require getcwd().'/vendor/autoload.php';
@@ -117,6 +119,13 @@ function render(locale = 'en', embedded = false) {
             if (action === 'save') {
               assert.ok(Object.hasOwn(body, 'expectedCandidateId'), 'Save must explicitly select a retained image or the current page');
               assert.match(body.expectedCandidateId, /^(?:[a-f0-9]{48})?$/);
+              assert.equal(body.expectedPocRevision, String(state.pocRevision || 0), 'Every save binds its active PoC revision');
+              assert.ok(['keep', 'observed', 'manual'].includes(body.pocMode));
+              if (body.pocMode === 'keep') assert.equal(Object.hasOwn(body, 'pocUrl'), false);
+              else {
+                assert.equal(new URL(body.pocUrl).hostname, 'fixture.invalid');
+                if (body.pocMode === 'observed') assert.ok((state.retainedDialog ? state.retainedDialog.urlCandidates : state.urlCandidates).some(item => item.url === body.pocUrl));
+              }
               if (replaceCandidateOnSave) {
                 setState({ retainedDialog: replaceCandidateOnSave });
                 replaceCandidateOnSave = undefined;
@@ -488,6 +497,79 @@ function render(locale = 'en', embedded = false) {
     await page.waitForURL(origin + '/review?saved=1');
     assert.equal(posts.at(-1).body.expectedCandidateId, candidateIds.second, 'Metadata retry retains the finalized candidate');
     mark('Save pins the confirmed candidate, cancels replaced confirmations, rejects unseen replacements without replay, and retries only the explicit retained selection');
+
+    const rawPoc = 'https://fixture.invalid/search?q=%3Cscript%3Ealert(42)%3C%2Fscript%3E&x=%252f&x=1';
+    const redirectPoc = 'https://fixture.invalid/redirected?b=2&a=1';
+    const popupPoc = 'https://fixture.invalid/popup?x=42';
+    const sourceUrl = 'https://fixture.invalid/dialog-source';
+    const dialogSnapshot = [observation(originalUrl, ['entry']), observation(rawPoc, ['navigation']), observation(redirectPoc, ['redirect', 'dialog']), observation(popupPoc, ['navigation'], 'popup'), observation('https://external.invalid/captcha', ['redirect'])];
+    const pocState = extra => setState({ state: 'own_active', revision: 40, pocRevision: 3, pocUrl: originalUrl, captureLocked: false, captureFinalized: false, reconnect: true, expiresInSec: 100,
+      retainedDialog: { ...candidate, pageUrl: sourceUrl, urlCandidates: dialogSnapshot }, urlCandidates: [observation('https://fixture.invalid/later-unrelated')],
+      dialogCapture: { state: 'captured', revision: 19, armed: false, pending: false, attemptsRemaining: 1 }, ...extra });
+    pocState(); await page.goto(origin + basePath); await waitState(page, 'own_active');
+    const beforePoc = posts.length;
+    await button(page, 'save').click();
+    assert.equal(await page.locator('[data-novnc-confirm-yes]').isDisabled(), true, 'Multiple new PoCs require an explicit choice');
+    assert.equal(await page.locator('[data-novnc-poc-choices] input[type="radio"]:checked').count(), 0);
+    assert.equal(await page.locator('[data-novnc-poc-choices] input[data-url="https://external.invalid/captcha"]').isDisabled(), true);
+    assert.equal(await page.locator('[data-novnc-poc-choices]').textContent().then(value => value.includes('later-unrelated')), false, 'Retained image selection uses its immutable URL snapshot');
+    assert.ok((await page.locator('[data-novnc-poc-source]').textContent()).includes(sourceUrl));
+    assert.ok((await page.locator('[data-novnc-poc-choices]').textContent()).includes('2026-10-18T10:15:31Z'));
+    const popupLabel = page.locator('[data-novnc-poc-choices] label').filter({ has: page.locator(`input[data-url="${popupPoc}"]`) });
+    assert.ok((await popupLabel.textContent()).includes('Popup')); assert.ok(!(await popupLabel.textContent()).includes('Main page'));
+    assert.equal(await page.locator('[data-novnc-poc-choices] input').evaluateAll(inputs => inputs.some(input => input.checked)), false);
+    await page.locator('[data-novnc-poc-choices] input').evaluateAll((inputs, url) => inputs.find(input => input.dataset.url === url).click(), rawPoc);
+    assert.equal(await page.locator('[data-novnc-confirm-yes]').isDisabled(), false);
+    // A newer live navigation cannot invalidate or contaminate a retained image.
+    setState({ urlCandidates: [observation('https://fixture.invalid/even-later')] }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), true);
+    await page.locator('[data-novnc-confirm-yes]').click(); await page.waitForURL(origin + '/review?saved=1');
+    assert.equal(posts.length, beforePoc + 1, 'URL navigation itself never writes the finding');
+    assert.equal(posts.at(-1).body.pocMode, 'observed'); assert.equal(posts.at(-1).body.pocUrl, rawPoc, 'Exact encoding and duplicate query parameters survive selection');
+    assert.equal(posts.at(-1).body.expectedPocRevision, '3'); assert.equal(posts.at(-1).body.expectedCandidateId, candidateIds.first);
+    assert.equal(state.retainedDialog.pageUrl, sourceUrl); assert.equal(state.retainedDialog.capturedAt, candidate.capturedAt);
+    mark('Ambiguous remote-browser PoCs require explicit selection; popup/redirect/time provenance and exact URL spelling stay separate from the immutable screenshot source');
+
+    pocState({ retainedDialog: { ...candidate, urlCandidates: [observation(rawPoc, ['dialog'])] } });
+    await page.goto(origin + basePath); await waitState(page, 'own_active'); await button(page, 'save').click();
+    assert.equal(await page.locator('[data-novnc-poc-choices] input:checked').getAttribute('data-url'), rawPoc, 'A unique new eligible URL is suggested');
+    await page.locator('[data-novnc-poc-choices] input[value="keep"]').check();
+    await page.locator('[data-novnc-confirm-yes]').click(); await page.waitForURL(origin + '/review?saved=1');
+    assert.equal(posts.at(-1).body.pocMode, 'keep');
+
+    pocState(); await page.goto(origin + basePath); await waitState(page, 'own_active'); await button(page, 'save').click();
+    await page.locator('[data-novnc-poc-choices] input[value="manual"]').check();
+    for (const invalid of ['https://another.invalid/poc', 'https://user:secret@fixture.invalid/poc', 'javascript:alert(1)', 'https://fixture.invalid/a b', 'http:fixture.invalid']) {
+      await page.locator('[data-novnc-poc-manual]').fill(invalid);
+      assert.equal(await page.locator('[data-novnc-confirm-yes]').isDisabled(), true, invalid);
+    }
+    const manual = 'http://fixture.invalid/hand-edited?q=%3Csvg%3E';
+    await page.locator('[data-novnc-poc-manual]').fill(manual);
+    assert.equal(await page.locator('[data-novnc-confirm-yes]').isDisabled(), false);
+    await page.locator('[data-novnc-confirm-yes]').click(); await page.waitForURL(origin + '/review?saved=1');
+    assert.equal(posts.at(-1).body.pocMode, 'manual'); assert.equal(posts.at(-1).body.pocUrl, manual);
+    mark('A unique PoC is suggested, keeping the current PoC stays easy, and manual input is restricted to exact HTTP(S) GET URLs on the original host');
+
+    pocState(); await page.goto(origin + basePath); await waitState(page, 'own_active'); await button(page, 'save').click();
+    setState({ pocRevision: 4, pocUrl: rawPoc }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'A concurrent active-PoC update cancels confirmation');
+    await button(page, 'save').click(); setState({ revision: 41 }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'Takeover cancels a PoC selection');
+    setState({ retainedDialog: undefined, urlCandidates: [observation(rawPoc)] }); await refresh(page); await button(page, 'save').click();
+    setState({ urlCandidates: [observation(redirectPoc)] }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'Current-page capture selection is invalidated by newer URL observations');
+    await button(page, 'save').click(); await page.reload(); await waitState(page, 'own_active');
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'Reload never replays an unsaved PoC choice');
+    mark('PoC revisions, takeover and current-page navigation invalidate stale choices; reload never persists or replays confirmation');
+
+    for (const locale of ['en', 'de']) {
+      pocState(); await page.setViewportSize({ width: 320, height: 812 });
+      await page.goto(origin + basePath + `?lang=${locale}&embedded=1`); await waitState(page, 'own_active'); await button(page, 'save').click();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${locale} PoC selection fits 320px`);
+      await page.screenshot({ path: path.join(output, `${locale}-poc-selection-320.png`), fullPage: true });
+    }
+    await page.setViewportSize({ width: 1360, height: 1000 });
+    setState({ pocRevision: 0, pocUrl: undefined, urlCandidates: undefined });
 
     setState({ state: 'own_active', revision: 14, captureLocked: true, reconnect: true, dialogObservation: undefined });
     await page.goto(origin + basePath); await waitState(page, 'own_active');

@@ -14,7 +14,7 @@ const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { randomBytes } = require('node:crypto');
 const { chromium } = require('playwright');
-const { createWorkerServer } = require('./server.js');
+const { createWorkerServer, interactiveSessions } = require('./server.js');
 const { createGateway } = require('./vnc-gateway.js');
 
 const execute = promisify(execFile);
@@ -64,6 +64,7 @@ async function main() {
   const originalDisplay = process.env.DISPLAY;
   let worker, fixture, observer, operator, gateway, sessionId, base;
   let generation = 0, captureCalls = 0, failCaptures = 0, authorizationCalls = 0;
+  let popupDuringCapture = false;
   const watchdog = setTimeout(() => {
     console.error('FAIL private acceptance exceeded its 180-second deadline');
     for (const child of children) child.kill('SIGKILL');
@@ -174,6 +175,10 @@ async function main() {
     assert.equal(result.dialogText, view.retainedDialog.message);
     assert.equal(result.capturedAt, view.retainedDialog.capturedAt);
     assert.equal(result.sourceURL, view.retainedDialog.pageUrl);
+    assert.deepEqual(result.urlCandidates, view.retainedDialog.urlCandidates);
+    assert.deepEqual(result.metadata.urlCandidates, view.retainedDialog.urlCandidates);
+    assert.ok(result.urlCandidates.some(candidate => candidate.url === result.sourceURL && candidate.roles.includes('dialog')));
+    assert.ok(result.urlCandidates.some(candidate => candidate.url === view.initialUrl && candidate.roles.includes('entry')));
     assert.ok(Buffer.from(result.screenshotBase64, 'base64').equals(before));
     assert.equal((await status()).captureFinalized, true);
     const callsAtSave = captureCalls;
@@ -224,8 +229,13 @@ async function main() {
       const button = action => `<button style="position:absolute;left:100px;top:100px;width:300px;height:320px;font-size:24px" onclick="${action}">Continue local fixture</button>`;
       if (url.pathname === '/challenge') {
         const mode = url.searchParams.get('mode');
-        const action = mode === 'popup' ? "window.open('/popup','_blank')" : `location.href='/target?mode=${encodeURIComponent(mode)}'`;
+        const action = mode === 'popup' ? "window.open('/popup','_blank')"
+          : mode === 'redirect' ? "location.href='/redirect?payload=%252f&x=1&x=2'"
+            : `location.href='/target?mode=${encodeURIComponent(mode)}'`;
         res.end(`<!doctype html><title>Just a moment</title><h1>Verify you are human</h1>${button(action)}`);
+      } else if (url.pathname === '/redirect') {
+        res.writeHead(302, { Location: '/target?mode=redirect&payload=%252F&x=1&x=2' });
+        res.end();
       } else if (url.pathname === '/popup') {
         res.end('<!doctype html><title>Popup fixture</title><h1>Popup target fixture</h1><script>alert("211 popup proof")</script>');
       } else if (url.pathname === '/target') {
@@ -249,7 +259,18 @@ async function main() {
 
     worker = createWorkerServer({
       mode: 'interactive', workerToken,
-      captureDesktopScreenshot: signal => desktop(signal),
+      captureDesktopScreenshot: async signal => {
+        if (popupDuringCapture) {
+          popupDuringCapture = false;
+          const current = interactiveSessions.get(sessionId);
+          const popupReady = current.context.waitForEvent('page', { timeout: 3000 });
+          await current.page.evaluate(url => { window.open(url, '_blank'); }, `${fixture.origin}/after`);
+          const popup = await popupReady;
+          await popup.waitForLoadState('domcontentloaded');
+          await popup.bringToFront();
+        }
+        return desktop(signal);
+      },
       createGateway: (server, options) => {
         // The worker's port is assigned only on listen. This adapter keeps all
         // real gateway behavior, with a private upstream and test auth callback.
@@ -304,7 +325,7 @@ async function main() {
     operator.on('pageerror', error => browserErrors.push(error.message));
     await operator.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
 
-    for (const mode of ['immediate', 'delayed', 'popup', 'navigate']) {
+    for (const mode of ['immediate', 'delayed', 'popup', 'navigate', 'redirect']) {
       await start(mode);
       const before = captureCalls;
       await clickChallenge();
@@ -314,10 +335,38 @@ async function main() {
       assert.equal(captureCalls - before, 1);
       assert.match(view.retainedDialog.message, mode === 'popup' ? /popup proof/ : /selected proof/);
       assert.ok(view.retainedDialog.pageUrl.startsWith(`${fixture.origin}/${mode === 'popup' ? 'popup' : 'target'}`));
+      if (mode === 'navigate') {
+        assert.equal(view.retainedDialog.urlCandidates.some(candidate => candidate.url === `${fixture.origin}/after`), false,
+          'Navigation after the native alert never enters the retained image URL choices');
+      }
+      if (mode === 'popup') {
+        assert.equal(view.retainedDialog.urlCandidates.find(candidate => candidate.url === view.retainedDialog.pageUrl).pageType, 'popup');
+      }
+      if (mode === 'redirect') {
+        assert.ok(view.retainedDialog.urlCandidates.some(candidate => candidate.url === `${fixture.origin}/redirect?payload=%252f&x=1&x=2`));
+        const target = view.retainedDialog.urlCandidates.find(candidate => candidate.url === `${fixture.origin}/target?mode=redirect&payload=%252F&x=1&x=2`);
+        assert.ok(target && target.roles.includes('redirect') && target.roles.includes('dialog'),
+          'The exact redirect target spelling and native-dialog role are retained together');
+      }
       await save(view, mode);
       await cleanupSession();
       console.log(`PASS noVNC ${mode}: manual challenge input -> native alert -> retained PNG; source/time and immutable final capture`);
     }
+
+    await start('key');
+    await clickChallenge();
+    await waitUntil(status, view => view.finalUrl === `${fixture.origin}/target?mode=key`, 'popup race source navigation');
+    popupDuringCapture = true;
+    await request(`/interactive-sessions/${sessionId}/capture`, { generation, expectedCandidateId: null }, { status: 409 });
+    const popupRace = await status();
+    assert.equal(popupRace.captureFinalized, false, 'Wrong-foreground desktop bytes are never finalized');
+    assert.equal(popupRace.finalUrl, `${fixture.origin}/target?mode=key`, 'The popup did not navigate the main source page');
+    const popupRetry = await request(`/interactive-sessions/${sessionId}/capture`, { generation, expectedCandidateId: null });
+    assert.equal(popupRetry.sourceURL, `${fixture.origin}/target?mode=key`);
+    assert.equal(popupRetry.captureSelection, 'current-page');
+    assertPng(Buffer.from(popupRetry.screenshotBase64, 'base64'));
+    await cleanupSession();
+    console.log('PASS real Chromium popup foreground race: new popup during desktop capture returns409; refocused retry captures the main source');
 
     await start('chain');
     await clickChallenge();

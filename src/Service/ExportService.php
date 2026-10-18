@@ -18,6 +18,7 @@ final class ExportService
         private readonly FindingRepository $findings,
         private readonly RetestRunRepository $retestRuns,
         private readonly ValidationService $validation,
+        private readonly FindingPocService $poc,
     ) {
     }
 
@@ -100,7 +101,10 @@ final class ExportService
             'type' => $finding->getType(),
             'severity' => $finding->getSeverity(),
             'status' => $finding->getStatus(),
-            'url' => $finding->getUrl(),
+            'url' => $finding->getPocUrl(),
+            'originalUrl' => $finding->getUrl(),
+            'pocRevision' => $finding->getPocRevision(),
+            'pocHistory' => $this->poc->history($finding),
             'method' => $finding->getMethod(),
             'requestParams' => $finding->getRequestParams(),
             'payload' => $finding->getPayload(),

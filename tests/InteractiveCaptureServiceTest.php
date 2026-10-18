@@ -672,6 +672,44 @@ final class InteractiveCaptureServiceTest extends DatabaseTestCase
         }
     }
 
+    public function testBoundedRetryAcceptsProofAssociatedWithActivePocWithoutRelabelingItsEntryUrl(): void
+    {
+        [$finding, $context, $trigger, $basis] = $this->fixture('updated-poc');
+        $original = $finding->getUrl();
+        $active = 'https://updated-poc.example/repaired?x=%2F%2f';
+        $finding->setPocUrl($active, 1);
+        $trigger->setCaptureMetadata(['challengeDetected' => true, 'challengeCleared' => false,
+            'pocUrl' => $active, 'queuedPocRevision' => 1]);
+        $this->entityManager->flush();
+        $context['start_url'] = $active;
+        $context['start_url_hash'] = hash('sha256', $active);
+        $context['poc_revision'] = 1;
+        $context['trigger_hash'] = hash('sha256', json_encode([$trigger->getId(), $trigger->getUrl(), $trigger->getStatus(),
+            $trigger->getScreenshotPath(), $trigger->getCaptureMetadata(), $basis->getId(), $basis->getFilePath(), $basis->getSha256()], JSON_THROW_ON_ERROR));
+
+        $saved = $this->service($this->capturingClient())->save($finding, self::SESSION, $context);
+
+        self::assertSame($original, $trigger->getUrl());
+        self::assertSame($active, $saved->job->getUrl());
+        self::assertSame(1, $saved->job->getCaptureMetadata()['queuedPocRevision']);
+        self::assertSame($active, $finding->getPocUrl());
+    }
+
+    public function testNewerScreenshotFromAnotherPocRevisionDoesNotInvalidateCurrentBoundedTrigger(): void
+    {
+        [$finding, $context] = $this->fixture('other-revision');
+        $later = (new ScreenshotJob())->setFinding($finding)->setUrl($finding->getUrl())
+            ->setStatus(ScreenshotJobStatus::AVAILABLE)->setRequestedAt(new \DateTimeImmutable('+1 hour'))
+            ->setCaptureMetadata(['queuedPocRevision' => 2, 'challengeDetected' => true, 'challengeCleared' => false]);
+        $this->entityManager->persist($later);
+        $this->entityManager->flush();
+
+        $saved = $this->service($this->capturingClient())->save($finding, self::SESSION, $context);
+
+        self::assertSame(ScreenshotJobStatus::AVAILABLE, $saved->job->getStatus());
+        self::assertSame(0, $saved->job->getCaptureMetadata()['queuedPocRevision']);
+    }
+
     private function fixture(string $name = 'interactive'): array
     {
         $domain = (new Domain())->setHostname($name.'.example');

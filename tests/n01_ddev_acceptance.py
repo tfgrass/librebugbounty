@@ -26,6 +26,10 @@ from pathlib import Path
 
 
 class Acceptance:
+    FIXTURE_PORT = 18096  # 8096 is the private interactive-gateway callback.
+    WORKER_SERVICES = ("playwright", "playwright-shot-1", "playwright-shot-2",
+                       "playwright-shot-3", "playwright-shot-4", "playwright-interactive")
+
     def __init__(self, args):
         self.checkout = Path(args.checkout).resolve()
         self.output = Path(args.report_dir).resolve()
@@ -110,13 +114,27 @@ class Acceptance:
         php_version = self.ddev("exec", "php", "-r", "echo PHP_VERSION;")
         self.check(php_version.startswith("8.3."), "Fresh web container uses configured PHP 8.3")
         self.report["phpVersion"] = php_version
-        status = self.ddev("exec", "supervisorctl", "status", "webextradaemons:screenshot-queue")
-        self.check("RUNNING" in status and len(status.splitlines()) == 1, "Supervisor reports one running screenshot worker")
+        app_version = self.ddev("exec", "php", "-r", 'require "vendor/autoload.php"; echo App\\AppInfo::VERSION;')
+        package_version = json.loads((self.checkout / "playwright-worker/package.json").read_text())["version"]
+        self.check(app_version == package_version, "Running application and worker package expose the same release version")
+        self.report.setdefault("applicationVersions", []).append(app_version)
+        daemons = [f"screenshot-worker-{number}" for number in range(1, 5)]
+        daemons += [f"recheck-worker-{number}" for number in range(1, 5)]
+        if "name: update-worker" in (self.checkout / ".ddev/config.yaml").read_text():
+            daemons.append("update-worker")
+        status = self.ddev("exec", "supervisorctl", "status", *["webextradaemons:" + name for name in daemons])
+        self.check(len(status.splitlines()) == len(daemons)
+                   and all("RUNNING" in line for line in status.splitlines()),
+                   "Supervisor runs all four screenshot lanes, four recheck workers and configured release updater")
         process_list = self.ddev("exec", "ps", "-eo", "args=")
-        workers = [line for line in process_list.splitlines() if line.startswith("php bin/console app:screenshot:worker --sleep=2 --no-interaction")]
-        self.check(len(workers) == 1, "Exactly one real screenshot-queue process exists")
+        for number in range(1, 5):
+            command = f"php bin/console app:screenshot:worker --sleep=2 --worker-id=shot-{number} --no-interaction"
+            self.check(process_list.splitlines().count(command) == 1, f"Exactly one real screenshot process owns lane shot-{number}")
+        if "update-worker" in daemons:
+            self.check(process_list.splitlines().count("php bin/console app:update:worker --no-interaction") == 1,
+                       "Exactly one real release-update daemon is running")
         waiters = [line for line in process_list.splitlines() if "vendor/autoload.php" in line]
-        self.check(not waiters, "Composer dependency wait hands supervision to the real screenshot worker")
+        self.check(not waiters, "Composer dependency waits hand supervision to real worker processes")
         self.ddev("exec", "php", "bin/console", "doctrine:schema:validate", "--skip-sync", "--no-interaction")
         self.check(True, "Committed Doctrine mappings validate")
         validation = self.ddev("exec", "php", "bin/console", "doctrine:schema:validate", "--no-interaction", required=False)
@@ -127,27 +145,36 @@ class Acceptance:
         self.report.setdefault("schemaDiagnostics", []).append(diagnostic)
         self.ddev("exec", "php", "bin/console", "doctrine:migrations:up-to-date", "--no-interaction")
         self.check(True, "All committed migrations are applied")
-        worker_url = self.ddev("exec", "printenv", "PLAYWRIGHT_WORKER_URL")
-        networks = json.loads(self.run("docker", "inspect", "--format", "{{json .NetworkSettings.Networks}}", f"ddev-{self.name}-playwright"))
-        own_addresses = {network["IPAddress"] for network in networks.values() if network["IPAddress"]}
-        resolution = self.ddev("exec", "getent", "ahostsv4", urllib.parse.urlsplit(worker_url).hostname)
-        resolved_addresses = {line.split()[0] for line in resolution.splitlines()}
-        self.check(bool(resolved_addresses) and resolved_addresses <= own_addresses,
-                   "Configured worker hostname resolves exclusively to the isolated Playwright container")
-        health = self.ddev("exec", "curl", "--max-time", "10", "--fail", "--silent", worker_url.rstrip("/") + "/health")
-        self.report["health"] = health
+        health = {}
+        for service in ("web", "db", *self.WORKER_SERVICES):
+            container = f"ddev-{self.name}-{service}"
+            state = json.loads(self.run("docker", "inspect", container))[0]
+            self.check(state["State"].get("Health", {}).get("Status") == "healthy",
+                       f"Isolated {service} container passes its Docker healthcheck")
+            self.check(state["Config"]["Labels"].get("com.ddev.site-name") == self.name,
+                       f"{service} container belongs to the isolated project")
+            if service not in self.WORKER_SERVICES:
+                continue
+            own_addresses = {network["IPAddress"] for network in state["NetworkSettings"]["Networks"].values() if network["IPAddress"]}
+            resolution = self.ddev("exec", "getent", "ahostsv4", service)
+            resolved_addresses = {line.split()[0] for line in resolution.splitlines()}
+            self.check(bool(resolved_addresses) and resolved_addresses <= own_addresses,
+                       f"{service} DNS resolves exclusively to this isolated container")
+            health[service] = json.loads(self.ddev("exec", "curl", "--max-time", "10", "--fail", "--silent", f"http://{service}:3000/health"))
+            self.check(health[service].get("ok") is True, f"{service} HTTP health is ready")
+        self.report.setdefault("health", []).append(health)
         version = json.loads((self.checkout / "playwright-worker/node_modules/playwright/package.json").read_text())["version"]
         self.check(version == "1.61.1", "Fresh npm installation matches pinned Playwright 1.61.1")
         self.check(self.report["locks"] == {p: self.sha(self.checkout / p) for p in self.report["locks"]}, "Dependency lockfiles remain byte-identical")
 
     def fixture_start(self, address):
         self.fixture_log = (self.output / "fixture.log").open("a")
-        self.fixture = subprocess.Popen(["ddev", "exec", "php", "-S", "0.0.0.0:8096", "tests/Support/n01_fixture_router.php"],
+        self.fixture = subprocess.Popen(["ddev", "exec", "php", "-S", f"0.0.0.0:{self.FIXTURE_PORT}", "tests/Support/n01_fixture_router.php"],
                                         cwd=self.checkout, stdout=self.fixture_log, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             try:
-                status, page = self.request(f"http://{address}:8096/plain")
+                status, page = self.request(f"http://{address}:{self.FIXTURE_PORT}/plain")
                 if status == 200 and b"Plain local page" in page:
                     return
             except OSError:
@@ -170,6 +197,8 @@ class Acceptance:
 
     def capture_round(self, address, round_name):
         base = f"http://{address}"
+        prior_runs = self.rows("SELECT * FROM retest_run ORDER BY rowid")
+        prior_assessments = self.rows("SELECT * FROM finding_assessment ORDER BY rowid")
         _, page = self.request(base + "/")
         match = re.search(r'name="_token" value="([^"]+)"', page.decode())
         self.check(match is not None, "Real intake page provides a session-bound CSRF token")
@@ -177,7 +206,7 @@ class Acceptance:
         ids = []
         initial_findings = {}
         for kind in ["plain", "dialog"]:
-            url = f"http://{address}:8096/{kind}?round={round_name}"
+            url = f"http://{address}:{self.FIXTURE_PORT}/{kind}?round={round_name}"
             status, payload = self.request(base + "/api/findings", {"_token": token, "url": url, "payload": "", "annotate": "N01 controlled local fixture"})
             data = json.loads(payload)
             self.check(status == 201 and data["outcome"] == "stored", f"{round_name}: real API atomically stores {kind} finding and queues a screenshot")
@@ -194,7 +223,7 @@ class Acceptance:
             time.sleep(0.5)
         else:
             raise AssertionError(f"Real queue did not finish: {jobs!r}")
-        self.check([job["finding_id"] for job in jobs] == ids, f"{round_name}: supervised worker consumes local fixtures in FIFO order")
+        self.check([job["finding_id"] for job in jobs] == ids, f"{round_name}: supervised screenshot lanes consume both queued local fixtures")
         for kind, job in zip(["plain", "dialog"], jobs):
             metadata = json.loads(job["capture_metadata"])
             self.check(metadata["dialogSeen"] is (kind == "dialog") and metadata["captureMethod"] == f"desktop-{'dialog' if kind == 'dialog' else 'page'}",
@@ -212,8 +241,9 @@ class Acceptance:
             shutil.copy2(file, self.output / f"{round_name}-{kind}.png")
             self.check(self.rows("SELECT * FROM finding WHERE id=?", (job["finding_id"],))[0] == initial_findings[job["finding_id"]],
                        f"{round_name}: {kind} screenshot preserves every finding field")
-        self.check(not self.rows("SELECT * FROM retest_run") and not self.rows("SELECT * FROM finding_assessment"),
-                   f"{round_name}: neutral capture creates no retest or manual assessment")
+        self.check(self.rows("SELECT * FROM retest_run ORDER BY rowid") == prior_runs
+                   and self.rows("SELECT * FROM finding_assessment ORDER BY rowid") == prior_assessments,
+                   f"{round_name}: neutral capture creates no retest and preserves all existing manual assessments")
         before_display = self.snapshot()
         in_container = "/var/www/html/storage/test/n01-report/browser"
         self.ddev("exec", "--service", "playwright", "node", "/var/www/html/tests/browser/n01-ddev.cjs", base, in_container, round_name, *ids)
@@ -230,7 +260,7 @@ class Acceptance:
             startup_diagnostics = f"{start_output}\n{web_logs}".splitlines()
             failure_markers = ("spawn error", "exited:", "backoff", "fatal", "gave up")
             worker_failures = [line for line in startup_diagnostics
-                               if "screenshot-queue" in line.lower()
+                               if "screenshot-worker-" in line.lower()
                                and any(marker in line.lower() for marker in failure_markers)]
             self.check(not worker_failures, "Fresh Composer install causes no screenshot-worker Supervisor failure")
             self.runtime()
@@ -272,8 +302,8 @@ class Acceptance:
             if browser_reports.exists():
                 shutil.copytree(browser_reports, self.output / "browser", dirs_exist_ok=True)
             if self.started:
-                self.ddev("logs", "--service", "web", required=False)
-                self.ddev("logs", "--service", "playwright", required=False)
+                for service in ("web", *self.WORKER_SERVICES):
+                    self.ddev("logs", "--service", service, required=False)
                 # Persist all proof before removing ONLY the isolated project.
                 (self.output / "report.json").write_text(json.dumps(self.report, indent=2))
                 self.ddev("delete", "--omit-snapshot", "--yes", "--clean-containers=false", self.name, required=False)

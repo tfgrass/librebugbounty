@@ -28,6 +28,7 @@ final class RecheckService
         private readonly EntityManagerInterface $entityManager,
         private readonly RetestRunRepository $retestRuns,
         private readonly ScreenshotEnqueuerInterface $screenshots,
+        private readonly ?ReviewDispositionService $recovery = null,
     ) {
     }
 
@@ -37,6 +38,8 @@ final class RecheckService
      */
     public function processNext(int $timeoutMs = 120000): ?string
     {
+        $recovered = $this->recovery?->processNext($timeoutMs);
+        if ($recovered !== null) return $recovered;
         $finding = $this->claimNext();
         if ($finding === null) {
             return null;
@@ -75,7 +78,7 @@ final class RecheckService
         $connection->beginTransaction();
         try {
             $claimed = $connection->executeStatement(
-                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ? AND (review_state IS NULL OR review_state <> ?) AND '.FindingWorkPolicy::checksAllowedSql($connection, 'finding'),
+                'UPDATE finding SET next_due_at = ? WHERE id = ? AND next_due_at = ? AND (review_state IS NULL OR review_state <> ?) AND '.FindingWorkPolicy::checksAllowedSql($connection, 'finding').' AND '.ReviewDispositionService::activeSql($connection, 'finding').(ReviewDispositionService::available($connection) ? " AND NOT EXISTS (SELECT 1 FROM finding_review_disposition running_rd JOIN finding running_f ON running_f.id = running_rd.finding_id WHERE running_f.domain_id = finding.domain_id AND running_rd.retry_state = 'running')" : ''),
                 [$lease, $candidate->getId(), $expected, ReviewState::MANUAL_CHECKING],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
@@ -133,6 +136,10 @@ final class RecheckService
                 timeoutMs: $timeoutMs,
                 headless: true,
             );
+
+            if (($run->getRawResult()['stalePoc'] ?? false) || ($run->getRawResult()['staleFindingContext'] ?? false)) {
+                return 'skipped-stale-result';
+            }
 
             if ($this->policy->shouldQueueScreenshot($previousResult, $run->getResult(), $previousStatus)) {
                 try {

@@ -39,6 +39,7 @@ final class StudioController
         private readonly \App\Service\ContactRouteService $contactRoutes,
         private readonly \App\Service\DisclosureRecordService $disclosureRecords,
         private readonly \App\Service\FollowUpStatisticsService $followUpStatistics,
+        private readonly \App\Service\ReviewQueueService $reviewQueue,
     ) {
     }
 
@@ -187,6 +188,7 @@ final class StudioController
         }
 
         $view = $this->findingDetail->get($id);
+        $reviewContextToken = $this->reviewQueue->contextToken($id, $this->reviewQueue->fingerprint($id));
         $workState = $this->followUp->state($view->finding);
         $workHistory = $this->followUp->history($view->finding);
         $contactProviders = $this->contacts->providers();

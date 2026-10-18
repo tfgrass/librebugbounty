@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.1.0 “Moneta (Conatus)”. Start with the
+This guide describes LibreBugBounty 2.1.1 “Moneta (Conatus)”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the default English UI; German is available
@@ -205,6 +205,35 @@ original capture ID, capture generation, capture time and URL remain attached to
 that proof; a later save authorization generation is only the current permission
 to save it.
 
+### Updating the active PoC
+
+If you change the URL in the interactive browser, **Save evidence** can also
+adopt the reproducible URL as the case's active PoC. Review the offered URL
+before saving. When several observed URLs could apply, choose explicitly from
+their recorded roles, such as entry, navigation/redirect or dialog page. You can
+keep the previous PoC or supply another URL when the observed candidates are
+insufficient. URL spelling, encoding and parameters are retained exactly.
+The list is bounded to 24 observed URLs. For a retained dialog image, its URL
+selection is the snapshot taken for that image; later navigation does not rewrite
+the image's source or expand its observed selection.
+
+This URL-based update supports GET cases. The selected URL must be HTTP(S) on
+the case's existing hostname, without embedded credentials or whitespace. This
+does not move the case to a different domain or change its expected marker.
+Saving updates PoC links, future retests, new screenshots and report exports
+together. The original intake URL remains the duplicate-detection identity;
+the PoC revision history and the saved screenshot's exact source URL and capture
+time remain separate.
+Selecting a URL does not establish that it was independently reproduced, and
+it does not change the manual assessment.
+
+The active-PoC history needs the additive `Version20261018010000` migration.
+Older observations and evidence retain their own sources. If another tab changes
+the case while you are saving, reload and review the current selection rather
+than repeating an outdated operation.
+
+### Interactive lifetime and review controls
+
 The worker lifetime is an absolute 20 minutes. Reconnect keeps the context only
 until that expiry and never renews it. For expiry, revoked, busy, or
 worker-unavailable states, follow the displayed recovery action and Start again
@@ -359,6 +388,35 @@ case to **New notices**. Matching results do not reopen it. On a notice you can
 change the assessment or choose **Reviewed · keep assessment**; keeping it
 preserves the existing decision and its assessment date. Skipping leaves the
 notice open. Discarded cases are not reopened by new observations.
+
+### Deferring cases that cannot currently be checked
+
+Use **Defer** to remove a temporarily uncheckable case from the normal review
+loop without calling it fixed. Choose a reason: target unreachable, protection
+page, PoC not reproducible, missing/unusable evidence, or another reason. An
+optional note can explain what needs attention. This workflow state does not
+change the assessment, open notices or contact reminder.
+
+Choose tomorrow at 09:00, another date at 09:00, or manual resumption without a
+date. Dates use Europe/Berlin. Find parked cases using Inventory's
+**Review availability → Deferred** filter; case details show the reason, date
+and last retry outcome. **Return to review** puts a case back into review explicitly.
+You can keep an existing assessment after inspecting the resumed case.
+An indefinite deferral does not request a check.
+
+For a dated deferral, the existing recheck worker makes one attempt when due,
+subject to case/domain restrictions and the normal domain cadence. It uses the
+active PoC even for a case marked for manual checking. Only a matching native
+dialog with a saved image and no HTTP failure returns the case to review.
+Timeouts, 5xx responses, protection pages, inconclusive results and missing
+evidence leave it deferred. HTTP 200 alone does not mark it fixed or make it
+ready for review. Inspect the outcome and consciously choose a new date for
+another attempt. An interrupted attempt is not repeated automatically.
+
+**Skip** and Enter keep their quick navigation behavior. After three confirmed
+skips of the same unchanged case, a dismissible suggestion offers deferral;
+it never forces a reason or silently parks the case. Deferral needs the additive
+`Version20261018020000` migration, and uses the existing recheck workers.
 
 ## Inventory and case details
 

@@ -120,6 +120,22 @@
 .novnc-notice, .novnc-confirm, .novnc-dialog { padding: 12px; border: 1px solid var(--studio-amber, #e8bf78); border-radius: 6px; background: #30291e; }
 .novnc-confirm p { margin-bottom: 10px; }
 .novnc-confirm button + button { margin-inline-start: 8px; }
+.novnc-poc { min-width: 0; margin: 0 0 12px; padding: 12px; border: 1px solid var(--studio-line, #54504a); border-radius: 6px; }
+.novnc-poc legend { font-weight: 600; padding: 0 4px; }
+.novnc-poc p { font-size: 13px; }
+.novnc-poc-choices { display: grid; gap: 8px; margin-bottom: 10px; }
+.novnc-poc-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid #6b655b; border-radius: 5px; cursor: pointer; }
+.novnc-poc-choice:has(input:checked) { border-color: var(--studio-green, #83d4ac); }
+.novnc-poc-choice:has(input:disabled) { opacity: .65; cursor: default; }
+.novnc-poc-choice > input { flex: 0 0 auto; margin-top: 4px; }
+.novnc-poc-choice > span { display: grid; gap: 4px; min-width: 0; }
+.novnc-poc-choice code { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; }
+.novnc-poc-choice small { color: var(--studio-muted, #bac2cc); font-size: 12px; }
+.novnc-poc-manual-label { display: grid; gap: 5px; font-size: 13px; }
+.novnc-poc-manual-label input { width: 100%; min-width: 0; padding: 9px; border: 1px solid #8096b6; border-radius: 5px; background: #11161d; color: #eef1f4; font: inherit; }
+.novnc-poc-manual-label input:disabled { opacity: .5; }
+.novnc-poc [data-novnc-poc-error] { color: var(--studio-amber, #e8bf78); }
+.novnc-poc [data-novnc-poc-error]:empty { display: none; }
 .novnc-dialog p { font-size: 13px; white-space: pre-wrap; }
 .novnc-capture { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--studio-line, #343a42); border-radius: 8px; }
 .novnc-capture p { font-size: 13px; }

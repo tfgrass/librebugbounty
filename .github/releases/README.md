@@ -1,12 +1,12 @@
 # Publishing LibreBugBounty releases
 
 Release notes are stored here so the published GitHub text can be reviewed
-alongside the code. For this release, use tag `v2.1.0`, title
-`Moneta (Conatus) - v2.1.0`, and the body in `v2.1.0.md`. Publication requires
+alongside the code. For this release, use tag `v2.1.1`, title
+`Moneta (Conatus) - v2.1.1`, and the body in `v2.1.1.md`. Publication requires
 explicit approval and passing release checks.
 
 From 2026-10-12 onward, GitHub release titles always use
-`<Release-Name> - v<Version>`, for example **Moneta (Conatus) - v2.1.0**.
+`<Release-Name> - v<Version>`, for example **Moneta (Conatus) - v2.1.1**.
 Keep the release name first. The 2.x family is Moneta; feature releases may add
 a parenthesized name, as 2.1.0 does with Conatus. Do not rename historical
 releases as part of an ordinary publication.
@@ -32,9 +32,22 @@ npm --prefix playwright-worker audit --omit=dev --audit-level=high
 python3 -B -m unittest discover -s tests -p 'backup_local_test.py' -v
 ```
 
-Review the successful browser acceptance for changed workflows and a fresh
-DDEV installation. Application tests use isolated storage; never point them
+Review the successful browser acceptance for changed workflows, a fresh
+DDEV installation and an isolated upgrade from v2.1.0. The 2.1.1 release includes
+intake-session, active-PoC and review-deferral migrations; confirm that existing
+case URLs, assessments and artifact references survive the upgrade. Restart PHP
+and the Playwright workers together and reload old browser tabs before checking
+interactive saves. Application tests use isolated storage; never point them
 at a working installation's database or artifact directory.
+
+For PoC updates, verify same-host HTTP(S)/GET validation, ambiguous URL selection,
+unchanged image source and exact-URL intake deduplication. For deferred review,
+verify one due attempt against the active PoC, matching native-dialog image
+evidence before resumption, and failure/interruption remaining deferred without
+changing the assessment. HTTP 200 or an observed dialog alone is insufficient.
+Remove the preparation notice in `v2.1.1.md` only after those checks and the fresh
+installation/upgrade acceptance are complete; record the actual evidence rather
+than implying that publication alone proves compatibility.
 
 ## Prepare without publishing
 
@@ -43,11 +56,11 @@ targeting its exact commit. Check for an existing draft first; edit it rather th
 creating duplicate release records. Do not create or push the tag at this stage.
 
 ```bash
-gh release create v2.1.0 \
+gh release create v2.1.1 \
   --draft \
   --target "$(git rev-parse HEAD)" \
-  --title 'Moneta (Conatus) - v2.1.0' \
-  --notes-file .github/releases/v2.1.0.md
+  --title 'Moneta (Conatus) - v2.1.1' \
+  --notes-file .github/releases/v2.1.1.md
 ```
 
 Use an `(unreleased)` changelog marker during preparation. At final
@@ -64,15 +77,15 @@ the tag and GitHub release publishes that commit. Use the reviewed notes file
 rather than automatically generated commit messages.
 
 ```bash
-git tag -a v2.1.0 -m 'Moneta (Conatus) - v2.1.0'
-git push origin v2.1.0
-gh release edit v2.1.0 \
+git tag -a v2.1.1 -m 'Moneta (Conatus) - v2.1.1'
+git push origin v2.1.1
+gh release edit v2.1.1 \
   --draft=false \
   --verify-tag \
   --latest \
   --target "$(git rev-parse HEAD)" \
-  --title 'Moneta (Conatus) - v2.1.0' \
-  --notes-file .github/releases/v2.1.0.md
+  --title 'Moneta (Conatus) - v2.1.1' \
+  --notes-file .github/releases/v2.1.1.md
 ```
 
 Once published, check the release title, notes, source archives, and links to

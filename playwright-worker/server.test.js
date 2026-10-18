@@ -966,6 +966,142 @@ test('input-triggered and popup dialogs keep their source URL and visible frame'
   assert.equal(saved.dialogText, 'popup alert');
 });
 
+test('PoC candidates preserve exact entry/payload spelling and observe main-document redirects only', async () => {
+  const entry = 'https://fixture.test/?payload=%252f&x=1&x=2';
+  const harness = createInteractiveHarness({ finalUrl: entry });
+  const view = await startHarness(harness, { url: entry });
+  const request = (url, redirectedFrom = null, frame = harness.page.mainFrame()) => ({
+    url: () => url, isNavigationRequest: () => true, frame: () => frame,
+    redirectedFrom: () => redirectedFrom,
+  });
+  const first = request(entry);
+  const redirect = 'https://fixture.test/?payload=%252F&x=1&x=2';
+  harness.page.emit('request', first);
+  harness.page.emit('request', request(redirect, first));
+  harness.page.emit('request', request('https://fixture.test/iframe', first, {}));
+  harness.navigate(redirect);
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.deepEqual(status.urlCandidates.map((candidate) => candidate.url), [entry, redirect]);
+  assert.deepEqual(status.urlCandidates[0].roles, ['entry', 'navigation']);
+  assert.deepEqual(status.urlCandidates[1].roles, ['redirect', 'navigation']);
+  assert.equal(status.urlCandidates[1].pageType, 'main');
+  assert.equal(status.urlCandidates[1].pageId, status.urlCandidates[0].pageId);
+  assert.equal(status.urlCandidatesTruncated, false);
+});
+
+test('PoC candidates stay bounded while retaining the exact entry and recent observations', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  for (let index = 0; index < 80; index++) harness.navigate(`https://fixture.test/step-${index}`);
+  harness.navigate('about:blank');
+  harness.navigate('https://fixture.test/' + 'x'.repeat(8192));
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.urlCandidates.length, 24);
+  assert.equal(status.urlCandidates[0].url, URL);
+  assert.equal(status.urlCandidates[1].url, 'https://fixture.test/step-57');
+  assert.equal(status.urlCandidates.at(-1).url, 'https://fixture.test/step-79');
+  assert.equal(status.urlCandidatesTruncated, true);
+});
+
+test('a retained dialog freezes its PoC choices before later unrelated navigation and survives finalized retry', async () => {
+  const harness = createInteractiveHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness);
+  const dialogUrl = 'https://fixture.test/dialog?payload=%3cscript%3e';
+  harness.navigate(dialogUrl);
+  harness.page.emit('dialog', createDialog('proof'));
+  await withDisplayLease(async () => {});
+  harness.navigate('https://fixture.test/later-unrelated');
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(status.urlCandidates.some((candidate) => candidate.url.endsWith('later-unrelated')), true);
+  const capturedChoices = status.retainedDialog.urlCandidates;
+  assert.deepEqual(capturedChoices.map((candidate) => candidate.url), [URL, dialogUrl]);
+  assert.deepEqual(capturedChoices.at(-1).roles, ['navigation', 'dialog']);
+  const capture = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(capture.sourceURL, dialogUrl);
+  assert.deepEqual(capture.urlCandidates, capturedChoices);
+  assert.deepEqual(capture.metadata.urlCandidates, capturedChoices);
+  harness.navigate('https://fixture.test/after-finalize');
+  const retry = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.deepEqual(retry.urlCandidates, capturedChoices);
+  assert.deepEqual((await getInteractiveStatus(view.id, harness.dependencies)).urlCandidates, capturedChoices);
+});
+
+test('popup PoC candidates carry distinct page provenance and freeze a synchronous dialog context', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  const popup = new EventEmitter();
+  const popupUrl = 'https://fixture.test/popup?payload=%252F';
+  const popupFrame = { url: () => popupUrl };
+  popup.url = () => popupUrl;
+  popup.mainFrame = () => popupFrame;
+  popup.bringToFront = async () => {};
+  popup.opener = async () => harness.page;
+  harness.context.emit('page', popup);
+  popup.emit('framenavigated', popupFrame);
+  popup.emit('dialog', { ...createDialog('popup proof'), page: () => popup });
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  const candidate = status.retainedDialog.urlCandidates.find((item) => item.url === popupUrl);
+  assert.equal(candidate.pageType, 'popup');
+  assert.notEqual(candidate.pageId, status.urlCandidates[0].pageId);
+  // A synchronous popup dialog can precede Playwright's async opener lookup.
+  // Preserve that uncertainty in its image, even when the live list learns it.
+  assert.equal(candidate.openerPageId, null);
+  assert.equal(status.urlCandidates.find((item) => item.url === popupUrl).openerPageId, status.urlCandidates[0].pageId);
+  assert.deepEqual(candidate.roles, ['navigation', 'dialog']);
+  const saved = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(saved.sourceURL, popupUrl);
+  assert.deepEqual(saved.urlCandidates, status.retainedDialog.urlCandidates);
+});
+
+test('current-page capture rejects navigation during desktop capture without attributing bytes to a new URL', async () => {
+  const harness = createInteractiveHarness();
+  const view = await startHarness(harness);
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    harness.navigate('https://fixture.test/redirect-during-desktop');
+    return PNG.toString('base64');
+  };
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies), { statusCode: 409 });
+  assert.equal(interactiveSessions.get(view.id).captureResult, null);
+  harness.dependencies.captureDesktopScreenshot = async () => PNG.toString('base64');
+  const saved = await captureInteractiveSession(view.id, harness.dependencies);
+  assert.equal(saved.sourceURL, 'https://fixture.test/redirect-during-desktop');
+  assert.equal(saved.urlCandidates.at(-1).url, saved.sourceURL);
+});
+
+test('current-page capture rejects a popup stealing foreground during focus or desktop capture and remains retryable', async (t) => {
+  for (const phase of ['focus', 'desktop']) {
+    await t.test(phase, async () => {
+      const harness = createInteractiveHarness();
+      const view = await startHarness(harness);
+      const popup = new EventEmitter();
+      popup.url = () => 'https://fixture.test/popup-without-dialog';
+      popup.mainFrame = () => ({});
+      popup.bringToFront = async () => {};
+      const stealForeground = () => harness.context.emit('page', popup);
+      let focusCalls = 0;
+      harness.page.bringToFront = async () => {
+        // withInteractiveSession focuses before entering the capture callback;
+        // the second focus is the one immediately preceding desktop capture.
+        if (++focusCalls === 2 && phase === 'focus') stealForeground();
+      };
+      harness.dependencies.captureDesktopScreenshot = async () => {
+        if (phase === 'desktop') stealForeground();
+        return 'wrong-popup-pixels';
+      };
+      await assert.rejects(captureInteractiveSession(view.id, harness.dependencies), { statusCode: 409 });
+      assert.equal(interactiveSessions.get(view.id).captureResult, null);
+      assert.equal(harness.page.url(), URL, 'The main URL did not change while the popup took foreground');
+      harness.dependencies.captureDesktopScreenshot = async () => PNG.toString('base64');
+      const saved = await captureInteractiveSession(view.id, harness.dependencies);
+      assert.equal(saved.screenshotBase64, PNG.toString('base64'));
+      assert.equal(saved.sourceURL, URL);
+      await closeInteractiveSessionById(view.id, harness.dependencies);
+    });
+  }
+});
+
 test('context dialog is retained before popup page notification and duplicate page events are ignored', async () => {
   const harness = createInteractiveHarness();
   harness.dependencies.dialogRenderDelayMs = 0;

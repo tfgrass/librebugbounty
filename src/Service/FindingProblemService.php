@@ -18,8 +18,14 @@ final class FindingProblemService
 
     private function latestJoins(): string
     {
-        return ' LEFT JOIN screenshot_job j ON j.id = (SELECT sj.id FROM screenshot_job sj WHERE sj.finding_id = f.id ORDER BY sj.requested_at DESC, sj.rowid DESC LIMIT 1)'
-            .' LEFT JOIN retest_run r ON r.id = (SELECT rr.id FROM retest_run rr WHERE rr.finding_id = f.id ORDER BY COALESCE(rr.finished_at, rr.started_at) DESC, rr.rowid DESC LIMIT 1)';
+        $metadata = "CASE WHEN json_valid(sj.capture_metadata) THEN sj.capture_metadata ELSE '{}' END";
+        return ' LEFT JOIN screenshot_job j ON j.id = (SELECT sj.id FROM screenshot_job sj WHERE sj.finding_id = f.id '
+            ."AND COALESCE(json_extract($metadata, '$.queuedPocRevision'), 0) = f.poc_revision "
+            ."AND COALESCE(json_extract($metadata, '$.pocUrl'), sj.url) = COALESCE(f.poc_url, f.url) "
+            .'ORDER BY sj.requested_at DESC, sj.rowid DESC LIMIT 1)'
+            .' LEFT JOIN retest_run r ON r.id = (SELECT rr.id FROM retest_run rr WHERE rr.finding_id = f.id AND '
+            .PocObservation::currentSql($this->connection, 'f', 'rr')
+            .' ORDER BY COALESCE(rr.finished_at, rr.started_at) DESC, rr.rowid DESC LIMIT 1)';
     }
 
     /** Metadata only: no filesystem scan, browser request or ORM flush on Settings. */
@@ -51,7 +57,7 @@ final class FindingProblemService
     {
         $filter = $this->parse($query);
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT f.id, f.url, f.title, f.manual_assessment, f.status, d.hostname, j.status AS job_status, j.error_message AS job_error, COALESCE(j.finished_at, j.started_at, j.requested_at) AS job_at, r.result AS run_result, r.error_message AS run_error, COALESCE(r.finished_at, r.started_at) AS run_at FROM finding f INNER JOIN domain d ON d.id = f.domain_id'.$this->latestJoins()
+            'SELECT f.id, COALESCE(f.poc_url, f.url) AS url, f.url AS original_url, f.title, f.manual_assessment, f.status, d.hostname, j.status AS job_status, j.error_message AS job_error, COALESCE(j.finished_at, j.started_at, j.requested_at) AS job_at, r.result AS run_result, r.error_message AS run_error, COALESCE(r.finished_at, r.started_at) AS run_at FROM finding f INNER JOIN domain d ON d.id = f.domain_id'.$this->latestJoins()
         );
         $byId = [];
         foreach ($rows as $row) {
@@ -81,7 +87,7 @@ final class FindingProblemService
             ++$counts['all'];
             foreach (array_keys($row['problems']) as $kind) ++$counts[$kind];
             if ($filter['kind'] !== 'all' && !isset($row['problems'][$filter['kind']])) continue;
-            if ($filter['q'] !== '' && !str_contains(mb_strtolower($row['hostname'].' '.$row['url'].' '.$row['title']), mb_strtolower($filter['q']))) continue;
+            if ($filter['q'] !== '' && !str_contains(mb_strtolower($row['hostname'].' '.$row['url'].' '.$row['original_url'].' '.$row['title']), mb_strtolower($filter['q']))) continue;
             $row['latestAt'] = max(array_column($row['problems'], 'at'));
             $selected[] = $row;
         }

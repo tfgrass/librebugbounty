@@ -210,7 +210,7 @@ async function main() {
     };
     const post = async (target, name, operation, revision, extra = {}) => target.request.post(base + `/review/${f[name].id}/interactive/${operation}`, {
       headers: { Accept: 'application/json' }, form: { _token: await token(target), channelId: await channel(target), expectedRevision: String(revision),
-        ...(operation === 'save' ? { expectedCandidateId: '' } : {}), ...extra },
+        ...(operation === 'save' ? { expectedCandidateId: '', expectedPocRevision: '0', pocMode: 'keep' } : {}), ...extra },
     });
 
     for (const name of dedicatedOnly ? [] : ['noImage', 'missing', 'queued', 'failed']) {
@@ -289,7 +289,12 @@ async function main() {
 
     // Only the current owner explicitly saves. Unknown VNC counts stay null.
     const beforeSave = await fixture();
-    await act(tabB, 'save'); await tabB.waitForURL(/\/review\?/);
+    // This regression checks a neutral evidence save. Keep the PoC explicitly;
+    // a unique observed URL is now a visible suggestion in the confirmation.
+    await tabB.locator('[data-novnc-action="save"]').click();
+    await tabB.locator('[data-novnc-poc-choices] input[value="keep"]').check();
+    await tabB.locator('[data-novnc-confirm-yes]').click();
+    await tabB.waitForURL(/\/review\?/);
     const saved = await fixture();
     assert.deepEqual(neutral(saved.snapshot), neutral(beforeSave.snapshot));
     assert.equal(saved.snapshot.evidence.length, beforeSave.snapshot.evidence.length + 1);

@@ -32,7 +32,9 @@ final readonly class FindingReadFilter
         public string $contactWork = '',
         public string $reminder = '',
         public string $view = '',
+        public string $review = '',
     ) {
+        self::validate('review', $review, ['', 'all', 'open', 'deferred']);
         self::validate('view', $view, ['', 'workbasket']);
         self::validate('reminder', $reminder, ['', 'today', 'overdue', 'open']);
         self::validate('contact work', $contactWork, ['', 'allowed', 'blocked']);

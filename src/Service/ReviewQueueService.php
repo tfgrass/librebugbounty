@@ -57,9 +57,11 @@ final class ReviewQueueService
         $notices = $this->notices->forFindings();
         $noticeIds = array_keys(array_filter($notices, static fn ($notice): bool => $notice->observations !== []));
         if ($noticeIds !== []) {
+            $byId = array_column($candidates, null, 'id');
             foreach ($connection->fetchAllAssociative('SELECT id, created_at FROM finding WHERE id IN ('.implode(',', array_fill(0, count($noticeIds), '?')).')', $noticeIds) as $candidate) {
-                $candidates[] = $candidate + ['result' => 'changed'];
+                $byId[$candidate['id']] = $candidate + ['result' => 'changed'];
             }
+            $candidates = array_values($byId);
             usort($candidates, static fn (array $a, array $b): int => [$a['created_at'], $a['id']] <=> [$b['created_at'], $b['id']]);
         }
         $ready = [];
@@ -234,7 +236,8 @@ final class ReviewQueueService
                 throw new \UnexpectedValueException('Der Fall ist nicht mehr vorhanden.');
             }
             [$fingerprint, $token] = array_pad(explode(':', $contextToken, 2), 2, '');
-            if (!hash_equals($this->fingerprint($id), $fingerprint)
+            if (ReviewDispositionService::isDeferred($connection, $id)
+                || !hash_equals($this->fingerprint($id), $fingerprint)
                 || !$this->csrf->isTokenValid(new CsrfToken('review_context_'.$id.'_'.$fingerprint, $token))
                 || (!$explicitReview && $connection->fetchOne('SELECT id FROM ('.$this->candidatesSql().') c WHERE c.id = ?', [$id]) === false && ($this->notices->get($id)?->observations ?? []) === [])
             ) {
@@ -253,7 +256,8 @@ final class ReviewQueueService
             }
             if ($assessment === 'keep') {
                 $notice = $this->notices->get($id);
-                if ($notice === null || $notice->observations === []) {
+                $resumed = ReviewDispositionService::available($connection) && (bool) $connection->fetchOne("SELECT 1 FROM finding_review_disposition WHERE finding_id = ? AND state = 'active'", [$id]);
+                if (($notice === null || $notice->observations === []) && !($resumed && $finding->getManualAssessment() !== null)) {
                     throw new \InvalidArgumentException('Ein Hinweis kann nur für einen bereits manuell bewerteten Fall erledigt werden.');
                 }
                 $snapshot = [];
@@ -268,11 +272,14 @@ final class ReviewQueueService
                     $item = $this->entityManager->find(Evidence::class, $evidenceId);
                     $snapshot['evidence'] = ['id' => $item->getId(), 'kind' => $item->getKind(), 'storedAt' => $item->getCreatedAt()->format(DATE_ATOM), 'filePath' => $item->getFilePath(), 'sha256' => $item->getSha256()];
                 }
-                $ack = new FindingReviewAcknowledgement($finding, $notice->decisionKey, $finding->getManualAssessment(), $this->notices->states($id), array_column($notice->observations, 'id'), $observationId, $evidenceId, $snapshot === [] ? null : $snapshot);
+                $ack = new FindingReviewAcknowledgement($finding, $notice?->decisionKey ?? 'recovery:'.$id, $finding->getManualAssessment(), $this->notices->states($id), array_column($notice?->observations ?? [], 'id'), $observationId, $evidenceId, $snapshot === [] ? null : $snapshot);
                 $this->entityManager->persist($ack);
                 $this->entityManager->flush();
             } else {
                 $this->findings->assess($finding, $assessment, $reason, $observationId, $evidenceId);
+            }
+            if (ReviewDispositionService::available($connection)) {
+                $connection->executeStatement("UPDATE finding_review_disposition SET state = 'reviewed', revision = revision + 1, changed_at = ? WHERE finding_id = ? AND state = 'active'", [(new \DateTimeImmutable())->format('Y-m-d H:i:s'), $id]);
             }
             // Capture our own committed state while the writer lock is held.
             // A later controller read could accidentally authorize undoing an
@@ -297,7 +304,9 @@ final class ReviewQueueService
         $ack = $this->notices->available() ? $connection->fetchAssociative('SELECT * FROM finding_review_acknowledgement WHERE finding_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT 1', [$id]) : false;
         $reset = AssessmentHistoryProjection::available($connection) ? $connection->fetchAssociative('SELECT * FROM finding_assessment_reset WHERE finding_id = ? ORDER BY reset_at DESC, id DESC LIMIT 1', [$id]) : false;
 
-        return hash('sha256', json_encode([$finding, $observations, $decision, $ack, $reset], JSON_THROW_ON_ERROR));
+        $disposition = ReviewDispositionService::available($connection) ? $connection->fetchAssociative('SELECT * FROM finding_review_disposition WHERE finding_id = ?', [$id]) : false;
+
+        return hash('sha256', json_encode([$finding, $observations, $decision, $ack, $reset, $disposition], JSON_THROW_ON_ERROR));
     }
 
     public function exists(string $id): bool
@@ -307,16 +316,25 @@ final class ReviewQueueService
 
     private function candidatesSql(): string
     {
-        $candidates = self::CANDIDATES.' AND '.FindingWorkPolicy::pursuitActiveSql($this->entityManager->getConnection());
-        if (!AssessmentHistoryProjection::available($this->entityManager->getConnection())) { return $candidates; }
-        // A deliberate reset stays in the all supply until a fresh judgment,
-        // even if the last technical run was conclusive. It is not falsely
-        // classified as "no technical run" by the existing unchecked filter.
-        return str_replace(
-            ['SELECT f.id, f.created_at, r.result', "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error'))"],
-            ["SELECT f.id, f.created_at, CASE WHEN r.result IS NOT NULL AND r.result NOT IN ('inconclusive', 'error') THEN 'reset' ELSE r.result END AS result", "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error') OR EXISTS (SELECT 1 FROM finding_assessment_reset reset WHERE reset.finding_id = f.id))"],
-            $candidates,
-        );
+        $connection = $this->entityManager->getConnection();
+        $candidates = str_replace('WHERE latest.finding_id = f.id', 'WHERE latest.finding_id = f.id AND '.PocObservation::currentSql($connection), self::CANDIDATES);
+        $extra = [];
+        if (ReviewDispositionService::available($connection)) {
+            $resumed = "EXISTS (SELECT 1 FROM finding_review_disposition resumed WHERE resumed.finding_id = f.id AND resumed.state = 'active')";
+            $extra[] = $resumed;
+            $candidates = str_replace('f.manual_assessment IS NULL AND', '(f.manual_assessment IS NULL OR '.$resumed.') AND', $candidates);
+        }
+        if (AssessmentHistoryProjection::available($connection)) {
+            $extra[] = 'EXISTS (SELECT 1 FROM finding_assessment_reset reset WHERE reset.finding_id = f.id)';
+        }
+        if ($extra !== []) {
+            $candidates = str_replace(
+                ['SELECT f.id, f.created_at, r.result', "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error'))"],
+                ["SELECT f.id, f.created_at, CASE WHEN r.result IS NOT NULL AND r.result NOT IN ('inconclusive', 'error') THEN 'reset' ELSE r.result END AS result", "AND (r.id IS NULL OR r.result IN ('inconclusive', 'error') OR ".implode(' OR ', $extra).')'],
+                $candidates,
+            );
+        }
+        return $candidates.' AND '.FindingWorkPolicy::pursuitActiveSql($connection).' AND '.ReviewDispositionService::activeSql($connection);
     }
 
     /** Back explicitly clears the target judgment, including an older judgment. */

@@ -117,7 +117,14 @@ final class InteractiveBrowserController
             if ($candidateId !== null && (!is_string($candidateId) || preg_match('/^[a-f0-9]{48}$/D', $candidateId) !== 1)) {
                 throw new \RuntimeException('Invalid interactive dialog candidate.', 400);
             }
-            $saved = $this->browser->save($finding, $owner, $channel, $this->requiredRevision($revision), $candidateId);
+            $pocRevision = $this->requiredRevision($this->revision($body['expectedPocRevision'] ?? null));
+            $pocMode = $body['pocMode'] ?? null;
+            if (!in_array($pocMode, ['keep', 'observed', 'manual'], true)
+                || ($pocMode !== 'keep' && (!is_string($body['pocUrl'] ?? null) || strlen($body['pocUrl']) > 8192))) {
+                throw new \RuntimeException('Explicit PoC selection required.', 400);
+            }
+            $saved = $this->browser->save($finding, $owner, $channel, $this->requiredRevision($revision), $candidateId,
+                ['revision' => $pocRevision, 'mode' => $pocMode, 'url' => $pocMode === 'keep' ? null : $body['pocUrl']]);
             $redirect = $this->evidenceReturn($request, $finding, $saved->evidence->getId(), $body['return_to'] ?? null);
             return ['saved' => true, 'redirect' => $redirect, 'contextClosed' => $saved->sessionClosed];
         });
@@ -128,7 +135,7 @@ final class InteractiveBrowserController
         $finding = $this->finding($id);
         if ($finding === null) { return $this->json(['state' => 'revoked', 'reason' => 'not_found'], 404); }
         try {
-            if (strlen($request->getContent()) > 8192) { return $this->json(['state' => 'revoked', 'reason' => 'body_too_large'], 413); }
+            if (strlen($request->getContent()) > 65536) { return $this->json(['state' => 'revoked', 'reason' => 'body_too_large'], 413); }
             $body = str_contains($request->headers->get('Content-Type', ''), 'application/json')
                 ? json_decode($request->getContent(), true, 32, JSON_THROW_ON_ERROR) : $request->request->all();
             if (!is_array($body) || !is_string($body['_token'] ?? null)

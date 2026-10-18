@@ -83,6 +83,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
   <title><?= $escape($finding->getDomain()->getHostname()) ?> · <?= $escape($t('Fall')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
   <?php require __DIR__.'/styles.php'; ?>
   <link rel="stylesheet" href="/css/studio-detail.css">
+  <link rel="stylesheet" href="/css/studio-recovery.css?v=<?= substr(hash_file('sha256', __DIR__.'/../../public/css/studio-recovery.css'), 0, 16) ?>">
   <script src="/js/i18n.js" defer></script>
   <script src="/js/studio-detail.js" defer></script>
 </head>
@@ -202,9 +203,25 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
           <?php endif; ?>
 
           <div class="studio-case-source">
-            <div class="studio-source-heading"><h3><?= $escape($t('Gemeldete URL')) ?></h3><button type="button" class="studio-copy-button" data-copy-target="studio-finding-url" hidden><?= $escape($t('URL kopieren')) ?></button></div>
-            <code id="studio-finding-url"><?= $escape($finding->getUrl()) ?></code>
+            <div class="studio-source-heading"><h3><?= $escape($t('Aktive PoC-URL')) ?></h3><button type="button" class="studio-copy-button" data-copy-target="studio-finding-url" hidden><?= $escape($t('URL kopieren')) ?></button></div>
+            <code id="studio-finding-url"><?= $escape($finding->getPocUrl()) ?></code>
+            <?php if ($finding->getPocRevision() > 0): ?><p><?= $escape($t('Ursprünglich gemeldete URL')) ?>: <code data-original-poc-url><?= $escape($finding->getUrl()) ?></code></p><?php endif; ?>
             <p class="studio-copy-status" role="status" aria-live="polite" data-copy-status></p>
+            <?php if ($view->pocHistory !== []): ?>
+              <details class="studio-detail-fold" data-poc-history><summary><?= $escape($t('PoC-URL-Verlauf')) ?></summary>
+                <p class="studio-detail-hint"><?= $escape($t('Die aktive URL wird für künftige Prüfungen verwendet. Frühere Belege behalten ihre tatsächliche Aufnahme-URL.')) ?></p>
+                <?php foreach ($view->pocHistory as $pocChange): ?>
+                  <dl class="studio-record-data">
+                    <dt><?= $escape($t('Geändert')) ?></dt><dd><?= $escape($storedTime($pocChange['changedAt'])) ?></dd>
+                    <dt><?= $escape($t('Vorherige PoC-URL')) ?></dt><dd><code><?= $escape($pocChange['previousUrl']) ?></code></dd>
+                    <dt><?= $escape($t('Neue PoC-URL')) ?></dt><dd><code><?= $escape($pocChange['url']) ?></code></dd>
+                    <dt><?= $escape($t('Quelle')) ?></dt><dd><?= $escape($t($pocChange['source'] === 'manual' ? 'Manuelle URL-Angabe' : 'Im Browser beobachtet')) ?></dd>
+                    <?php if (($pocChange['sourceUrl'] ?? null) !== null): ?><dt><?= $escape($t('Tatsächliche Aufnahme-URL')) ?></dt><dd><code><?= $escape($pocChange['sourceUrl']) ?></code></dd><?php endif; ?>
+                    <?php if (($pocChange['capturedAt'] ?? null) !== null): ?><dt><?= $escape($t('Aufnahme')) ?></dt><dd><?= $escape($storedTime($pocChange['capturedAt'])) ?></dd><?php endif; ?>
+                  </dl>
+                <?php endforeach; ?>
+              </details>
+            <?php endif; ?>
             <details class="studio-detail-fold">
               <summary><?= $escape($t('Kennzeichen & Eingabedaten')) ?></summary>
               <dl class="studio-record-data">
@@ -231,6 +248,12 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
               <p class="studio-detail-hint"><?= $escape($t('Historischer Bestand · Herkunft und Entscheidungsgrundlage unbekannt. Status: {status} · Review: {review}.', ['status' => $finding->getStatus(), 'review' => $finding->getReviewState() ?? $t('unbekannt')])) ?></p>
             <?php endif; ?>
             <?php if ($finding->isDiscarded()): ?><p class="studio-detail-hint"><?= $escape($t('Im normalen Arbeiten ignoriert. Neue Beobachtungen reaktivieren diesen Fall nicht.')) ?></p><?php endif; ?>
+
+            <?php
+            $recoveryFindingId = $finding->getId(); $recoveryContextToken = $reviewContextToken;
+            $recoveryDisposition = $view->reviewDisposition; $recoveryTrailId = null;
+            require __DIR__.'/review-recovery.php';
+            ?>
 
             <div class="studio-observation">
               <h3><?= $escape($t('Technische Beobachtung')) ?></h3>

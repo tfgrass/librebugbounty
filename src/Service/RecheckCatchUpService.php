@@ -94,7 +94,7 @@ final class RecheckCatchUpService
             FindingStatus::WONTFIX,
         ]);
 
-        return FindingWorkPolicy::checksAllowedSql($this->connection, 'finding')." AND status IN ('".$statuses."')"
+        return ReviewDispositionService::activeSql($this->connection, 'finding').' AND '.FindingWorkPolicy::checksAllowedSql($this->connection, 'finding')." AND status IN ('".$statuses."')"
             ." AND manual_assessment IS NULL"
             ." AND (review_state IS NULL OR review_state NOT IN ('"
             .ReviewState::MANUAL_CHECKING."', '".ReviewState::MANUALLY_CHECKED."', '".ReviewState::CONFIRMED_FIXED."'))";

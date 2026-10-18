@@ -34,6 +34,7 @@ final class FindingDetailService
         private readonly EvidenceStorageInterface $storage,
         private readonly EntityManagerInterface $entityManager,
         private readonly ReviewNoticeService $reviewNotices,
+        private readonly FindingPocService $pocs,
     ) {
     }
 
@@ -83,6 +84,10 @@ final class FindingDetailService
             reviewAcknowledgements: $acknowledgements,
             reviewResets: $resets,
             cancelledAssessmentIds: $cancelled,
+            reviewDisposition: ReviewDispositionService::available($connection)
+                ? ($connection->fetchAssociative('SELECT * FROM finding_review_disposition WHERE finding_id = ?', [$id]) ?: null)
+                : null,
+            pocHistory: $this->pocs->history($finding),
         );
     }
 
@@ -90,7 +95,25 @@ final class FindingDetailService
     public function assessmentState(Finding $finding, array $runs, ?FindingAssessment $newest, ?ReviewNoticeView $notice = null): FindingAssessmentState
     {
         $assessment = $finding->getManualAssessment();
-        $latestRun = $runs[0] ?? null;
+        $latestRun = null;
+        foreach ($runs as $run) {
+            if (PocObservation::current(
+                ['raw_result' => json_encode($run->getRawResult() ?? [], JSON_THROW_ON_ERROR)],
+                ['url' => $finding->getUrl(), 'poc_url' => $finding->getPocUrl(), 'poc_revision' => $finding->getPocRevision()],
+            )) {
+                $latestRun = $run;
+                break;
+            }
+        }
+        if ($latestRun === null && count($runs) >= 20) {
+            // The history is deliberately bounded. A backlog of stale results
+            // must not hide an older observation of the current PoC revision.
+            $connection = $this->entityManager->getConnection();
+            $currentId = $connection->fetchOne('SELECT latest.id FROM retest_run latest INNER JOIN finding f ON f.id = latest.finding_id WHERE f.id = ? AND '.PocObservation::currentSql($connection).' ORDER BY COALESCE(latest.finished_at, latest.started_at) DESC, latest.rowid DESC LIMIT 1', [$finding->getId()]);
+            if (is_string($currentId)) {
+                $latestRun = $this->retestRunRepository->find($currentId);
+            }
+        }
         $latestAt = $latestRun?->getFinishedAt() ?? $latestRun?->getStartedAt();
         $newerObservation = $assessment !== null && $latestAt !== null
             && $finding->getAssessedAt() !== null && $latestAt > $finding->getAssessedAt();

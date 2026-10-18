@@ -31,6 +31,8 @@ final readonly class BrowserInteractiveSessionResult
         public ?array $retainedDialog = null,
         public bool $captureFinalized = false,
         public array $dialogCapture = [],
+        public array $urlCandidates = [],
+        public bool $urlCandidatesTruncated = false,
     ) {
     }
 }
