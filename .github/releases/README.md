@@ -1,9 +1,9 @@
 # Publishing LibreBugBounty releases
 
 Release notes are stored here so the published GitHub text can be reviewed
-alongside the code. For the prepared release, use tag `v2.1.0`, title
-`Moneta (Conatus) - v2.1.0`, and the body in `v2.1.0.md`. It remains a draft
-until publication is explicitly approved and the release checks pass.
+alongside the code. For this release, use tag `v2.1.0`, title
+`Moneta (Conatus) - v2.1.0`, and the body in `v2.1.0.md`. Publication requires
+explicit approval and passing release checks.
 
 From 2026-10-12 onward, GitHub release titles always use
 `<Release-Name> - v<Version>`, for example **Moneta (Conatus) - v2.1.0**.
@@ -50,7 +50,7 @@ gh release create v2.1.0 \
   --notes-file .github/releases/v2.1.0.md
 ```
 
-The changelog's `(unreleased)` marker is deliberate during preparation. At final
+Use an `(unreleased)` changelog marker during preparation. At final
 publication, record the actual publication date, update the verification notes,
 and verify CI for the resulting release commit. If that differs from the draft's
 target, update the draft target explicitly before publication.

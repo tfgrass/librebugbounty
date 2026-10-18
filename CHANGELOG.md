@@ -3,9 +3,7 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
-## 2.1.0 — Moneta (Conatus) (unreleased)
-
-Prepared release; the publication date will be recorded when it is published.
+## 2.1.0 — Moneta (Conatus) (2026-10-18)
 
 ### Added
 
