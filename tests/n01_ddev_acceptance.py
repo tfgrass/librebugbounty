@@ -215,7 +215,9 @@ class Acceptance:
         initial_findings = {}
         for kind in ["plain", "dialog"]:
             url = f"http://{address}:{self.FIXTURE_PORT}/{kind}?round={round_name}"
-            status, payload = self.request(base + "/api/findings", {"_token": token, "url": url, "payload": "", "annotate": "N01 controlled local fixture"})
+            status, payload = self.request(base + "/api/findings", {"_token": token, "url": url,
+                "payload": "N01 harmless local browser dialog" if kind == "dialog" else "",
+                "annotate": "N01 controlled local fixture"})
             data = json.loads(payload)
             self.check(status == 201 and data["outcome"] == "stored", f"{round_name}: real API atomically stores {kind} finding and queues a screenshot")
             finding_id = data["finding"]["id"]
@@ -275,14 +277,14 @@ class Acceptance:
         with self.opener.open(request, timeout=20) as response:
             self.check(response.status == 200, f"Native form mutation {action_path} completes successfully")
 
-    def recovery_round(self, address, dialog_id):
+    def recovery_round(self, address, dialog_id, round_name="recovery"):
         """Exercise the deployed PHP->retest worker->Xvfb recovery path."""
         state = json.loads(self.run("docker", "inspect", f"ddev-{self.name}-web"))[0]
         addresses = {network["IPAddress"] for network in state["NetworkSettings"]["Networks"].values()
                      if network["IPAddress"] and ipaddress.ip_address(network["IPAddress"]).is_private}
         other = sorted(addresses - {address})
         self.check(bool(other), "Second private address of the SAME isolated web container separates recovery domains")
-        error_url = f"http://{other[0]}:{self.FIXTURE_PORT}/error?round=recovery"
+        error_url = f"http://{other[0]}:{self.FIXTURE_PORT}/error?round={urllib.parse.quote(round_name)}"
         _, page = self.request(f"http://{address}/")
         token = html.unescape(re.search(r'name="_token" value="([^"]+)"', page.decode()).group(1))
         status, body = self.request(f"http://{address}/api/findings", {
