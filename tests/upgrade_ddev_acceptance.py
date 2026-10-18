@@ -48,6 +48,18 @@ class UpgradeAcceptance(Acceptance):
         return {str(path.relative_to(root)): self.sha(path)
                 for path in root.rglob("*") if path.is_file()}
 
+    def remove_worker_dependencies(self):
+        modules = self.checkout / "playwright-worker/node_modules"
+        if modules.exists():
+            # Published 2.1.0 installs these as container root. Recreate the
+            # generated tree through an equally privileged, networkless helper
+            # mounted ONLY to this guarded disposable checkout.
+            self.run("docker", "run", "--rm", "--network", "none", "--mount",
+                     "type=bind,src=" + str(self.checkout) + ",dst=/acceptance", "--entrypoint", "node",
+                     "mcr.microsoft.com/playwright:v1.61.1-jammy", "-e",
+                     "require('node:fs').rmSync('/acceptance/playwright-worker/node_modules', {recursive:true, force:true})")
+        self.check(not modules.exists(), "Stopped upgrade removes only its generated worker dependencies, including legacy root-owned files")
+
     def preserves_legacy(self, before):
         after = self.snapshot()
         for table, rows in before.items():
@@ -84,8 +96,8 @@ class UpgradeAcceptance(Acceptance):
                        "2.1.0 persisted a real manual assessment linked to actual screenshot evidence")
             self.fixture_stop()
             self.ddev("stop")
-            stopped = json.loads(self.run("docker", "inspect", f"ddev-{self.name}-web"))[0]
-            self.check(not stopped["State"]["Running"], "Old isolated web and background workers stop before switching source")
+            running = self.run("docker", "ps", "--quiet", "--filter", "label=com.ddev.site-name=" + self.name)
+            self.check(not running, "Old isolated web and background workers stop before switching source")
             before = self.snapshot()
             hashes = self.artifact_hashes()
             self.report["legacySnapshot"] = before
@@ -96,9 +108,7 @@ class UpgradeAcceptance(Acceptance):
                        "Upgrade uses the exact committed release candidate")
             # The documented stopped-upgrade procedure recreates Node dependencies
             # from the candidate lockfile. No dependency or data overlays are copied.
-            modules = self.checkout / "playwright-worker/node_modules"
-            if modules.exists():
-                shutil.rmtree(modules)
+            self.remove_worker_dependencies()
             self.report["locks"] = {path: self.sha(self.checkout / path)
                                     for path in self.report["locks"]}
             self.ddev("start")
