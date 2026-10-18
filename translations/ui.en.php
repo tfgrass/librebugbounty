@@ -1,6 +1,13 @@
 <?php
 
 return [
+    'Vorab geladene Bilder und weiche Übergänge verkürzen das Warten beim Wechsel zwischen Fällen.' => 'Preloaded images and smooth transitions reduce waiting as you move between cases.',
+    'Flüssiger durch die Warteschlange' => 'Move smoothly through the queue',
+    'Zoom, Originalgröße, Maus- und Touch-Steuerung helfen beim Prüfen. Deine Bewertung bleibt eine ausdrückliche Entscheidung.' => 'Use zoom, original size, mouse and touch controls to examine evidence. Assessments remain your explicit decision.',
+    'Bildbelege genauer prüfen' => 'Inspect image evidence',
+    'Klassische Ansicht oder bildschirmfüllender Fokusmodus mit erreichbaren Bedienelementen und Tastatursteuerung.' => 'Choose the classic layout or a full-window focus view with accessible controls and keyboard navigation.',
+    'Review nach deinem Arbeitsstil' => 'Review your way',
+    'Projekt & Profile' => 'Project & profiles',
     'Weitere Profile' => 'More profiles',
     'Review im klassischen Layout oder im optionalen Fokusmodus mit Zoom, Bildnavigation und Tastatursteuerung.' => 'Review in the classic layout or optional focus mode with zoom, image navigation and keyboard controls.',
     'Vorgaben und Sperren für diese Installation.' => 'Defaults and restrictions for this installation.',

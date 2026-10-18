@@ -39,16 +39,6 @@
 [data-studio-settings] .studio-settings-layout { gap: 24px; }
 [data-studio-settings] .studio-settings-group { margin-top: 16px; padding-bottom: 24px; }
 [data-studio-settings] .studio-settings-group legend { color: #a9bfd9; letter-spacing: .5px; }
-.studio-utility-dialog .studio-about-hero { padding: 0 0 16px; }
-.studio-utility-dialog .studio-about-logo { width: 48px; height: 48px; }
-.studio-utility-dialog .studio-about-hero h2 { margin: 12px 0 8px; font-size: 24px; }
-.studio-utility-dialog .studio-about-lead { margin-block: 14px; }
-.studio-utility-dialog .studio-settings-docs { margin-top: 18px; padding-top: 16px; }
-.studio-utility-dialog .studio-settings-docs nav { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.studio-utility-dialog .studio-about-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
-.studio-utility-dialog .studio-about-facts > div { min-width: 0; }
-.studio-utility-dialog .studio-about-support { margin-top: 16px; padding-top: 14px; }
-@media (max-width: 440px) { .studio-utility-dialog .studio-about-facts { grid-template-columns: 1fr; } }
 .studio-utility-dialog [data-utility-content="status"] > .studio-settings-panel-heading { justify-content: flex-end; border: 0; padding-bottom: 0; }
 .studio-utility-dialog [data-utility-content="status"] #settings-health-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 /* Focus review turns navigation into a grid menu, not a footer. */
@@ -58,4 +48,50 @@
   [data-studio-review] .studio-review-shell:has(.studio-utility-nav) { grid-template-rows: auto minmax(0, 1fr) auto; }
   [data-studio-review] .studio-review-shell.review-has-card:has(.studio-utility-nav),
   [data-studio-review] .studio-review-shell.review-has-card.review-has-notice:has(.studio-utility-nav) { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+}
+
+/* About keeps its content visible and uses columns for hierarchy. */
+.studio-utility-dialog:has([data-utility-content="about"]) { width: min(1040px, calc(100vw - 40px)); }
+.studio-about-identity { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #343c47; }
+.studio-about-identity h2 { margin: 0 0 8px; font-size: 27px; font-weight: 600; letter-spacing: -.6px; }
+.studio-about-identity .studio-about-lead { margin: 0; max-width: 620px; font-size: 13px; }
+.studio-about-identity .studio-about-version { align-self: start; margin: 3px 0 0; padding: 8px 12px; font-size: 14px; text-align: right; border-color: #48658c; background: #223046; }
+.studio-about-identity .studio-about-version span { display: block; margin: 3px 0 0; color: #a9bfd9; font-size: 11px; }
+.studio-about-columns { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr); gap: 32px; padding-top: 26px; }
+.studio-about-main, .studio-about-sidebar { min-width: 0; }
+.studio-about-main h3, .studio-about-sidebar h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; color: #e1e9f4; }
+.studio-about-panel .studio-about-release-notes { margin-bottom: 30px; }
+.studio-about-panel .studio-about-release-notes ul { display: grid; gap: 18px; margin: 0; padding-left: 18px; }
+.studio-about-panel .studio-about-release-notes li { font-size: 13px; line-height: 1.6; }
+.studio-about-panel .studio-about-release-notes li strong { color: #dfe9f6; font-weight: 600; }
+.studio-about-panel .studio-about-release-notes li p { margin: 4px 0 0; color: #b2bece; }
+.studio-about-panel .studio-about-history { padding-top: 24px; }
+.studio-about-panel .studio-about-history-entries { gap: 22px; padding: 0; }
+.studio-about-panel .studio-about-history-entries article { padding-left: 16px; border-color: #536c8e; }
+.studio-about-history-entries h4 { margin: 0 0 7px; color: #dce7f5; font-size: 14px; font-weight: 600; }
+.studio-about-history-entries h4 span { margin-left: 8px; color: #9fb6d3; font-weight: 400; }
+.studio-about-panel .studio-about-history-entries p { font-size: 13px; line-height: 1.6; }
+.studio-about-sidebar { padding-left: 24px; border-left: 1px solid #343c47; }
+.studio-about-panel .studio-about-facts { display: grid; grid-template-columns: 1fr; gap: 0; }
+.studio-about-panel .studio-about-facts > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 10px 0; border: 0; }
+.studio-about-panel .studio-about-facts dt { font-size: 11px; text-transform: none; letter-spacing: 0; }
+.studio-about-panel .studio-about-facts dd { font-size: 13px; line-height: 1.5; }
+.studio-about-panel .studio-settings-docs { margin-top: 24px; padding-top: 22px; }
+.studio-about-panel .studio-settings-docs nav { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.studio-about-panel .studio-settings-docs a { padding: 7px 0; min-height: 32px; border: 0; border-radius: 0; font-size: 13px; }
+.studio-about-panel .studio-settings-docs a:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+.studio-about-panel .studio-about-support { margin-top: 24px; padding-top: 22px; }
+.studio-about-panel .studio-about-vibe { margin-top: 26px; padding-top: 16px; border-top: 1px solid #343c47; }
+.studio-settings-health-card .studio-health-metrics { padding-top: 12px; border-top: 1px solid #343c47; gap: 10px; }
+@media (max-width: 760px) {
+  .studio-about-columns { grid-template-columns: 1fr; gap: 28px; }
+  .studio-about-sidebar { padding: 24px 0 0; border-left: 0; border-top: 1px solid #343c47; }
+  .studio-about-identity { grid-template-columns: 48px minmax(0, 1fr); gap: 14px; }
+  .studio-about-identity .studio-about-logo { width: 48px; height: 48px; }
+  .studio-about-identity .studio-about-version { grid-column: 2; justify-self: start; text-align: left; }
+  .studio-about-identity .studio-about-version span { display: inline; margin-left: 8px; }
+  .studio-about-identity h2 { font-size: 22px; overflow-wrap: anywhere; }
+}
+@media (max-width: 600px) {
+  .studio-utility-dialog:has([data-utility-content="about"]) { width: 100vw; }
 }

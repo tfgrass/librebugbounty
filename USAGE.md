@@ -516,8 +516,9 @@ current case-error counters are separate and open the Error overview. Use
 **Inspect stored image files** to explicitly inspect retained images. The
 **Refresh status** link reloads the snapshot and works without JavaScript on
 the direct status page. Health is requested only when opening or explicitly
-refreshing Status, not while loading Settings or About. Technical details are
-collapsed initially. A footer warning dot means the last explicit check found
+refreshing Status, not while loading Settings or About. Queue counts, due dates
+and error links are immediately visible; individual worker signals can be
+expanded for technical inspection. A footer warning dot means the last explicit check found
 a problem; it is not a continuously refreshed live indicator.
 
 Expected IDs and browser URLs live in `app.health_workers` in
@@ -540,7 +541,9 @@ Moneta, Scriptor Quo, and Scriptor, with the newest release first. The
 ### Local documentation
 
 The **About LibreBugBounty** dialog shows the current version, release notes,
-author, source, license and support link. Its **Documentation** links open this guide, installation and
+release history, author, all profiles, source, license and support link. These
+sections are directly visible: columns on wider screens and a single column on
+mobile. Its **Documentation** links open this guide, installation and
 upgrade instructions, backup and recovery guidance, the changelog, and the
 roadmap inside the application. These documents and their screenshots are
 available without an internet connection. Links to external websites still

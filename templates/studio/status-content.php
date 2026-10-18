@@ -18,18 +18,7 @@
       </header>
       <p class="studio-settings-health-state" data-health-summary><?= $escape($t('{active}/{expected} Worker aktiv', ['active' => $group['activeWorkers'], 'expected' => $group['expectedWorkers']])) ?></p>
       <p class="studio-settings-field-hint" data-health-browser-summary><?= $escape($t('{active}/{expected} Browserdienste erreichbar', ['active' => $group['reachableBrowsers'], 'expected' => $group['expectedBrowsers']])) ?></p>
-      <details class="studio-health-details">
-        <summary><?= $escape($t('Technische Details')) ?></summary>
-        <ul class="studio-health-workers" aria-label="<?= $escape($t($label)) ?>">
-          <?php foreach ($group['workers'] as $worker): ?>
-          <li data-health-worker="<?= $escape($worker['id']) ?>" data-worker-state="<?= $escape($worker['state']) ?>" data-browser-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>">
-            <div><strong><?= $escape($worker['id']) ?></strong><span class="studio-health-worker-state"><?= $escape($t(['ok' => 'Signal aktuell', 'stale' => 'Signal veraltet', 'unknown' => 'Noch kein Signal'][$worker['state']])) ?></span></div>
-            <span class="studio-health-worker-seen"><?= $worker['lastSeen'] === null ? $escape($t('Zeitpunkt unbekannt')) : $escape($t('Letztes Signal: {date}', ['date' => $formatTime($worker['lastSeen'], true)])) ?></span>
-            <span class="studio-health-browser" data-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>"><?= $escape($t($worker['browserReachable'] ? 'Browserdienst erreichbar' : 'Browserdienst nicht erreichbar')) ?></span>
-          </li>
-          <?php endforeach; ?>
-        </ul>
-        <dl>
+      <dl class="studio-health-metrics">
           <?php if ($kind === 'recheck'): ?>
           <div><dt><?= $escape($t('Fällig jetzt')) ?></dt><dd><?= $escape($formatNumber($group['dueNow'])) ?></dd></div>
           <div><dt><?= $escape($t('Geplant')) ?></dt><dd><?= $escape($formatNumber($group['scheduled'])) ?></dd></div>
@@ -44,7 +33,18 @@
           <div><dt><?= $escape($t('Fehlgeschlagene Aufträge (Historie)')) ?></dt><dd><?= $escape($formatNumber($group['failed'])) ?></dd></div>
           <div><dt><?= $escape($t('Fälle mit Aufnahmefehler')) ?></dt><dd><a href="/errors?kind=screenshot" data-health-errors="screenshot"><?= $escape($formatNumber($group['errorCases'])) ?></a></dd></div>
           <?php endif; ?>
-        </dl>
+      </dl>
+      <details class="studio-health-details">
+        <summary><?= $escape($t('Technische Details')) ?></summary>
+        <ul class="studio-health-workers" aria-label="<?= $escape($t($label)) ?>">
+          <?php foreach ($group['workers'] as $worker): ?>
+          <li data-health-worker="<?= $escape($worker['id']) ?>" data-worker-state="<?= $escape($worker['state']) ?>" data-browser-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>">
+            <div><strong><?= $escape($worker['id']) ?></strong><span class="studio-health-worker-state"><?= $escape($t(['ok' => 'Signal aktuell', 'stale' => 'Signal veraltet', 'unknown' => 'Noch kein Signal'][$worker['state']])) ?></span></div>
+            <span class="studio-health-worker-seen"><?= $worker['lastSeen'] === null ? $escape($t('Zeitpunkt unbekannt')) : $escape($t('Letztes Signal: {date}', ['date' => $formatTime($worker['lastSeen'], true)])) ?></span>
+            <span class="studio-health-browser" data-state="<?= $worker['browserReachable'] ? 'ok' : 'unavailable' ?>"><?= $escape($t($worker['browserReachable'] ? 'Browserdienst erreichbar' : 'Browserdienst nicht erreichbar')) ?></span>
+          </li>
+          <?php endforeach; ?>
+        </ul>
       </details>
     </article>
     <?php endforeach; ?>

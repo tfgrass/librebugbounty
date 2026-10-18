@@ -42,7 +42,6 @@ async function main() {
         page.on('request', req => { if (req.method() !== 'GET') writes.push(req.url()); });
         page.on('response', res => { if (res.status() >= 400) failures.push(res.status() + ' ' + res.url()); });
         await goto(page, '/status');
-        await page.locator('[data-health-kind=screenshot] > details > summary').click();
         assert.equal(await page.locator('[data-health-errors=screenshot]').textContent(), '1');
         assert.equal(await page.locator('[data-health-errors=technical]').textContent(), '2');
         await Promise.all([page.waitForNavigation(), page.locator('[data-health-errors=screenshot]').click()]);

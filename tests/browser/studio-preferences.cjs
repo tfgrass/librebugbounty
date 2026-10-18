@@ -122,16 +122,16 @@ async function main() {
       assert.match(aboutResponse.headers()['cache-control'], /no-store/);
       assert.equal(await page.locator('[data-utility-content=about][data-utility-title]').count(), 1);
       assert.equal(await page.locator('[data-about-release]').count(), 1);
-      assert.equal(await page.locator('[data-release-notes] > p').count(), 1);
-      assert.equal(await page.locator('[data-release-history], [data-release-entry], .studio-settings-form, [data-health-kind]').count(), 0);
-      assert.equal(await page.locator('#about > .studio-about-facts > div').count(), 3);
-      assert.equal(await page.locator('.studio-about-profiles:not([open]) a').count(), 2);
+      assert.equal(await page.locator('[data-release-notes] > ul > li').count(), 3);
+      assert.equal(await page.locator('#about details, .studio-settings-form, [data-health-kind]').count(), 0);
+      assert.equal(await page.locator('#about .studio-about-facts > div').count(), 5);
+      assert.equal(await page.locator('[data-release-history] [data-release-entry]').count(), 3);
       assert.equal(await page.locator('#support a').count(), 1);
       for (const slug of ['usage', 'readme', 'backup', 'changelog', 'roadmap']) {
         assert.equal(await page.locator(`[data-documentation-links] a[href="/docs/${slug}"]`).count(), 1);
       }
       await page.screenshot({ path: path.join(output, `about-${locale}.png`), fullPage: true });
-      mark(`${locale}: About contains current release, documentation, primary facts, optional profiles and support`);
+      mark(`${locale}: About contains current release, documentation, visible profiles, release history and support`);
     }
 
     await save(page, '25', 'urls', 'none', '7', '5');

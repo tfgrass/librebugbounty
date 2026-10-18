@@ -96,14 +96,14 @@ final class StudioUtilityTest extends DatabaseTestCase
         if ($utility === 'about') {
             self::assertStringContainsString(AppInfo::NAME, $xpath->evaluate('string(//*[@data-utility-title]/@data-utility-title)'));
             self::assertStringContainsString(AppInfo::VERSION, $html);
-            self::assertSame(0, $xpath->query('//*[@data-release-history or @data-utility-warning or @data-health-kind]')->length);
+            self::assertSame(0, $xpath->query('//*[@data-utility-warning or @data-health-kind]')->length);
             self::assertSame(0, $client->getRequestsCount());
         } else {
             self::assertSame(2, $xpath->query('//*[@data-health-kind]')->length);
             self::assertSame('/status', $xpath->evaluate('string(//a[contains(@class,"studio-health-refresh")]/@href)'));
             self::assertSame(2, $xpath->query('//*[@data-health-kind]/details[not(@open)]')->length);
             self::assertSame(8, $xpath->query('//details//*[@data-health-worker]')->length);
-            self::assertSame(2, $xpath->query('//details/dl')->length);
+            self::assertSame(2, $xpath->query('//*[@data-health-kind]/dl[not(ancestor::details)]')->length);
             self::assertSame(0, $xpath->query('//*[@data-health-worker and not(ancestor::details)]')->length);
             $registry = self::getContainer()->get(WorkerHealthRegistry::class);
             self::assertSame(2 * count($registry->browserUrls()), $client->getRequestsCount());
