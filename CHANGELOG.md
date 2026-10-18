@@ -41,6 +41,15 @@ Interactive review work is assigned to 2.1.0; the codename is undecided.
   base worker, four screenshot lanes and interactive sidecar, with a development-only DDEV value and
   no host-published worker HTTP ports.
 
+### Changed
+
+- Footer tools separate Settings from About and System status dialogs, with
+  direct-page fallbacks. About keeps profiles, release history and documentation
+  visible. Status puts recheck and screenshot work side by side: queue tiles,
+  separate worker/browser-service signal meters and visible per-worker diagnostics.
+  Current case errors remain distinct from historical job totals. Health is only
+  checked on explicit opening or refresh, without polling or starting browser work.
+
 ## 2.0.3 — Moneta (2026-10-12)
 
 ### Changed

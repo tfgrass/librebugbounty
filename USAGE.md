@@ -517,8 +517,10 @@ current case-error counters are separate and open the Error overview. Use
 **Refresh status** link reloads the snapshot and works without JavaScript on
 the direct status page. Health is requested only when opening or explicitly
 refreshing Status, not while loading Settings or About. Queue counts, due dates
-and error links are immediately visible; individual worker signals can be
-expanded for technical inspection. A footer warning dot means the last explicit check found
+and error links are immediately visible. Worker and browser-service meters show
+responding versus expected counts, not capacity or progress. All per-worker
+signals and their timestamps remain visible without expanding details. Work
+and queue tiles are separate from current case errors and historical job totals. A footer warning dot means the last explicit check found
 a problem; it is not a continuously refreshed live indicator.
 
 Expected IDs and browser URLs live in `app.health_workers` in

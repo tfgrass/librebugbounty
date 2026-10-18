@@ -101,10 +101,10 @@ final class StudioUtilityTest extends DatabaseTestCase
         } else {
             self::assertSame(2, $xpath->query('//*[@data-health-kind]')->length);
             self::assertSame('/status', $xpath->evaluate('string(//a[contains(@class,"studio-health-refresh")]/@href)'));
-            self::assertSame(2, $xpath->query('//*[@data-health-kind]/details[not(@open)]')->length);
-            self::assertSame(8, $xpath->query('//details//*[@data-health-worker]')->length);
-            self::assertSame(2, $xpath->query('//*[@data-health-kind]/dl[not(ancestor::details)]')->length);
-            self::assertSame(0, $xpath->query('//*[@data-health-worker and not(ancestor::details)]')->length);
+            self::assertSame(0, $xpath->query('//*[@data-health-kind]//details')->length);
+            self::assertSame(8, $xpath->query('//*[@data-health-worker and not(ancestor::details)]')->length);
+            self::assertSame(4, $xpath->query('//meter[@data-health-meter and @aria-label]')->length);
+            self::assertSame(2, $xpath->query('//*[@data-health-errors="technical" or @data-health-errors="screenshot"][not(ancestor::details)]')->length);
             $registry = self::getContainer()->get(WorkerHealthRegistry::class);
             self::assertSame(2 * count($registry->browserUrls()), $client->getRequestsCount());
         }
@@ -138,6 +138,13 @@ final class StudioUtilityTest extends DatabaseTestCase
             $xpath = $this->xpath($response->getContent());
             self::assertSame($warning, $xpath->evaluate('string(//*[@data-utility-content]/@data-utility-warning)'));
             self::assertSame(2, $xpath->query('//*[@data-health-state="'.$state.'"]')->length);
+            self::assertSame($warning, $xpath->evaluate('string(//*[@data-service-warning]/@data-service-warning)'));
+            $active = $time === 'now' ? $workers : 0;
+            self::assertSame(2, $xpath->query('//meter[@data-health-meter="workers" and @value="'.$active.'" and @max="4"]')->length);
+            foreach (['recheck' => 1, 'screenshot' => 4] as $kind => $expected) {
+                self::assertSame((string) $expected, $xpath->evaluate('string(//*[@data-health-kind="'.$kind.'"]//meter[@data-health-meter="browsers"]/@max)'));
+                self::assertSame((string) ($browsersReachable ? $expected : 0), $xpath->evaluate('string(//*[@data-health-kind="'.$kind.'"]//meter[@data-health-meter="browsers"]/@value)'));
+            }
         }
         self::assertSame($before, $this->databaseRows());
     }

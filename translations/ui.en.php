@@ -1,6 +1,20 @@
 <?php
 
 return [
+    'Fehlerdiagnose' => 'Error diagnostics',
+    'Keine Worker konfiguriert.' => 'No workers configured.',
+    'Worker-Signale' => 'Worker signals',
+    'Auftragshistorie' => 'Job history',
+    'Zeitplan' => 'Schedule',
+    'Aktueller Fallstatus, nicht Dienststatus' => 'Current case status, not service health',
+    'Arbeit & Warteschlange' => 'Work & queue',
+    'Keine Worker-Signale' => 'No worker signals',
+    'Signale veraltet' => 'Signals stale',
+    'Eingeschränkt' => 'Degraded',
+    'Betriebssignale aktuell' => 'Signals current',
+    'Momentaufnahme, kein Live-Monitoring' => 'Snapshot, not live monitoring',
+    'Alle erwarteten Dienste melden sich' => 'All expected services are responding',
+    'Dienststatus prüfen' => 'Check service status',
     'Vorab geladene Bilder und weiche Übergänge verkürzen das Warten beim Wechsel zwischen Fällen.' => 'Preloaded images and smooth transitions reduce waiting as you move between cases.',
     'Flüssiger durch die Warteschlange' => 'Move smoothly through the queue',
     'Zoom, Originalgröße, Maus- und Touch-Steuerung helfen beim Prüfen. Deine Bewertung bleibt eine ausdrückliche Entscheidung.' => 'Use zoom, original size, mouse and touch controls to examine evidence. Assessments remain your explicit decision.',

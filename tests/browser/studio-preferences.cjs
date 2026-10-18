@@ -90,8 +90,8 @@ async function main() {
     await goto(page, '/status');
     assert.equal(await page.locator('[data-health-kind=screenshot]').getAttribute('data-health-state'), 'unknown');
     assert.equal(await page.locator('[data-utility-content=status]').getAttribute('data-utility-warning'), 'true');
-    assert.equal(await page.locator('[data-health-kind] > details:not([open])').count(), 2);
-    mark('Status starts with unknown worker signals and collapsed technical details');
+    assert.equal(await page.locator('[data-health-worker]:visible').count(), 8);
+    mark('Status starts with unknown signals and visible worker diagnostics');
 
     for (const locale of ['de', 'en']) {
       await goto(page, '/settings');
@@ -179,8 +179,7 @@ async function main() {
       assert.equal(await fallback.evaluate(() => document.documentElement.scrollWidth), 375);
       await goto(fallback, '/status');
       assert.equal(await fallback.locator('[data-health-worker]').count(), 8);
-      assert.equal(await fallback.locator('[data-health-kind] > details:not([open])').count(), 2);
-      await fallback.locator('[data-health-kind=screenshot] > details > summary').click();
+      assert.equal(await fallback.locator('[data-health-kind] details').count(), 0);
       assert.equal(await fallback.locator('[data-health-kind=screenshot] [data-health-worker]:visible').count(), 4);
       assert.equal(await fallback.evaluate(() => document.documentElement.scrollWidth), 375);
       await goto(fallback, '/about');
@@ -241,7 +240,8 @@ async function main() {
           assert.equal(new URL(page.url()).pathname, '/status');
           assert.equal(await card.getAttribute('data-health-state'), 'ok');
         }
-        await card.locator('details > summary').click();
+        assert.equal(await card.locator('[data-health-meter=workers]').getAttribute('value'), String(active));
+        assert.equal(await card.locator('[data-health-meter=browsers]').getAttribute('value'), String(browsers));
         assert.equal(await card.locator('[data-health-worker]:visible').count(), 4);
         await page.screenshot({ path: path.join(output, `health-${locale}-${scenario}.png`), fullPage: true });
       }
