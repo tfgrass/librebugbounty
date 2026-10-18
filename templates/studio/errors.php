@@ -12,7 +12,7 @@ $pageUrl = static fn (int $page): string => '/errors?'.http_build_query(array_re
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title><?= $escape($t('Fehlerübersicht')) ?> · <?= $escape(\App\AppInfo::NAME) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
   <link rel="stylesheet" href="/css/studio-inventory.css">
   <link rel="stylesheet" href="/css/studio-errors.css">
 </head>

@@ -11,7 +11,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
   <title><?= $escape($t('Eingang')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
   <script src="/js/i18n.js" defer></script>
   <script src="/js/intake.js" defer></script>
 </head>

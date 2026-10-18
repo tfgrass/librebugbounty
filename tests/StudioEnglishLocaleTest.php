@@ -49,6 +49,11 @@ final class StudioEnglishLocaleTest extends DatabaseTestCase
             self::assertSame(Response::HTTP_OK, $response->getStatusCode(), $path);
             self::assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'), $path);
             $xpath = $this->xpath($response->getContent());
+            self::assertSame(
+                '/css/studio.css?v='.substr(hash_file('sha256', dirname(__DIR__).'/public/css/studio.css'), 0, 16),
+                $xpath->evaluate('string(//link[@rel="stylesheet" and starts-with(@href, "/css/studio.css")]/@href)'),
+                $path,
+            );
             self::assertSame('en', $xpath->evaluate('string(/html/@lang)'), $path);
             self::assertSame(AppInfo::RELEASE_NAME, trim($xpath->evaluate('string(//*[contains(concat(" ", normalize-space(@class), " "), " studio-brand-tag ")])')), $path);
             self::assertStringContainsString(AppInfo::RELEASE_NAME, $xpath->evaluate('string(//title)'), $path);

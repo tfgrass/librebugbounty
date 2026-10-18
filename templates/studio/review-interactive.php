@@ -58,7 +58,7 @@ $messages = [
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title><?= $escape($t('Interaktive Aufnahme')) ?> · <?= $escape(substr($finding->getId(), 0, 8)) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
   <link rel="stylesheet" href="/css/studio-review-interactive.css">
 </head>
 <body data-studio>

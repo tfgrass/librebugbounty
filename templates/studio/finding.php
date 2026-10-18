@@ -81,7 +81,7 @@ $storedTime = static function (?string $value) use ($formatTime, $t): string {
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
   <title><?= $escape($finding->getDomain()->getHostname()) ?> · <?= $escape($t('Fall')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
   <link rel="stylesheet" href="/css/studio-detail.css">
   <script src="/js/i18n.js" defer></script>
   <script src="/js/studio-detail.js" defer></script>

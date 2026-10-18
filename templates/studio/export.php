@@ -42,7 +42,7 @@ $downloadFormat = strtoupper($view->downloadFormat);
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#121416">
   <title><?= $escape($t('Export')) ?> · <?= $escape(\App\AppInfo::NAME.' '.\App\AppInfo::RELEASE_NAME) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
   <link rel="stylesheet" href="/css/studio-export.css">
 </head>
 <body data-studio data-studio-export>

@@ -13,7 +13,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title><?= $escape($t('Interaktiv prüfen')) ?> · <?= $escape($finding->getDomain()->getHostname()) ?></title>
-  <link rel="stylesheet" href="/css/studio.css">
+  <?php require __DIR__.'/styles.php'; ?>
 </head>
 <body data-studio>
   <main class="interactive-shell novnc-shell">

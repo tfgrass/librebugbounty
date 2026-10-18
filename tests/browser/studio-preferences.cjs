@@ -11,6 +11,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const { chromium } = require('../../playwright-worker/node_modules/playwright');
 const base = process.env.STUDIO_BROWSER_BASE;
 const output = process.env.STUDIO_BROWSER_OUTPUT;
@@ -78,6 +79,8 @@ async function main() {
     const before = await counts();
     assert.ok(Object.values(before).every(value => value === 0), 'An empty disposable fixture is required');
     await goto(page, '/settings');
+    const cssHash = createHash('sha256').update(await fs.readFile(path.join(__dirname, '../../public/css/studio.css'))).digest('hex').slice(0, 16);
+    assert.equal(await page.locator('link[rel="stylesheet"][href^="/css/studio.css"]').getAttribute('href'), '/css/studio.css?v=' + cssHash);
     assert.equal(await select(page, 'inventory_page_size').inputValue(), '10');
     assert.equal(await select(page, 'export_profile').inputValue(), 'report');
     assert.equal(await select(page, 'export_screenshot_mode').inputValue(), 'latest');
@@ -98,10 +101,14 @@ async function main() {
       if (await page.locator('html').getAttribute('lang') !== locale) {
         await Promise.all([page.waitForNavigation(), page.locator(`[data-language-switcher] a[href^="/language/${locale}?"]`).click()]);
       }
-      for (const width of [375, 960, 1440]) {
+      for (const width of [320, 375, 390, 960, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         const geometry = await page.evaluate(() => ({
           width: document.documentElement.scrollWidth,
+          brandCenters: ['.studio-brand-mark', '.studio-brand-name', '.studio-brand-copy'].map(selector => {
+            const box = document.querySelector(selector).getBoundingClientRect();
+            return box.top + box.height / 2;
+          }),
           groups: [...document.querySelectorAll('.studio-settings-group legend')].map(node => node.textContent.trim()),
           controls: [...document.querySelectorAll('.studio-settings-form input, .studio-settings-form select, .studio-settings-form button')].map(node => {
             const box = node.getBoundingClientRect();
@@ -109,6 +116,8 @@ async function main() {
           }),
         }));
         assert.ok(geometry.width <= width, `${locale}/${width}: no horizontal overflow`);
+        assert.ok(Math.max(...geometry.brandCenters) - Math.min(...geometry.brandCenters) < 1,
+          `${locale}/${width}: logo, name and two-line release block share a vertical center`);
         assert.equal(geometry.groups.length, 5);
         for (const box of geometry.controls) assert.ok(box.width > 0 && box.left >= 0 && box.right <= width + 1, `${locale}/${width}: controls remain inside the viewport`);
         await page.screenshot({ path: path.join(output, `settings-${locale}-${width}.png`), fullPage: true });

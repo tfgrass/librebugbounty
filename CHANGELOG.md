@@ -41,6 +41,8 @@ repository's tagged commits.
 
 ### Changed
 
+- Header branding centers the app name beside the two-line release block. The
+  shared stylesheet uses a content-based cache key so normal reloads pick up CSS fixes.
 - Footer tools separate Settings from About and System status dialogs, with
   direct-page fallbacks. About keeps profiles, release history and documentation
   visible. Status puts recheck and screenshot work side by side: queue tiles,
