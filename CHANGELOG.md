@@ -48,6 +48,12 @@ repository's tagged commits.
   Current case errors remain distinct from historical job totals. Health is only
   checked on explicit opening or refresh, without polling or starting browser work.
 
+### Security
+
+- Update `symfony/http-foundation` and `symfony/yaml` to 7.4.21, addressing
+  CVE-2026-108082 (HeaderUtils/Cache-Control regular-expression denial of service)
+  and CVE-2026-109413 (unbounded recursion in the YAML inline lexer).
+
 ## 2.0.3 — Moneta (2026-10-12)
 
 ### Changed
