@@ -97,7 +97,7 @@
           <div class="studio-activity-metric"><div class="studio-activity-pace" data-intake-stat-pace>—</div><span data-intake-stat-average><?= $escape($t('Tempo wird geladen')) ?></span></div>
           <div class="studio-activity-metric studio-activity-clock"><div data-intake-stat-time><?= $escape($t('Noch keine Session')) ?></div><button type="button" class="studio-activity-action" data-intake-session-end hidden><?= $escape($t('Session beenden')) ?></button><span data-intake-session-hint><?= $escape($t('Startet mit deiner ersten Erfassung')) ?></span></div>
         </div>
-        <p class="studio-activity-context" data-intake-activity-context><?= $escape($t('Nur deine URL-Erfassungen · 30 Min ohne Eingabe trennen Sessions.')) ?></p>
+        <p class="studio-activity-context" data-intake-activity-context><?= $escape($t('Nur deine URL-Erfassungen · 2 Std. 30 Min. ohne Erfassung trennen Sessions.')) ?></p>
         <div class="studio-activity-summary" data-intake-session-summary hidden><p data-intake-session-summary-text></p><button type="button" class="studio-activity-action" data-intake-session-resume><?= $escape($t('Vorige Session fortsetzen')) ?></button></div>
         </div>
         <p class="studio-notice" data-intake-activity-notice role="status" aria-live="polite"></p>

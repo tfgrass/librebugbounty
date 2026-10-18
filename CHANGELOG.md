@@ -36,7 +36,7 @@ repository's tagged commits.
   can collapse the strip to a single count/period line; the browser
   remembers that choice while counts continue updating.
   Browser contributions persist across tabs and reloads; duplicates and imports do not
-  increase personal session progress. Sessions split after 30 minutes without
+  increase personal session progress. Sessions split after 2 hours 30 minutes without
   intake and can be ended or explicitly continued. The default **Current session
   only** filter can be cleared to show the latest 50 stored cases from any age;
   the history heading displays the actual row count. A single scrollable list

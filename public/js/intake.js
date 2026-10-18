@@ -398,7 +398,7 @@
       sessionHint.hidden = Boolean(active);
       sessionHint.textContent = t(session ? 'Session abgeschlossen' : 'Startet mit deiner ersten Erfassung');
       root.querySelector('[data-intake-activity-context]').textContent = t(stats.period === 'session'
-        ? 'Nur deine URL-Erfassungen · 30 Min ohne Eingabe trennen Sessions.'
+        ? 'Nur deine URL-Erfassungen · 2 Std. 30 Min. ohne Erfassung trennen Sessions.'
         : 'Gesamter Bestand · inklusive Importe · Tagesgrenze Europe/Berlin.');
       const summary = root.querySelector('[data-intake-session-summary]');
       const resumable = activitySnapshot.resumableSession;
@@ -406,7 +406,7 @@
       if (resumable) {
         root.querySelector('[data-intake-session-summary-text]').textContent = t('{count} neue Fälle in {duration}. {ending}', {
           count: formatNumber(resumable.count), duration: formatDuration(resumable.durationSeconds),
-          ending: t(resumable.state === 'idle' ? 'Nach 30 Min ohne Eingabe pausiert.' : 'Session abgeschlossen.'),
+          ending: t(resumable.state === 'idle' ? 'Nach 2 Std. 30 Min. ohne Erfassung pausiert.' : 'Session abgeschlossen.'),
         });
       }
       resumeSessionButton.disabled = activityActionPending || saving;

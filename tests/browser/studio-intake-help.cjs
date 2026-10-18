@@ -110,8 +110,8 @@ async function main() {
     assert.equal(await content.locator('section').count(), 4);
     const text = await content.innerText();
     for (const expected of locale === 'de'
-      ? ['vollständige, reproduzierbare URL', 'ergänzt keinen Payload', 'kein strenger Erfolgsfilter', 'im Hintergrund', 'keine Meldung', 'Exakt dieselbe URL', 'Kennzeichen und Notiz bleiben unverändert', `${interval} Tagen`, `${backoff} Tagen`, 'Warteschlange', 'Behobene und verworfene']
-      : ['full, reproducible URL', 'does not add a payload', 'does not strictly determine', 'in the background', 'No report is sent', 'exact same URL', 'marker and note remain unchanged', `${interval} days`, `${backoff} days`, 'queue', 'Fixed and discarded']) {
+      ? ['vollständige, reproduzierbare URL', 'ergänzt keinen Payload', 'kein strenger Erfolgsfilter', 'im Hintergrund', 'keine Meldung', '2 Std. 30 Min. ohne Erfassung', 'Öffnen und Review verlängern sie nicht', 'Exakt dieselbe URL', 'Kennzeichen und Notiz bleiben unverändert', `${interval} Tagen`, `${backoff} Tagen`, 'Warteschlange', 'Behobene und verworfene']
+      : ['full, reproducible URL', 'does not add a payload', 'does not strictly determine', 'in the background', 'No report is sent', '2 hr 30 min without intake', 'Opening the page and reviewing cases do not extend it', 'exact same URL', 'marker and note remain unchanged', `${interval} days`, `${backoff} days`, 'queue', 'Fixed and discarded']) {
       assert.ok(text.includes(expected), `${locale}: Missing help content: ${expected}`);
     }
     assert.equal(await content.locator('a[href="/settings"]').count(), 1);

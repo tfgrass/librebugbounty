@@ -12,7 +12,7 @@ use Symfony\Component\Uid\Uuid;
 /** Small browser-intake ledger; polling, review and imports never touch it. */
 final class IntakeActivityService
 {
-    public const IDLE_SECONDS = 1800;
+    public const IDLE_SECONDS = 150 * 60;
     public const MINUTES = [5, 10, 15, 30, 60, 120];
     private const SCOPE_KEY = 'librebugbounty.intake.browser';
 

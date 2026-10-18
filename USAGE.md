@@ -65,7 +65,7 @@ continues while collapsed. The full view is shown until you choose otherwise.
 
 A session starts with the first successfully handled intake, including a
 duplicate, and continues across tabs and reloads in the same browser session.
-After 30 minutes without intake, the next submission starts a new session.
+After 2 hours 30 minutes without intake, the next submission starts a new session.
 **End session** shows a closing summary; **Continue previous session** lets you
 continue after a long research break. The displayed duration is elapsed session
 time, not measured active working time. Counters are independent of the 50-row

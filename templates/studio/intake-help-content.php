@@ -12,6 +12,7 @@
   <section class="studio-intake-help-section">
     <h3><?= $escape($t('Speichern und prüfen')) ?></h3>
     <p><?= $escape($t('Erfassen speichert den Fall lokal und reiht den Screenshot im Hintergrund ein. Währenddessen kannst du direkt die nächste URL erfassen. Danach sichtest du den Beleg manuell im Review. Es wird keine Meldung an die Website versendet.')) ?></p>
+    <p><?= $escape($t('Jede erfolgreiche URL-Erfassung hält die Session aktiv. Nach 2 Std. 30 Min. ohne Erfassung beginnt mit der nächsten URL eine neue Session. Öffnen und Review verlängern sie nicht.')) ?></p>
   </section>
   <section class="studio-intake-help-section">
     <h3><?= $escape($t('Doppelte URLs')) ?></h3>

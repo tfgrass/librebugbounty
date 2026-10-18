@@ -81,29 +81,57 @@ final class IntakeActivityTest extends DatabaseTestCase
         self::assertNotContains($first->getId(), array_column($after['history']['findings'], 'id'));
     }
 
-    public function testIdleSplitsAtThirtyMinutesAndResumeMergesOnlyThisBrowserWithGenerationFence(): void
+    public function testIdleSplitsAt150MinutesSinceLastIntakeAndResumeMergesOnlyThisBrowserWithGenerationFence(): void
     {
         $now = new \DateTimeImmutable('2026-10-18T12:00:00Z');
         $first = $this->capture('https://idle.example.test/a', $now);
         $this->capture('https://idle.example.test/a', $now->modify('+10 minutes'));
         $before = $this->rows();
-        $idle = $this->activity->snapshot($this->browser, now: $now->modify('+40 minutes'));
+        $beforeBoundary = $this->activity->snapshot($this->browser, now: $now->modify('+159 minutes 59 seconds'));
+        self::assertSame($first['sessionId'], $beforeBoundary['activeSession']['id']);
+        self::assertNull($beforeBoundary['resumableSession']);
+        $idle = $this->activity->snapshot($this->browser, now: $now->modify('+160 minutes'));
         self::assertNull($idle['activeSession']);
         self::assertSame('idle', $idle['resumableSession']['state']);
         self::assertSame(600, $idle['resumableSession']['durationSeconds']);
         self::assertSame($before, $this->rows());
-        $second = $this->capture('https://idle.example.test/b', $now->modify('+40 minutes'));
+        $second = $this->capture('https://idle.example.test/b', $now->modify('+160 minutes'));
         self::assertNotSame($first['sessionId'], $second['sessionId']);
-        $state = $this->activity->snapshot($this->browser, now: $now->modify('+41 minutes'));
+        $state = $this->activity->snapshot($this->browser, now: $now->modify('+161 minutes'));
         self::assertSame(1, $state['stats']['count']);
         self::assertSame($first['sessionId'], $state['resumableSession']['id']);
-        $this->activity->change($this->browser, 'resume', $first['sessionId'], $second['sessionId'], $state['sessionGeneration'], $now->modify('+41 minutes'));
-        $merged = $this->activity->snapshot($this->browser, now: $now->modify('+41 minutes'));
+        $this->activity->change($this->browser, 'resume', $first['sessionId'], $second['sessionId'], $state['sessionGeneration'], $now->modify('+161 minutes'));
+        $merged = $this->activity->snapshot($this->browser, now: $now->modify('+161 minutes'));
         self::assertSame($first['sessionId'], $merged['activeSession']['id']);
         self::assertSame(2, $merged['stats']['count']);
         self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM intake_session'));
         $this->expectException(IntakeActivityConflict::class);
-        $this->activity->change($this->browser, 'end', $first['sessionId'], null, $first['generation'], $now->modify('+42 minutes'));
+        $this->activity->change($this->browser, 'end', $first['sessionId'], null, $first['generation'], $now->modify('+162 minutes'));
+    }
+
+    public function testIntakeBeforeIdleBoundaryRenewsTimerButSnapshotsAndReviewDoNot(): void
+    {
+        $now = new \DateTimeImmutable('2026-10-18T12:00:00Z');
+        $first = $this->capture('https://renew.example.test/a', $now);
+        $lastCapture = $now->modify('+149 minutes 59 seconds');
+        $second = $this->capture('https://renew.example.test/b', $lastCapture);
+        self::assertSame($first['sessionId'], $second['sessionId']);
+        $before = $this->rows();
+
+        $afterOriginalBoundary = $this->activity->snapshot($this->browser, now: $now->modify('+150 minutes'));
+        self::assertSame($first['sessionId'], $afterOriginalBoundary['activeSession']['id']);
+        self::assertSame(2, $afterOriginalBoundary['activeSession']['count']);
+        $this->intake->assess($second['result']->finding, 'discarded');
+        self::assertSame($before, $this->rows());
+
+        $beforeRenewedBoundary = $this->activity->snapshot($this->browser, now: $lastCapture->modify('+149 minutes 59 seconds'));
+        self::assertSame($first['sessionId'], $beforeRenewedBoundary['activeSession']['id']);
+        $idle = $this->activity->snapshot($this->browser, now: $lastCapture->modify('+150 minutes'));
+        self::assertNull($idle['activeSession']);
+        self::assertSame($first['sessionId'], $idle['resumableSession']['id']);
+        self::assertSame('idle', $idle['resumableSession']['state']);
+        self::assertSame(8999, $idle['resumableSession']['durationSeconds']);
+        self::assertSame($before, $this->rows());
     }
 
     public function testEndAndResumeSameIdRejectsOldTabAndBrowserCannotResumeSomeoneElsesSession(): void

@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'Jede erfolgreiche URL-Erfassung hält die Session aktiv. Nach 2 Std. 30 Min. ohne Erfassung beginnt mit der nächsten URL eine neue Session. Öffnen und Review verlängern sie nicht.' => 'Each successful URL intake keeps the session active. After 2 hr 30 min without intake, the next URL starts a new session. Opening the page and reviewing cases do not extend it.',
     'Die Wiederaufnahme ändert dein Urteil nicht. Prüfe den aktuellen Stand; du kannst die Bewertung beibehalten oder neu entscheiden.' => 'Resuming does not change your assessment. Check the current state; you can keep the assessment or decide again.',
     'Zurückgestellter Fall wieder zur Sichtung' => 'Deferred case returned to review',
     '„Bewertung behalten“ erledigt die Sichtung ohne neues Urteil. ' => '“Keep assessment” completes the review without a new assessment. ',
@@ -1416,7 +1417,7 @@ return [
     'Tempo wird geladen' => 'Loading pace',
     'Noch keine Session' => 'No session yet',
     'Startet mit deiner ersten Erfassung' => 'Starts with your first intake',
-    'Nur deine URL-Erfassungen · 30 Min ohne Eingabe trennen Sessions.' => 'Only your URL intake · 30 min without input separates sessions.',
+    'Nur deine URL-Erfassungen · 2 Std. 30 Min. ohne Erfassung trennen Sessions.' => 'Only your URL intake · 2 hr 30 min without intake separates sessions.',
     'Vorige Session fortsetzen' => 'Resume previous session',
     'Letzte {count}' => 'Last {count}',
     'Nur aktuelle Session' => 'Current session only',
@@ -1437,7 +1438,7 @@ return [
     'Session abgeschlossen' => 'Session complete',
     'Gesamter Bestand · inklusive Importe · Tagesgrenze Europe/Berlin.' => 'All inventory · including imports · day boundary Europe/Berlin.',
     '{count} neue Fälle in {duration}. {ending}' => '{count} new cases in {duration}. {ending}',
-    'Nach 30 Min ohne Eingabe pausiert.' => 'Paused after 30 min without input.',
+    'Nach 2 Std. 30 Min. ohne Erfassung pausiert.' => 'Paused after 2 hr 30 min without intake.',
     'Session abgeschlossen.' => 'Session complete.',
     'Etappe {count} erreicht. Gut erfasst!' => 'Milestone {count} reached. Nice progress!',
     'Fortschritt und gemeinsamer Verlauf sind gerade nicht erreichbar. Deine Eingabe bleibt benutzbar.' => 'Progress and shared history are currently unavailable. You can still add URLs.',

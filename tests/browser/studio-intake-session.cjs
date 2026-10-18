@@ -188,6 +188,7 @@ async function main() {
     assert.equal(initial.stats.count, 0);
     assert.equal(initial.history.findings.length, 0);
     assert.equal(await page.locator('[data-intake-session-only]').isChecked(), true);
+    assert.match(await page.locator('[data-intake-activity-context]').innerText(), /2 Std\. 30 Min\. ohne Erfassung/);
     await historyCount(page, 0);
     await page.locator(urlField).focus();
     mark('Opening intake creates no session; current-session history is selected by default');
@@ -590,6 +591,7 @@ async function main() {
     const english = await openIntake(englishContext);
     assert.equal(await english.locator('html').getAttribute('lang'), 'en');
     assert.match(await english.locator('[data-intake-activity]').innerText(), /progress/i);
+    assert.match(await english.locator('[data-intake-activity-context]').innerText(), /2 hr 30 min without intake/);
     await historyCount(english, 0, 'en');
     await enter(english, 'https://session-language.example/english');
     await waitCount(english, 1);
