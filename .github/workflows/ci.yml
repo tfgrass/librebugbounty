@@ -83,7 +83,7 @@ jobs:
   browser:
     name: Studio browser smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -107,6 +107,8 @@ jobs:
         run: python tests/browser/run_preferences.py
       - name: Test Review focus and assessment transitions with isolated fixtures
         run: python tests/browser/run_review.py
+      - name: Test intake sessions, help, compact statistics and release updates with fresh fixtures
+        run: python tests/browser/run_intake.py
       - name: Test footer utilities and lazy accessible dialogs
         run: node tests/browser/studio-utilities-ui.cjs
         env:
@@ -123,10 +125,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: settings-browser-smoke
+          name: studio-browser-smoke
           path: |
             var/preferences-acceptance-*/
             var/review-focus-acceptance-*/
+            var/intake-acceptance-*/
             var/utilities-ui-acceptance/
             var/novnc-ui-acceptance/
             var/novnc-e2e-acceptance/
