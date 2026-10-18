@@ -96,7 +96,13 @@ class Acceptance:
 
     def snapshot(self):
         tables = [row["name"] for row in self.rows("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-        return {table: self.rows(f'SELECT * FROM "{table}" ORDER BY rowid') for table in tables}
+        snapshot = {table: self.rows(f'SELECT * FROM "{table}" ORDER BY rowid') for table in tables}
+        # Running daemons continuously refresh liveness, including across a
+        # restart. Preserve every user setting; compare only durable app data.
+        if "setting" in snapshot:
+            snapshot["setting"] = [row for row in snapshot["setting"]
+                                   if not row["id"].startswith("worker.heartbeat.")]
+        return snapshot
 
     def request(self, url, data=None):
         headers = {"Content-Type": "application/json"} if data is not None else {}
@@ -163,6 +169,8 @@ class Acceptance:
             health[service] = json.loads(self.ddev("exec", "curl", "--max-time", "10", "--fail", "--silent", f"http://{service}:3000/health"))
             self.check(health[service].get("ok") is True, f"{service} HTTP health is ready")
         self.report.setdefault("health", []).append(health)
+        self.report.setdefault("workerHeartbeats", []).append(
+            self.rows("SELECT * FROM setting WHERE id LIKE 'worker.heartbeat.%' ORDER BY id"))
         version = json.loads((self.checkout / "playwright-worker/node_modules/playwright/package.json").read_text())["version"]
         self.check(version == "1.61.1", "Fresh npm installation matches pinned Playwright 1.61.1")
         self.check(self.report["locks"] == {p: self.sha(self.checkout / p) for p in self.report["locks"]}, "Dependency lockfiles remain byte-identical")
