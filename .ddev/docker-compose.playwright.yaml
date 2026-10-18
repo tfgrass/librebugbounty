@@ -2,8 +2,9 @@
 # PLAYWRIGHT_WORKER_TOKEN below is a development value shared with config.yaml;
 # shot-2 through shot-4 inherit it from the shot-1 YAML anchor.
 services:
-  # Headless technical rechecks. The screenshot lanes below each own a
-  # separate Xvfb desktop, so parallel headed captures cannot overlap.
+  # Technical rechecks normally remain headless. This lane also owns Xvfb
+  # for explicit one-shot recovery; the screenshot lanes below use separate
+  # desktops, so parallel headed captures cannot overlap.
   playwright:
     image: mcr.microsoft.com/playwright:v1.61.1-jammy
     container_name: ddev-${DDEV_SITENAME}-playwright

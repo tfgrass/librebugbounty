@@ -251,6 +251,93 @@ class Acceptance:
         self.report[round_name] = {"ids": ids, "jobs": jobs}
         return ids
 
+    def submit_detail_form(self, address, finding_id, action_path, fields):
+        base = f"http://{address}"
+        _, response = self.request(base + "/findings/" + finding_id)
+        form = re.search(r'<form\b[^>]*action="' + re.escape(action_path)
+                         + r'"[^>]*>(.*?)</form>', response.decode(), re.S)
+        self.check(form is not None, f"Detail provides the real {action_path} form")
+        for name in ("_token", "context_token"):
+            match = re.search(r'name="' + name + r'" value="([^"]+)"', form.group(1))
+            if match:
+                fields[name] = html.unescape(match.group(1))
+        self.check("_token" in fields, "Native mutation uses a session-bound CSRF token")
+        request = urllib.request.Request(base + action_path, urllib.parse.urlencode(fields).encode(),
+                                         {"Content-Type": "application/x-www-form-urlencoded"})
+        with self.opener.open(request, timeout=20) as response:
+            self.check(response.status == 200, f"Native form mutation {action_path} completes successfully")
+
+    def recovery_round(self, address, dialog_id):
+        """Exercise the deployed PHP->retest worker->Xvfb recovery path."""
+        state = json.loads(self.run("docker", "inspect", f"ddev-{self.name}-web"))[0]
+        addresses = {network["IPAddress"] for network in state["NetworkSettings"]["Networks"].values()
+                     if network["IPAddress"] and ipaddress.ip_address(network["IPAddress"]).is_private}
+        other = sorted(addresses - {address})
+        self.check(bool(other), "Second private address of the SAME isolated web container separates recovery domains")
+        error_url = f"http://{other[0]}:{self.FIXTURE_PORT}/error?round=recovery"
+        _, page = self.request(f"http://{address}/")
+        token = html.unescape(re.search(r'name="_token" value="([^"]+)"', page.decode()).group(1))
+        status, body = self.request(f"http://{address}/api/findings", {
+            "_token": token, "url": error_url, "payload": "", "annotate": "Synthetic HTTP504 recovery fixture",
+        })
+        created = json.loads(body)
+        self.check(status == 201 and created["outcome"] == "stored", "Recovery stores an isolated HTTP504 case through the real intake API")
+        error_id = created["finding"]["id"]
+        # Let its neutral screenshot finish before creating a context-bound form.
+        deadline = time.monotonic() + 100
+        while time.monotonic() < deadline:
+            jobs = self.rows("SELECT status FROM screenshot_job WHERE finding_id=?", (error_id,))
+            if jobs and jobs[0]["status"] in ("available", "failed"):
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("HTTP504 fixture screenshot did not settle before deferral")
+        cases = [(error_id, "deferred"), (dialog_id, "active")]
+        for finding_id, _ in cases:
+            self.submit_detail_form(address, finding_id, f"/review/{finding_id}/defer", {
+                "reason": "unreachable", "note": "Controlled one-shot recovery acceptance", "schedule": "tomorrow",
+            })
+            row = self.rows("SELECT * FROM finding_review_disposition WHERE finding_id=?", (finding_id,))[0]
+            self.check(row["state"] == "deferred" and row["retry_state"] == "pending", "Native deferral schedules one future recovery attempt")
+        # Accelerate only the two synthetic due dates. Every request, claim,
+        # domain interval, browser capture and result write uses real services.
+        with sqlite3.connect(self.checkout / "storage/database/app.sqlite", timeout=30) as connection:
+            connection.executemany("UPDATE finding_review_disposition SET due_at=datetime('now','-1 minute') WHERE finding_id=? AND retry_state='pending'", [(finding_id,) for finding_id, _ in cases])
+        self.report["recoveryClock"] = {"ids": [finding_id for finding_id, _ in cases],
+                                        "adjustment": "Only synthetic scheduled due dates advanced to one minute ago"}
+        for _ in cases:
+            self.ddev("exec", "php", "bin/console", "app:recheck:worker", "--once", "--timeout=10000", "--no-interaction")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            dispositions = self.rows("SELECT * FROM finding_review_disposition WHERE finding_id IN (?,?) ORDER BY finding_id", [error_id, dialog_id])
+            if all(row["retry_state"] == "completed" for row in dispositions):
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError(f"Deployed recovery did not complete: {dispositions!r}")
+        runs = {}
+        for finding_id, expected_state in cases:
+            row = next(row for row in dispositions if row["finding_id"] == finding_id)
+            self.check(row["state"] == expected_state, f"Recovery leaves {finding_id} {expected_state} after its single attempt")
+            runs[finding_id] = self.rows("SELECT * FROM retest_run WHERE finding_id=?", (finding_id,))
+            self.check(len(runs[finding_id]) == 1 and runs[finding_id][0]["id"] == row["retry_run_id"], "One scheduled revision records exactly one real browser result")
+        dialog = runs[dialog_id][0]
+        metadata = json.loads(dialog["raw_result"])
+        self.check(dialog["result"] == "still_vulnerable" and metadata.get("screenshotCapturedFromDialog") is True
+                   and metadata.get("screenshotCaptureMethod") == "desktop-dialog"
+                   and metadata.get("dialogEvents", [{}])[0].get("message") == "N01 harmless local browser dialog",
+                   "Deployed retest service captures the expected actual native dialog using its desktop runtime")
+        file = self.checkout / "storage/artifacts" / dialog["screenshot_path"]
+        if not file.exists() and dialog["screenshot_path"].startswith("storage/artifacts/"):
+            file = self.checkout / dialog["screenshot_path"]
+        self.check(file.is_file() and file.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"), "Recovery persists the actual dialog PNG")
+        shutil.copy2(file, self.output / "recovery-dialog.png")
+        self.check(runs[error_id][0]["http_status"] == 504, "Real HTTP504 response remains deferred instead of being marked fixed")
+        self.ddev("exec", "php", "bin/console", "app:recheck:worker", "--once", "--timeout=10000", "--no-interaction")
+        for finding_id, _ in cases:
+            self.check(self.rows("SELECT * FROM retest_run WHERE finding_id=?", (finding_id,)) == runs[finding_id], "A completed scheduled attempt is never automatically repeated")
+        self.report["recovery"] = {"dispositions": dispositions, "runs": runs}
+
     def execute(self):
         self.guard()
         try:
@@ -270,6 +357,7 @@ class Acceptance:
             address = self.ip()
             self.fixture_start(address)
             first_ids = self.capture_round(address, "before-restart")
+            self.recovery_round(address, first_ids[1])
             before = self.snapshot()
             self.report["beforeRestart"] = before
             hashes = {str(p.relative_to(self.checkout / "storage/artifacts")): self.sha(p)

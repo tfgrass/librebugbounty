@@ -5,11 +5,14 @@ declare(strict_types=1);
 // Used only by the guarded, isolated DDEV acceptance harness. No application
 // bootstrap, external resources, technical checks, or target URLs are involved.
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-if (!in_array($path, ['/plain', '/dialog'], true)) {
+if (!in_array($path, ['/plain', '/dialog', '/error'], true)) {
     http_response_code(404);
     exit('Local fixture not found.');
 }
 $dialog = $path === '/dialog';
+if ($path === '/error') {
+    http_response_code(504);
+}
 header('Content-Type: text/html; charset=UTF-8');
 header('Cache-Control: no-store');
 ?>

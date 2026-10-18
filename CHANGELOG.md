@@ -67,6 +67,9 @@ repository's tagged commits.
 
 ### Fixed
 
+- Cold worker startup creates the shared runtime directory with the checkout
+  owner so PHP can create its cache. The recheck worker now owns a private Xvfb
+  display for scheduled native-dialog recovery; ordinary rechecks remain headless.
 - Saving interactive evidence binds the confirmed dialog image through to final
   capture. If a newer dialog replaces it, Review refreshes the selection for
   confirmation instead of silently saving the replacement. Persistence retries

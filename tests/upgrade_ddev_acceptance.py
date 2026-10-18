@@ -27,6 +27,7 @@ class UpgradeAcceptance(Acceptance):
         self.expected_commit = self.base_commit
         self.report.update({"mode": "upgrade", "baseCommit": self.base_commit,
                             "candidateCommit": self.target_commit})
+        self.historical_var_workaround = args.historical_var_workaround
 
     def form(self, address, finding_id, action, fields):
         base = f"http://{address}"
@@ -60,6 +61,9 @@ class UpgradeAcceptance(Acceptance):
         self.guard()
         self.run("git", "merge-base", "--is-ancestor", self.base_commit, self.target_commit)
         try:
+            if self.historical_var_workaround:
+                (self.checkout / "var").mkdir(mode=0o755)
+                self.report["historicalWorkaround"] = "Precreate empty var as normal host/web UID solely for the published 2.1.0 cold-install ownership race; sources remain byte-identical."
             self.started = True
             self.ddev("start")
             self.runtime()
@@ -112,7 +116,8 @@ class UpgradeAcceptance(Acceptance):
             # Also prove fresh work on the migrated database while retaining the
             # existing historical assessment and its evidence reference.
             self.fixture_start(address)
-            self.capture_round(address, "candidate-2.1.1")
+            candidate_ids = self.capture_round(address, "candidate-2.1.1")
+            self.recovery_round(address, candidate_ids[1])
             self.fixture_stop()
             before_restart = self.snapshot()
             final_hashes = self.artifact_hashes()
@@ -147,4 +152,6 @@ if __name__ == "__main__":
     parser.add_argument("--base-commit", required=True)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--report-dir", required=True)
+    parser.add_argument("--historical-var-workaround", action="store_true",
+                        help="Precreate empty user-owned var only for genuine published 2.1.0 (never a candidate install)")
     UpgradeAcceptance(parser.parse_args()).execute()

@@ -1,7 +1,7 @@
 # Playwright worker
 
 This internal HTTP service runs in the DDEV Playwright sidecars.
-`PLAYWRIGHT_WORKER_MODE` selects one explicit mode: `retest` for headless
+`PLAYWRIGHT_WORKER_MODE` selects one explicit mode: `retest` for normally headless
 technical rechecks, `shot` for one of the four screenshot lanes, or `interactive`
 for the shared interactive noVNC desktop and gateway. The mode exposes only its
 configured routes:
@@ -37,8 +37,11 @@ Worker HTTP ports use internal `expose` only, with no host-published ports.
 
 The Docker image, `package.json`, and `package-lock.json` all use Playwright
 `1.61.1`. `start.sh` validates dependencies under a shared install lock, running
-`npm ci` only when needed. `retest` runs Node without a desktop; each `shot` lane
-starts its own 1440x900 Xvfb. `interactive` also starts pinned x11vnc/websockify,
+`npm ci` only when needed. `retest` and each `shot` lane start their own 1440x900 Xvfb. Stock rechecks
+remain headless; scheduled one-shot review recovery takes a native-dialog
+screenshot on the retest lane under its display lease. A root sidecar prepares
+the shared `var` directory with the checkout owner before publishing it, so
+a fresh PHP installation can create its cache concurrently. `interactive` also starts pinned x11vnc/websockify,
 both bound to container loopback. Only the integrated gateway is reachable on
 the private worker HTTP port. Health checks include child liveness and desktop
 transport handshakes; shutdown terminates the process trees. The interactive

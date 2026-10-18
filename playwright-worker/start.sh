@@ -93,7 +93,8 @@ fi
 # a cold start cannot run npm ci while another service is inspecting its files.
 # var is gitignored and survives npm ci deleting/replacing node_modules.
 command -v flock >/dev/null || { echo 'Worker runtime missing flock.' >&2; exit 1; }
-mkdir -p ../var
+source ./runtime-directory.sh
+prepare_worker_runtime_directory ../var ..
 (
   if ! flock -w 120 9; then
     echo 'Timed out waiting for the shared worker dependency install lock.' >&2
@@ -157,8 +158,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 rm -f "$runtime_state"
 
-# Retests are headless; shot lanes and legacy each keep their own X display.
-if [[ "$mode" != retest ]]; then
+# Every lane owns a display. Stock retests remain headless; the rare one-shot
+# review recovery uses this lane's display for an actual native-dialog image.
+if [[ "$mode" == retest || "$mode" == shot || "$mode" == interactive || "$mode" == legacy ]]; then
   display_number=99
   while [[ -e "/tmp/.X${display_number}-lock" || -S "/tmp/.X11-unix/X${display_number}" ]]; do
     display_number=$((display_number + 1))

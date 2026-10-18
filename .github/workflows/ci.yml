@@ -80,6 +80,19 @@ jobs:
       - name: Run backup tests
         run: python -B -m unittest discover -s tests -p 'backup_local_test.py' -v
 
+  runtime:
+    name: Native recovery runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install locked worker dependencies
+        run: npm ci --prefix playwright-worker --no-audit --no-fund
+      - name: Test production retest startup, native dialog image and display shutdown
+        run: node playwright-worker/retest-runtime-smoke.cjs
+
   browser:
     name: Studio browser smoke
     runs-on: ubuntu-latest

@@ -99,8 +99,11 @@ def run_suite(name, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("suites", nargs="*", choices=SUITES, help="Default: all suites, each with its own fixture")
+    parser.add_argument("suites", nargs="*", metavar="SUITE", help="Default: all suites, each with its own fixture")
     args = parser.parse_args()
+    for name in args.suites:
+        if name not in SUITES:
+            parser.error(f"unknown suite {name!r}; choose from {', '.join(SUITES)}")
     output = PROJECT / "var" / f"intake-acceptance-{uuid.uuid4().hex}"
     for name in args.suites or SUITES:
         run_suite(name, output / name)
