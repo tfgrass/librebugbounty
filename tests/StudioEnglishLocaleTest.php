@@ -39,7 +39,9 @@ final class StudioEnglishLocaleTest extends DatabaseTestCase
             ['/review?images=all', 'Manual review', 'Manuelle Prüfung'],
             ['/statistics', 'From first report to resolution.', 'Von der ersten Meldung bis zur Behebung.'],
             ['/export', 'What do you want to export for?', 'Wofür möchtest du exportieren?'],
-            ['/settings', 'Settings & info', 'Einstellungen & Info'],
+            ['/settings', 'Settings', 'Einstellungen'],
+            ['/status', 'Status & health', 'Status & Gesundheit'],
+            ['/about', 'About LibreBugBounty', 'Über LibreBugBounty'],
         ];
 
         foreach ($pages as [$path, $english, $german]) {

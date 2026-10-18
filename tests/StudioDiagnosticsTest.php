@@ -208,14 +208,15 @@ final class StudioDiagnosticsTest extends DatabaseTestCase
         self::assertSame($before, $this->snapshot());
     }
 
-    public function testSettingsCountsUseLatestAttemptsWithoutReadingImageFiles(): void
+    public function testStatusCountsUseLatestAttemptsWithoutReadingImageFiles(): void
     {
         $storage = $this->createMock(EvidenceStorageInterface::class);
         $storage->expects(self::never())->method('exists');
         $storage->expects(self::never())->method('read');
         $service = new FindingProblemService($this->entityManager->getConnection(), new StoredImageInspector($storage), self::getContainer()->get(SettingsService::class));
+        self::getContainer()->set(FindingProblemService::class, $service);
         self::assertSame(['screenshot' => 1, 'technical' => 2], $service->currentCounts());
-        $xpath = $this->xpath($this->request('/settings'));
+        $xpath = $this->xpath($this->request('/status'));
         self::assertSame('1', $xpath->evaluate('string(//a[@data-health-errors="screenshot"])'));
         self::assertSame('2', $xpath->evaluate('string(//a[@data-health-errors="technical"])'));
         foreach (['screenshot', 'technical', 'missing'] as $kind) self::assertSame('/errors?kind='.$kind, $xpath->evaluate('string(//a[@data-health-errors="'.$kind.'"]/@href)'));
