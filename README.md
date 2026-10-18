@@ -1,4 +1,4 @@
-# LibreBugBounty 2.0.3 “Moneta”
+# LibreBugBounty 2.1.0 “Moneta (Conatus)”
 
 **A self-hosted bug bounty workspace for reflected XSS research — an
 open-source, local-first OpenBugBounty alternative.**
@@ -146,16 +146,18 @@ notes are included only when explicitly selected.
 
 ### Choose defaults and find help
 
-**Settings & info** saves your preferred inventory page size, export profile,
+**Settings** saves your preferred inventory page size, export profile,
 and report screenshot selection, alongside the intake marker, browser timeout,
 and review pause. Explicit choices on the workspace pages take precedence.
-[View the Settings & info screenshot](docs/screenshots/about.png).
+The footer also offers **System status** and **About LibreBugBounty**. Status
+shows recheck and screenshot worker signals, browser-service reachability, queue
+counts and error links. About keeps profiles, release history and help visible.
 
 The interface starts in English. Choose **DE** or **EN** in the header; your
 browser remembers the language across pages and visits. The [user guide](USAGE.md)
 covers controls, settings, and troubleshooting. The guide, installation,
 backup instructions, [changelog](CHANGELOG.md), and [roadmap](ROADMAP.md) are
-also available offline under **Settings & info → Documentation**.
+also available offline under **About LibreBugBounty → Documentation**.
 
 ## Upgrade an existing workspace
 

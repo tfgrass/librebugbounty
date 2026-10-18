@@ -1,6 +1,6 @@
 # LibreBugBounty user guide
 
-This guide describes LibreBugBounty 2.0.3 “Moneta”. Start with the
+This guide describes LibreBugBounty 2.1.0 “Moneta (Conatus)”. Start with the
 [installation instructions](README.md#quick-start) if the application is not
 running yet. The workspace is intended for local, single-user use.
 Page and control names below use the default English UI; German is available
@@ -536,8 +536,8 @@ change the saved defaults. Private notes must be selected for each export and
 cannot be enabled through a global default.
 
 The About section shows the version and release name, release highlights,
-credits, project links, and license. Expand **Release history** to browse
-Moneta, Scriptor Quo, and Scriptor, with the newest release first. The
+credits, project links, and license. **Release history** directly shows
+Moneta, Scriptor Quo, and Scriptor, with the newest milestone first. The
 [changelog](CHANGELOG.md) lists the changes in each release.
 
 ### Local documentation

@@ -17,9 +17,9 @@
       <section class="studio-about-release-notes" data-release-notes aria-labelledby="release-notes-title">
         <h3 id="release-notes-title"><?= $escape($t('Neu in {version}', ['version' => $app['version']])) ?></h3>
         <ul>
-          <li><strong><?= $escape($t('Review nach deinem Arbeitsstil')) ?></strong><p><?= $escape($t('Klassische Ansicht oder bildschirmfüllender Fokusmodus mit erreichbaren Bedienelementen und Tastatursteuerung.')) ?></p></li>
-          <li><strong><?= $escape($t('Bildbelege genauer prüfen')) ?></strong><p><?= $escape($t('Zoom, Originalgröße, Maus- und Touch-Steuerung helfen beim Prüfen. Deine Bewertung bleibt eine ausdrückliche Entscheidung.')) ?></p></li>
-          <li><strong><?= $escape($t('Flüssiger durch die Warteschlange')) ?></strong><p><?= $escape($t('Vorab geladene Bilder und weiche Übergänge verkürzen das Warten beim Wechsel zwischen Fällen.')) ?></p></li>
+          <li><strong><?= $escape($t('Interaktiv im Worker-Browser prüfen')) ?></strong><p><?= $escape($t('Öffne einen frischen Chromium-Kontext direkt im Review – eingebettet per noVNC, bei Bedarf im Vollbild. Die bestehende Screenshot-Ansicht bleibt erhalten.')) ?></p></li>
+          <li><strong><?= $escape($t('Dialogbelege gezielt sichern')) ?></strong><p><?= $escape($t('Festgehaltene Dialogbilder bleiben neben dem Live-Browser sichtbar. Du speicherst den Beleg und wählst ihn ausdrücklich als Grundlage deiner Bewertung.')) ?></p></li>
+          <li><strong><?= $escape($t('Worker-Status auf einen Blick')) ?></strong><p><?= $escape($t('Recheck- und Screenshot-Worker, Warteschlangen und Fehler sind direkt sichtbar. Einstellungen, Status und Projektinformationen haben eigene Zugänge im Footer.')) ?></p></li>
         </ul>
       </section>
 

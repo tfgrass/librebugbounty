@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'Interaktiv im Worker-Browser prüfen' => 'Review interactively in the worker browser',
+    'Öffne einen frischen Chromium-Kontext direkt im Review – eingebettet per noVNC, bei Bedarf im Vollbild. Die bestehende Screenshot-Ansicht bleibt erhalten.' => 'Open a fresh Chromium context inside Review, embedded via noVNC with optional fullscreen. The existing screenshot viewer remains available.',
+    'Dialogbelege gezielt sichern' => 'Save retained dialog evidence',
+    'Festgehaltene Dialogbilder bleiben neben dem Live-Browser sichtbar. Du speicherst den Beleg und wählst ihn ausdrücklich als Grundlage deiner Bewertung.' => 'Retained dialog images stay visible beside the live browser. Save the evidence and explicitly select it as the basis for your assessment.',
+    'Worker-Status auf einen Blick' => 'Worker status at a glance',
+    'Recheck- und Screenshot-Worker, Warteschlangen und Fehler sind direkt sichtbar. Einstellungen, Status und Projektinformationen haben eigene Zugänge im Footer.' => 'Recheck and screenshot workers, queues and errors are directly visible. Settings, Status and About have separate entry points in the footer.',
     'Fehlerdiagnose' => 'Error diagnostics',
     'Keine Worker konfiguriert.' => 'No workers configured.',
     'Worker-Signale' => 'Worker signals',
