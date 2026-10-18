@@ -126,7 +126,7 @@ class Acceptance:
         self.check(len(status.splitlines()) == len(daemons)
                    and all("RUNNING" in line for line in status.splitlines()),
                    "Supervisor runs all four screenshot lanes, four recheck workers and configured release updater")
-        process_list = self.ddev("exec", "ps", "-eo", "args=")
+        process_list = self.ddev("exec", "ps", "-ww", "-eo", "args=")
         for number in range(1, 5):
             command = f"php bin/console app:screenshot:worker --sleep=2 --worker-id=shot-{number} --no-interaction"
             self.check(process_list.splitlines().count(command) == 1, f"Exactly one real screenshot process owns lane shot-{number}")
