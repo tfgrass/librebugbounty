@@ -187,7 +187,10 @@ also available offline under **About LibreBugBounty → Documentation**.
    [custom installation paths](BACKUP.md#custom-installation-paths).
 5. Remove the generated `playwright-worker/node_modules/` directory, if present,
    while DDEV is stopped. The next start recreates it from the committed lockfile
-   so the worker dependencies match the release's browser image.
+   so the worker dependencies match the release's browser image. Older workers
+   can leave this directory owned by root. If ordinary removal fails with a
+   permission error, run `sudo rm -rf -- playwright-worker/node_modules` from
+   the repository root while DDEV remains stopped.
 6. Run `ddev start`. Startup installs the locked Composer and worker
    dependencies, applies pending database migrations, and starts the workers.
 7. Reload open browser pages so that the PHP application, worker protocol and
