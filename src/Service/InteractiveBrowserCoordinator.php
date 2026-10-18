@@ -37,8 +37,10 @@ final class InteractiveBrowserCoordinator
             }
             $this->dialogPreviewRow($finding, $owner, $channel, $row['generation'], $row);
             $payload['captureLocked'] = $worker->captureLocked;
+            $payload['captureFinalized'] = $worker->captureFinalized;
             $payload['dialogObservation'] = $this->dialogView($worker->dialogObservation);
             $payload['retainedDialog'] = $this->retainedDialogView($worker->retainedDialog);
+            $payload['dialogCapture'] = $this->dialogCaptureView($worker->dialogCapture);
         } catch (\Throwable $error) {
             $payload['state'] = in_array((int) $error->getCode(), [404, 410], true) ? 'expired' : 'worker_unavailable';
             $payload['reconnect'] = false;
@@ -47,12 +49,20 @@ final class InteractiveBrowserCoordinator
     }
 
     /** No acquisition, capture, lease refresh or close, even on expiry/failure. */
-    public function dialogPreview(Finding $finding, string $owner, string $channel, int $revision): string
+    public function dialogPreview(Finding $finding, string $owner, string $channel, int $revision, ?string $candidateId = null): string
     {
         $row = $this->dialogPreviewRow($finding, $owner, $channel, $revision);
-        $image = $this->browser->interactiveDialogFrame($row['worker_id'], $row['generation']);
+        $image = $this->browser->interactiveDialogFrame($row['worker_id'], $row['generation'], $candidateId);
         $this->dialogPreviewRow($finding, $owner, $channel, $revision, $row);
         return $image;
+    }
+
+    /** Dialog mutations retain the same finding, owner and browser generation. */
+    public function dialog(Finding $finding, string $owner, string $channel, int $revision, string $action, int $dialogRevision): void
+    {
+        $row = $this->dialogPreviewRow($finding, $owner, $channel, $revision);
+        $this->browser->dialogFenced($row['worker_id'], $row['generation'], $action, $dialogRevision);
+        $this->dialogPreviewRow($finding, $owner, $channel, $revision, $row);
     }
 
     private function dialogPreviewRow(Finding $finding, string $owner, ?string $channel, int $revision, ?array $before = null): array
@@ -146,13 +156,13 @@ final class InteractiveBrowserCoordinator
         return $this->acquire($finding, $owner, $channel, $this->leases->current()['generation']);
     }
 
-    public function save(Finding $finding, string $owner, string $channel, int $revision): InteractiveCaptureSaveResult
+    public function save(Finding $finding, string $owner, string $channel, int $revision, ?string $expectedCandidateId): InteractiveCaptureSaveResult
     {
         $row = $this->ownedRow($finding->getId(), $owner, $channel, $revision);
         $this->assertAllowed($finding->getId(), $row['binding']['start_url']);
         // No finally-close: losing a generation race must not destroy the new
         // owner's browser. File/RPC work is outside the final SQLite lock.
-        $saved = $this->captures->persistForLease($finding, $row['worker_id'], $row['binding'], $this->leases, $row['generation']);
+        $saved = $this->captures->persistForLease($finding, $row['worker_id'], $row['binding'], $this->leases, $row['generation'], $expectedCandidateId);
         $closed = true;
         $closeError = null;
         try { $this->closeRow($row); }
@@ -275,7 +285,19 @@ final class InteractiveBrowserCoordinator
             if (!is_string($dialog[$key] ?? null)) { return null; }
             $view[$key] = mb_substr($dialog[$key], 0, $limit);
         }
+        if (is_string($dialog['id'] ?? null) && preg_match('/^[a-f0-9]{48}$/D', $dialog['id']) === 1) {
+            $view['id'] = $dialog['id'];
+        }
         return $view;
+    }
+
+    private function dialogCaptureView(array $dialog): array
+    {
+        if (!in_array($dialog['state'] ?? null, ['waiting', 'capturing', 'captured', 'failed', 'exhausted'], true)
+            || !is_int($dialog['revision'] ?? null) || $dialog['revision'] < 0
+            || !is_bool($dialog['armed'] ?? null) || !is_bool($dialog['pending'] ?? null)
+            || !is_int($dialog['attemptsRemaining'] ?? null) || $dialog['attemptsRemaining'] < 0) { return []; }
+        return array_intersect_key($dialog, array_flip(['state', 'revision', 'armed', 'pending', 'attemptsRemaining']));
     }
 
     private function dialogView(array $dialog): array

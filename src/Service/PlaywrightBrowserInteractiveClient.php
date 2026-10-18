@@ -33,19 +33,42 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
         ])), $sessionId);
     }
 
-    public function captureFenced(string $sessionId, int $generation): BrowserScreenshotResult
+    public function captureFenced(string $sessionId, int $generation, ?string $expectedCandidateId): BrowserScreenshotResult
     {
         $this->assertGeneration($generation);
+        if ($expectedCandidateId !== null && preg_match('/^[a-f0-9]{48}$/D', $expectedCandidateId) !== 1) {
+            throw new \InvalidArgumentException('Invalid interactive dialog candidate.');
+        }
         $data = $this->json($this->request('POST', $this->interactivePath($sessionId, 'capture'), [
-            'json' => ['generation' => $generation], 'timeout' => 30, 'max_duration' => 35,
+            'json' => ['generation' => $generation, 'expectedCandidateId' => $expectedCandidateId], 'timeout' => 30, 'max_duration' => 35,
         ]));
         if (($data['generation'] ?? null) !== $generation) {
             throw new \RuntimeException('Interactive capture authorization changed.', 409);
+        }
+        if (!is_array($data['metadata'] ?? null) || !array_key_exists('dialogCandidateId', $data['metadata'])
+            || $data['metadata']['dialogCandidateId'] !== $expectedCandidateId) {
+            throw new \RuntimeException('Interactive capture candidate changed or was not confirmed.', 409);
         }
         if (!is_string($data['screenshotBase64'] ?? null) || $data['screenshotBase64'] === '') {
             throw new \RuntimeException('Browser worker did not return an interactive screenshot.');
         }
         return $this->screenshotResult($data);
+    }
+
+    public function dialogFenced(string $sessionId, int $generation, string $action, int $dialogRevision): BrowserInteractiveSessionResult
+    {
+        $this->assertGeneration($generation);
+        if (!in_array($action, ['arm', 'retry', 'dismiss'], true) || $dialogRevision < 0) {
+            throw new \InvalidArgumentException('Invalid interactive dialog action or revision.');
+        }
+        $data = $this->json($this->request('POST', $this->interactivePath($sessionId, 'dialog'), [
+            'json' => ['generation' => $generation, 'action' => $action, 'dialogRevision' => $dialogRevision],
+            'timeout' => 30, 'max_duration' => 35,
+        ]));
+        if (($data['generation'] ?? null) !== $generation) {
+            throw new \RuntimeException('Interactive dialog authorization changed.', 409);
+        }
+        return $this->sessionResult($data, $sessionId);
     }
 
     public function closeFenced(string $sessionId, int $generation): void
@@ -109,10 +132,14 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
         return $content;
     }
 
-    public function interactiveDialogFrame(string $sessionId, int $generation): string
+    public function interactiveDialogFrame(string $sessionId, int $generation, ?string $candidateId = null): string
     {
         $this->assertGeneration($generation);
-        $response = $this->request('GET', $this->interactivePath($sessionId, 'dialog-frame').'?generation='.$generation, [
+        if ($candidateId !== null && preg_match('/^[a-f0-9]{48}$/D', $candidateId) !== 1) {
+            throw new \InvalidArgumentException('Invalid interactive dialog candidate.');
+        }
+        $query = ['generation' => $generation] + ($candidateId === null ? [] : ['candidateId' => $candidateId]);
+        $response = $this->request('GET', $this->interactivePath($sessionId, 'dialog-frame').'?'.http_build_query($query, '', '&', PHP_QUERY_RFC3986), [
             'timeout' => 20, 'max_duration' => 25,
         ]);
         $content = $response->getContent(false);
@@ -246,7 +273,17 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             'finalUrl' => 'string', 'httpStatus' => 'integer', 'challenge' => 'array',
             'initialChallenge' => 'array', 'navigationError' => 'string',
             'initialUrl' => 'string', 'initialHttpStatus' => 'integer', 'dialogObservation' => 'array', 'retainedDialog' => 'array',
+            'captureFinalized' => 'boolean', 'dialogCapture' => 'array',
         ]);
+        if (isset($data['dialogCapture'])) {
+            $dialog = $data['dialogCapture'];
+            if (!in_array($dialog['state'] ?? null, ['waiting', 'capturing', 'captured', 'failed', 'exhausted'], true)
+                || !is_int($dialog['revision'] ?? null) || $dialog['revision'] < 0
+                || !is_bool($dialog['armed'] ?? null) || !is_bool($dialog['pending'] ?? null)
+                || !is_int($dialog['attemptsRemaining'] ?? null) || $dialog['attemptsRemaining'] < 0) {
+                throw new \RuntimeException('Browser worker returned an invalid dialogCapture.');
+            }
+        }
         foreach (['httpStatus', 'initialHttpStatus'] as $field) {
             if (isset($data[$field]) && ($data[$field] < 100 || $data[$field] > 599)) {
                 throw new \RuntimeException('Browser worker returned an invalid '.$field.'.');
@@ -270,6 +307,8 @@ final class PlaywrightBrowserInteractiveClient extends PlaywrightBrowserScreensh
             captureId: is_string($data['captureId'] ?? null) ? $data['captureId'] : null,
             captureGeneration: is_int($data['captureGeneration'] ?? null) ? $data['captureGeneration'] : null,
             retainedDialog: $data['retainedDialog'] ?? null,
+            captureFinalized: $data['captureFinalized'] ?? false,
+            dialogCapture: $data['dialogCapture'] ?? [],
         );
     }
 

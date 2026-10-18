@@ -30,6 +30,12 @@ final readonly class FindingReadView
         public string $pursuit = 'active',
         public bool $checksBlocked = false,
         public bool $contactBlocked = false,
+        public ?string $reminderDueOn = null,
+        public ?string $reminderNextStep = null,
+        public ?string $contactRouteChannel = null,
+        public ?string $contactRouteDestination = null,
+        public ?string $lastDisclosureActivity = null,
+        public ?string $lastDisclosureActivityOn = null,
     ) {
     }
 }

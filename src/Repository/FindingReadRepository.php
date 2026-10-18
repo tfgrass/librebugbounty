@@ -34,6 +34,7 @@ final class FindingReadRepository
             throw new \InvalidArgumentException('Page limit must be positive and offset must not be negative.');
         }
         [$where, $parameters] = $this->where($filter);
+        [$workColumns, $workJoins] = $this->workbasketProjection($filter);
         $sql = 'SELECT f.id, d.hostname AS domain, f.title, f.url, f.type, f.severity, '
             .'f.status AS legacy_status, f.review_state AS legacy_review_state, '
             .'f.manual_assessment AS assessment, f.discard_reason, f.assessed_at, '
@@ -43,9 +44,10 @@ final class FindingReadRepository
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::pursuitActiveSql($this->connection)." THEN 'active' ELSE 'closed' END AS pursuit, "
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::checksAllowedSql($this->connection).' THEN 0 ELSE 1 END AS checks_blocked, '
             .'CASE WHEN '.\App\Service\FindingWorkPolicy::contactAllowedSql($this->connection).' THEN 0 ELSE 1 END AS contact_blocked, '
-            .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded'
-            .self::FROM.$where
-            .' ORDER BY f.submitted_at DESC, f.created_at DESC, f.rowid DESC LIMIT :limit OFFSET :offset';
+            .'CASE WHEN '.self::DISCARDED.' THEN 1 ELSE 0 END AS discarded, '.$workColumns
+            .self::FROM.$workJoins.$where
+            .' ORDER BY '.($filter->view === 'workbasket' ? 'reminder_due_on ASC, ' : '')
+            .'f.submitted_at DESC, f.created_at DESC, f.rowid DESC LIMIT :limit OFFSET :offset';
         $rows = $this->connection->fetchAllAssociative(
             $sql,
             $parameters + ['limit' => $limit, 'offset' => $offset],
@@ -102,7 +104,7 @@ final class FindingReadRepository
             'all' => [],
         };
         $parameters = [];
-        if ($filter->reminder !== '') {
+        if ($filter->reminder !== '' || $filter->view === 'workbasket') {
             if (!\App\Service\DisclosureRecordService::available($this->connection)) $conditions[] = '1 = 0';
             else {
                 $due = match ($filter->reminder) { 'today' => ' AND dr.due_on = :reminder_today', 'overdue' => ' AND dr.due_on < :reminder_today', default => '' };
@@ -210,6 +212,34 @@ final class FindingReadRepository
         return [$conditions !== [] ? ' WHERE '.implode(' AND ', $conditions) : '', $parameters];
     }
 
+    /** One row per finding; activity history must never multiply rows or counts. */
+    private function workbasketProjection(FindingReadFilter $filter): array
+    {
+        $columns = [
+            'reminder_due_on' => 'NULL', 'reminder_next_step' => 'NULL',
+            'contact_route_channel' => 'NULL', 'contact_route_destination' => 'NULL',
+            'last_disclosure_activity' => 'NULL', 'last_disclosure_activity_on' => 'NULL',
+        ];
+        $joins = '';
+        if ($filter->view === 'workbasket') {
+            if (\App\Service\DisclosureRecordService::available($this->connection)) {
+                $joins .= ' LEFT JOIN disclosure_reminder wr ON wr.finding_id = f.id AND wr.completed_at IS NULL'
+                    .' LEFT JOIN disclosure_activity wa ON wa.rowid = (SELECT latest_activity.rowid FROM disclosure_activity latest_activity WHERE latest_activity.finding_id = f.id ORDER BY latest_activity.occurred_on DESC, latest_activity.rowid DESC LIMIT 1)';
+                $columns['reminder_due_on'] = 'wr.due_on';
+                $columns['reminder_next_step'] = 'wr.next_step';
+                $columns['last_disclosure_activity'] = 'wa.activity';
+                $columns['last_disclosure_activity_on'] = 'wa.occurred_on';
+            }
+            if (\App\Service\ContactRouteService::available($this->connection)) {
+                $joins .= ' LEFT JOIN finding_contact_route wcr ON wcr.finding_id = f.id';
+                $columns['contact_route_channel'] = 'wcr.channel';
+                $columns['contact_route_destination'] = 'wcr.destination';
+            }
+        }
+
+        return [implode(', ', array_map(static fn (string $alias, string $column): string => $column.' AS '.$alias, array_keys($columns), $columns)), $joins];
+    }
+
     private function view(array $row, ?\App\Dto\ReviewNoticeView $notice = null): FindingReadView
     {
         return new FindingReadView(
@@ -238,6 +268,12 @@ final class FindingReadRepository
             pursuit: $row['pursuit'],
             checksBlocked: (bool) $row['checks_blocked'],
             contactBlocked: (bool) $row['contact_blocked'],
+            reminderDueOn: $row['reminder_due_on'],
+            reminderNextStep: $row['reminder_next_step'],
+            contactRouteChannel: $row['contact_route_channel'],
+            contactRouteDestination: $row['contact_route_destination'],
+            lastDisclosureActivity: $row['last_disclosure_activity'],
+            lastDisclosureActivityOn: $row['last_disclosure_activity_on'],
         );
     }
 

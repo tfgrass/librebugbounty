@@ -23,6 +23,7 @@ const {
   captureInteractiveSession,
   interactiveSessions,
   runInteractiveInput,
+  runInteractiveDialog,
   runScreenshot,
   withDisplayLease,
 } = require('./server');
@@ -138,7 +139,8 @@ function createInteractiveHarness(options = {}) {
   };
   page.keyboard = {
     insertText: async (text) => calls.push(['type', text]),
-    press: async (key) => calls.push(['key', key]),
+    down: async (key) => calls.push(['key', key]),
+    up: async (key) => calls.push(['keyup', key]),
   };
   page.reload = async () => { calls.push(['reload']); };
   page.goBack = async () => { calls.push(['back']); };
@@ -204,6 +206,10 @@ function gatewayHarness(handleControl = () => false) {
     options: () => options,
     closes: () => closes,
   };
+}
+
+function captureSelection(sessionId, generation) {
+  return { generation, expectedCandidateId: interactiveSessions.get(sessionId)?.dialogFrame?.id ?? null };
 }
 
 async function startHarness(harness, payload = { url: URL }) {
@@ -518,7 +524,7 @@ test('valid manual actions are replayed; malformed or out-of-bounds inputs retur
   ];
   for (const input of valid) await runInteractiveInput(view.id, input, harness.dependencies);
   assert.deepEqual(harness.calls.filter(([name]) => !['context', 'goto', 'front'].includes(name)), [
-    ['move', 100, 899], ['down'], ['up'], ['type', 'manual text'], ['key', 'Tab'], ['wheel', 0, -2000], ['reload'], ['back'],
+    ['move', 100, 899], ['down'], ['up'], ['type', 'manual text'], ['key', 'Tab'], ['keyup', 'Tab'], ['wheel', 0, -2000], ['reload'], ['back'],
   ]);
   const invalid = [
     {}, { action: 'evaluate', script: 'alert(1)' },
@@ -708,7 +714,7 @@ test('close owns the FIFO, removes before teardown, and safely races with input/
   const view = await startHarness(harness);
   const entered = deferred();
   const release = deferred();
-  harness.page.keyboard.press = async () => { entered.resolve(); await release.promise; };
+  harness.page.keyboard.down = async () => { entered.resolve(); await release.promise; };
   const input = runInteractiveInput(view.id, { action: 'key', key: 'Enter' }, harness.dependencies);
   await entered.promise;
   const close = closeInteractiveSessionById(view.id, harness.dependencies);
@@ -919,7 +925,7 @@ test('input-triggered and popup dialogs keep their source URL and visible frame'
   harness.dependencies.dialogRenderDelayMs = 0;
   const view = await startHarness(harness);
   const dialog = createDialog('after key');
-  harness.page.keyboard.press = async () => { harness.page.emit('dialog', dialog); };
+  harness.page.keyboard.down = async () => { harness.page.emit('dialog', dialog); };
   const input = await runInteractiveInput(view.id, { action: 'key', key: 'Enter' }, harness.dependencies);
   assert.equal(dialog.isDismissed(), true);
   assert.equal(input.dialogObservation.captureSucceeded, true);
@@ -1006,7 +1012,7 @@ test('reload-triggered dialog retains its image while frame stays a live viewpor
   assert.equal((await captureInteractiveSession(view.id, harness.dependencies)).captureMethod, 'desktop-dialog');
 });
 
-test('a failed dialog image remains an observation, while later page capture stays honest', async () => {
+test('a failed dialog image is held until explicit dismissal; page capture cannot silently lose it', async () => {
   const harness = createInteractiveHarness();
   harness.dependencies.dialogRenderDelayMs = 0;
   const view = await startHarness(harness);
@@ -1015,12 +1021,19 @@ test('a failed dialog image remains an observation, while later page capture sta
   harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('ffmpeg failed'); };
   harness.page.emit('dialog', dialog);
   await withDisplayLease(async () => {});
-  assert.equal(dialog.isDismissed(), true);
+  assert.equal(dialog.isDismissed(), false);
   const status = await getInteractiveStatus(view.id, harness.dependencies);
   assert.equal(status.dialogSeen, true);
   assert.equal(status.dialogObservation.captureSucceeded, false);
   assert.match(status.dialogObservation.captureError, /ffmpeg failed/);
   assert.equal(status.dialogFrameCapturedAt, null);
+  assert.equal(status.captureLocked, true);
+  assert.equal(status.captureFinalized, false);
+  assert.equal(status.dialogCapture.state, 'failed');
+  assert.equal(status.dialogCapture.pending, true);
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies), { statusCode: 409 });
+  await runInteractiveDialog(view.id, { action: 'dismiss', dialogRevision: status.dialogCapture.revision }, harness.dependencies);
+  assert.equal(dialog.isDismissed(), true);
   harness.dependencies.captureDesktopScreenshot = normalCapture;
   const result = await captureInteractiveSession(view.id, harness.dependencies);
   assert.equal(result.dialogSeen, true);
@@ -1105,7 +1118,7 @@ test('dialog loops are bounded and the display FIFO continues', async () => {
     await withDisplayLease(async () => {});
     assert.equal(dialog.isDismissed(), true);
   }
-  assert.equal(harness.captureCount(), 2);
+  assert.equal(harness.captureCount(), 1);
   assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).dialogObservation.message, 'loop 4');
   assert.equal(await withDisplayLease(async () => 'continued'), 'continued');
 });
@@ -1126,7 +1139,7 @@ test('watchdogs cover initial navigation, status inspection, manual input, and d
           dependencies.inspectChallengePage = never;
           task = getInteractiveStatus(view.id, dependencies);
         } else if (operation === 'input') {
-          harness.page.keyboard.press = never;
+          harness.page.keyboard.down = never;
           task = runInteractiveInput(view.id, { action: 'key', key: 'Tab' }, dependencies);
         } else {
           dependencies.captureDesktopScreenshot = never;
@@ -1329,7 +1342,7 @@ test('interactive mutation RPCs require the current generation before any page s
   assert.equal(harness.calls.length, calls);
   assert.equal(harness.contextClosed(), 0);
   assert.equal((await request(base, `/interactive-sessions/${view.id}/input`, { generation: 7, action: 'key', key: 'Tab' })).status, 200);
-  const captured = await request(base, `/interactive-sessions/${view.id}/capture`, { generation: 7 });
+  const captured = await request(base, `/interactive-sessions/${view.id}/capture`, { generation: 7, expectedCandidateId: null });
   assert.equal(captured.status, 200);
   assert.equal((await captured.json()).generation, 7);
   assert.equal((await request(base, `/interactive-sessions/${view.id}/close`, { generation: 7 })).status, 200);
@@ -1345,7 +1358,7 @@ test('fence rejects queued old capture, input, close and start before their FIFO
   const lease = withDisplayLease(() => blocker.promise);
   const calls = harness.calls.length;
   const queued = Promise.allSettled([
-    captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }),
+    captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1)),
     runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Escape' }, harness.dependencies),
     closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 }),
     startHarness(harness, { url: URL, generation: 1 }),
@@ -1378,7 +1391,7 @@ test('fence settles an accepted capture and transfers immutable cached proof to 
   let resumes = 0;
   runtime.onResume(() => { resumes += 1; });
   harness.dependencies.captureDesktopScreenshot = async () => { entered.resolve(); return image.promise; };
-  const capture = captureInteractiveSession(view.id, harness.dependencies, { generation: 4 });
+  const capture = captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 4));
   await entered.promise;
   let acknowledged = false;
   const fence = runtime.advanceGeneration(5).then(() => { acknowledged = true; });
@@ -1393,7 +1406,7 @@ test('fence settles an accepted capture and transfers immutable cached proof to 
   await staleClose;
   harness.setNow('2026-10-02T12:05:00.000Z');
   harness.navigate('https://fixture.test/after-capture');
-  const transferred = await captureInteractiveSession(view.id, harness.dependencies, { generation: 5 });
+  const transferred = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 5));
   assert.equal(original.generation, 4);
   assert.equal(transferred.generation, 5);
   assert.equal(transferred.metadata.captureGeneration, 4);
@@ -1411,7 +1424,7 @@ test('fence settles an accepted capture and transfers immutable cached proof to 
   assert.equal(current.expiresAt, view.expiresAt);
   assert.equal(runtime.getSessionState().captureLocked, true);
   assert.equal(resumes, 0);
-  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 4 }), { statusCode: 409 });
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 4)), { statusCode: 409 });
   await assert.rejects(runInteractiveInput(view.id, { generation: 5, action: 'reload' }, harness.dependencies), { statusCode: 409 });
   assert.equal(harness.contextClosed(), 0);
   assert.equal(harness.calls.filter(([call]) => call === 'goto').length, 1);
@@ -1432,12 +1445,12 @@ test('failed capture resumes only after its input gate releases and remains retr
   });
   const desktop = harness.dependencies.captureDesktopScreenshot;
   harness.dependencies.captureDesktopScreenshot = async () => { events.push('capture'); throw new Error('fixture failure'); };
-  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }), /fixture failure/);
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1)), /fixture failure/);
   assert.deepEqual(events, ['quiesce', 'capture', 'resume']);
   assert.equal(runtime.getSessionState().active, true);
   assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).captureId, null);
   harness.dependencies.captureDesktopScreenshot = desktop;
-  await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1));
   assert.deepEqual(events, ['quiesce', 'capture', 'resume', 'quiesce']);
 });
 
@@ -1463,7 +1476,7 @@ test('context dialog listener and input quiesce precede first navigation and pre
   };
   const view = await startHarness(harness, { url: URL, generation: 1 });
   assert.deepEqual(events, ['quiesce', 'capture', 'dismiss']);
-  const capture = await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  const capture = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1));
   assert.equal(capture.captureMethod, 'desktop-dialog');
   assert.equal(capture.metadata.dialogImageCaptured, true);
 });
@@ -1488,7 +1501,7 @@ test('background popup dialog gates synchronously while capture and takeover wai
   assert.equal(quiesced, 1);
   assert.equal(runtime.getSessionState().captureLocked, true);
   assert.equal(dialog.isDismissed(), false);
-  const rejectedCapture = assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1 }), { statusCode: 409 });
+  const rejectedCapture = assert.rejects(captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1)), { statusCode: 409 });
   const fence = runtime.advanceGeneration(2);
   blocker.resolve();
   await owner;
@@ -1496,7 +1509,7 @@ test('background popup dialog gates synchronously while capture and takeover wai
   await rejectedCapture;
   assert.equal(dialog.isDismissed(), true);
   assert.equal(resumed, 1);
-  const saved = await captureInteractiveSession(view.id, harness.dependencies, { generation: 2 });
+  const saved = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 2));
   assert.equal(saved.sourceURL, popup.url());
   assert.equal(saved.captureMethod, 'desktop-dialog');
   assert.equal(harness.captureCount(), 1);
@@ -1513,7 +1526,8 @@ test('quiesce failure never claims dialog-image proof and keeps input fail-close
   const status = await getInteractiveStatus(view.id, harness.dependencies);
   assert.equal(status.dialogObservation.captureSucceeded, false);
   assert.equal(status.dialogObservation.captureError, 'purge failed');
-  assert.equal(status.dialogObservation.dismissed, true);
+  assert.equal(status.dialogObservation.dismissed, false);
+  assert.equal(status.dialogCapture.pending, true);
   assert.equal(status.dialogFrameCapturedAt, null);
   assert.equal(status.captureLocked, true);
   assert.equal(harness.captureCount(), 0);
@@ -1576,13 +1590,13 @@ test('already cached dialog proof keeps original identity, timestamp and URL aft
   const dialog = createDialog('retained before takeover');
   harness.page.emit('dialog', dialog);
   await withDisplayLease(async () => {});
-  const first = await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
+  const first = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1));
   const snapshot = structuredClone(first);
   harness.setNow('2026-10-02T12:01:00.000Z');
   harness.navigate('https://fixture.test/new-page');
   await harness.dependencies.runtime.advanceGeneration(2);
   harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('Must replay the cached proof.'); };
-  const second = await captureInteractiveSession(view.id, harness.dependencies, { generation: 2 });
+  const second = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 2));
   assert.deepEqual(second, { ...snapshot, generation: 2 });
   assert.equal(second.captureMethod, 'desktop-dialog');
   assert.equal(second.sourceURL, URL);
@@ -1608,50 +1622,56 @@ test('a newer fence during expired-session cleanup prevents stale start from lau
 });
 
 
-test('first successful retained frame and metadata survive later successful/failed dialogs and the attempt limit', async () => {
-  for (const failFirst of [false, true]) {
-    const harness = createVncHarness();
-    harness.dependencies.dialogRenderDelayMs = 0;
-    const view = await startHarness(harness, { url: URL, generation: 1 });
-    let attempts = 0;
-    harness.dependencies.captureDesktopScreenshot = async () => {
-      attempts += 1;
-      if (failFirst && attempts === 1) throw new Error('first capture failed');
-      return Buffer.concat([PNG, Buffer.from(`image-${attempts}`)]).toString('base64');
-    };
-    let retained;
-    let image;
-    for (let i = 0; i < 5; i += 1) {
-      harness.setNow(`2026-10-02T12:0${i}:00.000Z`);
-      harness.navigate(`${URL}?dialog=${i}`);
-      harness.page.emit('dialog', createDialog(`dialog ${i}`));
-      await withDisplayLease(async () => {});
-      const status = await getInteractiveStatus(view.id, harness.dependencies);
-      assert.equal(status.dialogObservation.message, `dialog ${i}`);
-      if (failFirst && i === 0) {
-        assert.equal(status.retainedDialog, null);
-        assert.throws(() => getInteractiveDialogFrame(view.id, 1, harness.dependencies), { statusCode: 404 });
-        continue;
-      }
-      if (!retained) {
-        retained = status.retainedDialog;
-        image = getInteractiveDialogFrame(view.id, 1, harness.dependencies);
-        assert.deepEqual(retained, {
-          capturedAt: `2026-10-02T12:0${i}:00.000Z`, detectedAt: `2026-10-02T12:0${i}:00.000Z`,
-          pageUrl: `${URL}?dialog=${i}`, type: 'alert', message: `dialog ${i}`,
-        });
-      }
-      assert.deepEqual(status.retainedDialog, retained);
-      assert.deepEqual(getInteractiveDialogFrame(view.id, 1, harness.dependencies), image);
-      assert.equal(JSON.stringify(status).includes(image.toString('base64')), false);
-    }
-    assert.equal(attempts, 2);
-    const saved = await captureInteractiveSession(view.id, harness.dependencies, { generation: 1 });
-    assert.equal(saved.screenshotBase64, image.toString('base64'));
-    assert.equal(saved.dialogText, retained.message);
-    assert.equal(saved.capturedAt, retained.capturedAt);
-    await closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 });
-  }
+test('an explicit arm replaces a benign candidate only after a successful target image', async () => {
+  const harness = createVncHarness();
+  harness.dependencies.dialogRenderDelayMs = 0;
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  assert.deepEqual(view.dialogCapture, { state: 'waiting', revision: 0, armed: true, pending: false, attemptsRemaining: 2 });
+  harness.page.emit('dialog', createDialog('benign before target'));
+  await withDisplayLease(async () => {});
+  const first = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(first.dialogCapture.state, 'captured');
+  assert.equal(first.dialogCapture.armed, false);
+  assert.equal(first.dialogCapture.attemptsRemaining, 1);
+  assert.match(first.retainedDialog.id, /^[a-f0-9]{48}$/);
+  const firstImage = getInteractiveDialogFrame(view.id, 1, harness.dependencies, first.retainedDialog.id);
+
+  harness.page.emit('dialog', createDialog('unarmed unrelated dialog'));
+  await withDisplayLease(async () => {});
+  const ignored = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.deepEqual(ignored.retainedDialog, first.retainedDialog);
+  assert.equal(harness.captureCount(), 1);
+  const armed = await runInteractiveDialog(view.id, {
+    generation: 1, action: 'arm', dialogRevision: ignored.dialogCapture.revision,
+  }, harness.dependencies);
+  assert.equal(armed.dialogCapture.state, 'waiting');
+  assert.equal(armed.dialogCapture.armed, true);
+  assert.equal(armed.dialogCapture.attemptsRemaining, 2);
+  assert.deepEqual(armed.retainedDialog, first.retainedDialog);
+  assert.deepEqual(getInteractiveDialogFrame(view.id, 1, harness.dependencies, first.retainedDialog.id), firstImage);
+
+  harness.setNow('2026-10-02T12:04:00.000Z');
+  harness.navigate(`${URL}?target=1`);
+  harness.dependencies.captureDesktopScreenshot = async () => Buffer.concat([PNG, Buffer.from('target')]).toString('base64');
+  harness.page.emit('dialog', createDialog('target proof'));
+  await withDisplayLease(async () => {});
+  const target = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(target.retainedDialog.message, 'target proof');
+  assert.equal(target.retainedDialog.pageUrl, `${URL}?target=1`);
+  assert.equal(target.retainedDialog.capturedAt, '2026-10-02T12:04:00.000Z');
+  assert.notEqual(target.retainedDialog.id, first.retainedDialog.id);
+  assert.throws(() => getInteractiveDialogFrame(view.id, 1, harness.dependencies, first.retainedDialog.id), { statusCode: 409 });
+  const saved = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1));
+  assert.equal(saved.dialogText, 'target proof');
+  assert.equal(saved.sourceURL, target.retainedDialog.pageUrl);
+  const finalized = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(finalized.captureFinalized, true);
+  await assert.rejects(runInteractiveDialog(view.id, {
+    generation: 1, action: 'arm', dialogRevision: finalized.dialogCapture.revision,
+  }, harness.dependencies), { statusCode: 409 });
+  harness.page.emit('dialog', createDialog('after finalization'));
+  await withDisplayLease(async () => {});
+  assert.deepEqual(await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1)), saved);
 });
 
 test('retained PNG GET requires Bearer and a single safe generation, fences takeover and has no browser effects even at expiry', async (t) => {
@@ -1712,12 +1732,417 @@ test('a failed later dialog capture leaves the first retained PNG independently 
   harness.page.emit('dialog', createDialog('first proof'));
   await withDisplayLease(async () => {});
   const first = (await getInteractiveStatus(view.id, harness.dependencies)).retainedDialog;
+  const ready = await getInteractiveStatus(view.id, harness.dependencies);
+  await runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: ready.dialogCapture.revision }, harness.dependencies);
   harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('later capture failed'); };
   harness.page.emit('dialog', createDialog('later observation'));
   await withDisplayLease(async () => {});
   const status = await getInteractiveStatus(view.id, harness.dependencies);
   assert.equal(status.dialogObservation.captureSucceeded, false);
   assert.equal(status.dialogObservation.message, 'later observation');
+  assert.equal(status.dialogObservation.captureError, 'later capture failed');
+  assert.equal(status.dialogCapture.pending, true);
   assert.deepEqual(status.retainedDialog, first);
   assert.deepEqual(getInteractiveDialogFrame(view.id, 1, harness.dependencies), PNG);
+});
+
+test('failed native capture retains the same browser and dialog for retry without holding FIFO or inspecting DOM', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const dialog = createDialog('retry this still-open alert');
+  let inspections = 0;
+  let resumed = 0;
+  harness.dependencies.runtime.onResume(() => { resumed += 1; });
+  harness.dependencies.inspectChallengePage = async () => {
+    inspections += 1;
+    assert.equal(dialog.isDismissed(), true, 'DOM inspection may only resume after native dismissal');
+    return { active: false };
+  };
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('ffmpeg unavailable once'); };
+  harness.page.reload = async () => {
+    harness.page.emit('dialog', dialog);
+    return new Promise(() => {}); // Real reload can wait for the native dialog.
+  };
+  await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'reload' }, harness.dependencies), { statusCode: 409 });
+  const failed = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(failed.dialogCapture.state, 'failed');
+  assert.equal(failed.dialogCapture.pending, true);
+  assert.equal(failed.dialogCapture.attemptsRemaining, 1);
+  assert.equal(failed.captureFinalized, false);
+  assert.equal(inspections, 0);
+  assert.equal(resumed, 0);
+  assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal(await withDisplayLease(async () => 'other work'), 'other work');
+  await assert.rejects(getInteractiveFrame(view.id, harness.dependencies), { statusCode: 409 });
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1)), { statusCode: 409 });
+  await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Escape' }, harness.dependencies), { statusCode: 409 });
+  assert.equal(dialog.isDismissed(), false);
+  assert.equal(resumed, 0, 'failed save must not reopen the VNC input gate');
+
+  harness.dependencies.captureDesktopScreenshot = async () => {
+    assert.equal(dialog.isDismissed(), false);
+    assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+    return PNG.toString('base64');
+  };
+  const retried = await runInteractiveDialog(view.id, {
+    generation: 1, action: 'retry', dialogRevision: failed.dialogCapture.revision,
+  }, harness.dependencies);
+  assert.equal(retried.dialogCapture.state, 'captured');
+  assert.equal(retried.dialogCapture.pending, false);
+  assert.equal(retried.dialogCapture.armed, false);
+  assert.equal(retried.dialogCapture.attemptsRemaining, 0);
+  assert.equal(retried.captureFinalized, false);
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(resumed, 1);
+  assert.equal(inspections, 0, 'retry itself performs no DOM inspection');
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal(retried.retainedDialog.message, 'retry this still-open alert');
+  assert.equal((await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1))).dialogText, retried.retainedDialog.message);
+});
+
+test('a failed alert during initial navigation returns a controllable live session instead of waiting for DOMContentLoaded', async () => {
+  const dialog = createDialog('initial failure');
+  const harness = createVncHarness({ goto: async (page) => {
+    page.emit('dialog', dialog);
+    return new Promise(() => {});
+  } });
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('fixture desktop capture failed'); };
+  harness.dependencies.inspectChallengePage = async () => { assert.fail('no DOM inspection behind a native alert'); };
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  assert.equal(view.dialogCapture.pending, true);
+  assert.equal(view.dialogCapture.state, 'failed');
+  assert.equal(view.challenge.state, 'unknown');
+  assert.equal(dialog.isDismissed(), false);
+  assert.equal(interactiveSessions.has(view.id), true);
+  assert.equal(harness.contextClosed(), 0);
+  assert.equal(await withDisplayLease(async () => 'available'), 'available');
+  await closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 });
+  assert.equal(harness.contextClosed(), 1);
+});
+
+test('capture budget is exhausted by retry and can only be renewed by explicit arm after dismissal', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  let captures = 0;
+  harness.dependencies.captureDesktopScreenshot = async () => { captures += 1; throw new Error('desktop failure'); };
+  const dialog = createDialog('failed twice');
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  const failed = await getInteractiveStatus(view.id, harness.dependencies);
+  await assert.rejects(runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: failed.dialogCapture.revision }, harness.dependencies), { statusCode: 409 });
+  const exhausted = await runInteractiveDialog(view.id, { generation: 1, action: 'retry', dialogRevision: failed.dialogCapture.revision }, harness.dependencies);
+  assert.equal(exhausted.dialogCapture.state, 'exhausted');
+  assert.equal(exhausted.dialogCapture.pending, true);
+  assert.equal(exhausted.dialogCapture.attemptsRemaining, 0);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(runInteractiveDialog(view.id, { generation: 1, action: 'retry', dialogRevision: exhausted.dialogCapture.revision }, harness.dependencies), { statusCode: 409 });
+  }
+  assert.equal(captures, 2);
+  assert.equal(dialog.isDismissed(), false);
+  const dismissed = await runInteractiveDialog(view.id, { generation: 1, action: 'dismiss', dialogRevision: exhausted.dialogCapture.revision }, harness.dependencies);
+  assert.equal(dialog.isDismissed(), true);
+  assert.equal(dismissed.dialogCapture.pending, false);
+  assert.equal(dismissed.dialogCapture.armed, false);
+  assert.equal(dismissed.dialogCapture.attemptsRemaining, 0);
+  const armed = await runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: dismissed.dialogCapture.revision }, harness.dependencies);
+  assert.equal(armed.dialogCapture.attemptsRemaining, 2);
+  assert.equal(armed.dialogCapture.state, 'waiting');
+  assert.equal(armed.dialogCapture.armed, true);
+  harness.dependencies.captureDesktopScreenshot = async () => PNG.toString('base64');
+  harness.page.emit('dialog', createDialog('after fresh arm'));
+  await withDisplayLease(async () => {});
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).retainedDialog.message, 'after fresh arm');
+});
+
+test('native dialog loops stop automatically after a bounded number of dismissals', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const dialogs = Array.from({ length: 21 }, (_, index) => createDialog(`loop ${index}`));
+  for (let index = 0; index < dialogs.length - 1; index += 1) {
+    const dismiss = dialogs[index].dismiss;
+    dialogs[index].dismiss = async () => {
+      await dismiss();
+      harness.page.emit('dialog', dialogs[index + 1]);
+    };
+  }
+  harness.page.emit('dialog', dialogs[0]);
+  await withDisplayLease(async () => {});
+  const status = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(harness.captureCount(), 1);
+  assert.equal(dialogs.filter((dialog) => dialog.isDismissed()).length, 20);
+  assert.equal(status.dialogCapture.state, 'exhausted');
+  assert.equal(status.dialogCapture.pending, true);
+  assert.equal(status.captureFinalized, false);
+  assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+  assert.equal(await withDisplayLease(async () => 'available'), 'available');
+});
+
+test('held dialog survives takeover but stale generation and revision commands cannot capture or dismiss it', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('capture failed'); };
+  const dialog = createDialog('fenced pending dialog');
+  harness.page.emit('dialog', dialog);
+  await withDisplayLease(async () => {});
+  const failed = await getInteractiveStatus(view.id, harness.dependencies);
+  const blocker = deferred();
+  const lease = withDisplayLease(() => blocker.promise);
+  const staleRetry = assert.rejects(runInteractiveDialog(view.id, { generation: 1, action: 'retry', dialogRevision: failed.dialogCapture.revision }, harness.dependencies), { statusCode: 409 });
+  const fence = harness.dependencies.runtime.advanceGeneration(2);
+  blocker.resolve();
+  await lease;
+  await fence;
+  await staleRetry;
+  assert.equal(dialog.isDismissed(), false);
+  assert.equal(harness.dependencies.runtime.getSessionState().captureLocked, true);
+  const same = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(same.generation, 2);
+  assert.equal(same.dialogCapture.revision, failed.dialogCapture.revision);
+  await assert.rejects(runInteractiveDialog(view.id, { generation: 2, action: 'dismiss', dialogRevision: failed.dialogCapture.revision - 1 }, harness.dependencies), { statusCode: 409 });
+  const action = { generation: 2, action: 'dismiss', dialogRevision: failed.dialogCapture.revision };
+  const results = await Promise.allSettled([runInteractiveDialog(view.id, action, harness.dependencies), runInteractiveDialog(view.id, action, harness.dependencies)]);
+  assert.equal(results[0].status, 'fulfilled');
+  assert.equal(results[1].reason.statusCode, 409);
+  assert.equal(dialog.isDismissed(), true);
+});
+
+test('held native dialogs remain bounded by the original TTL and expiry wins over a queued retry', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('capture failed'); };
+  harness.page.emit('dialog', createDialog('until expiry'));
+  await withDisplayLease(async () => {});
+  const failed = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.equal(failed.expiresAt, view.expiresAt);
+  const blocker = deferred();
+  const lease = withDisplayLease(() => blocker.promise);
+  const retry = assert.rejects(runInteractiveDialog(view.id, { generation: 1, action: 'retry', dialogRevision: failed.dialogCapture.revision }, harness.dependencies), { statusCode: 410 });
+  harness.setNow(view.expiresAt);
+  blocker.resolve();
+  await lease;
+  await retry;
+  assert.equal(interactiveSessions.has(view.id), false);
+  assert.equal(harness.contextClosed(), 1);
+  assert.equal(harness.dependencies.runtime.getSessionState().active, false);
+  assert.equal(await withDisplayLease(async () => 'available'), 'available');
+});
+
+test('dialog action HTTP validates revisions and auth; preview candidate identity rejects a replaced image', async (t) => {
+  const harness = createVncHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gatewayHarness().factory });
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const route = `/interactive-sessions/${view.id}/dialog`;
+  const action = { generation: 1, action: 'arm', dialogRevision: view.dialogCapture.revision };
+  assert.equal((await request(base, route, action, '')).status, 401);
+  for (const revision of [undefined, null, -1, 0.5, '0', Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal((await request(base, route, { ...action, dialogRevision: revision })).status, 400);
+  }
+  assert.equal((await request(base, route, { ...action, action: 'discard-all' })).status, 400);
+  assert.equal((await request(base, route, { ...action, generation: 2 })).status, 409);
+  assert.equal((await request(base, route, action)).status, 200);
+  assert.equal((await request(base, route, action)).status, 409);
+  harness.page.emit('dialog', createDialog('first image'));
+  await withDisplayLease(async () => {});
+  const first = await getInteractiveStatus(view.id, harness.dependencies);
+  const imageRoute = `/interactive-sessions/${view.id}/dialog-frame?generation=1`;
+  assert.equal((await request(base, `${imageRoute}&candidateId=${first.retainedDialog.id}`)).status, 200);
+  assert.equal((await request(base, `${imageRoute}&candidateId=${'f'.repeat(48)}`)).status, 409);
+  for (const candidate of ['', 'invalid', `${first.retainedDialog.id}&candidateId=${first.retainedDialog.id}`]) {
+    assert.equal((await request(base, `${imageRoute}&candidateId=${candidate}`)).status, 400);
+  }
+  await runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: first.dialogCapture.revision }, harness.dependencies);
+  harness.page.emit('dialog', createDialog('replacement image'));
+  await withDisplayLease(async () => {});
+  assert.equal((await request(base, `${imageRoute}&candidateId=${first.retainedDialog.id}`)).status, 409);
+});
+
+test('simultaneous popup dialogs cannot take overlapping desktop captures or misattribute foreground pixels', async () => {
+  for (const duringCapture of [false, true]) {
+    const harness = createVncHarness();
+    const view = await startHarness(harness, { url: URL, generation: 1 });
+    const popup = new EventEmitter();
+    popup.url = () => 'https://fixture.test/competing-popup';
+    popup.mainFrame = () => ({});
+    popup.bringToFront = async () => {};
+    const first = createDialog('main dialog');
+    const second = { ...createDialog('popup dialog'), page: () => popup };
+    let desktopCalls = 0;
+    harness.dependencies.captureDesktopScreenshot = async () => {
+      desktopCalls += 1;
+      assert.equal(desktopCalls, 1, 'competing dialog must not start a second automatic capture');
+      if (duringCapture) harness.context.emit('dialog', second);
+      return PNG.toString('base64');
+    };
+    if (duringCapture) {
+      // Begin between requests so the first capture uses the background path.
+      harness.page.emit('dialog', first);
+      await withDisplayLease(async () => {});
+    } else {
+      harness.page.keyboard.down = async () => {
+        harness.page.emit('dialog', first);
+        harness.context.emit('dialog', second);
+      };
+      await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Enter' }, harness.dependencies), { statusCode: 409 });
+    }
+    const status = await getInteractiveStatus(view.id, harness.dependencies);
+    assert.equal(status.retainedDialog, null, 'ambiguous shared-desktop pixels are discarded');
+    assert.equal(status.dialogCapture.state, 'failed');
+    assert.equal(status.dialogCapture.pending, true);
+    assert.equal(first.isDismissed(), false);
+    assert.equal(second.isDismissed(), false);
+    const dismissed = await runInteractiveDialog(view.id, { generation: 1, action: 'dismiss', dialogRevision: status.dialogCapture.revision }, harness.dependencies);
+    assert.equal(first.isDismissed(), true);
+    assert.equal(second.isDismissed(), false);
+    assert.equal(dismissed.dialogCapture.pending, true);
+    harness.dependencies.captureDesktopScreenshot = async () => PNG.toString('base64');
+    const retried = await runInteractiveDialog(view.id, { generation: 1, action: 'retry', dialogRevision: dismissed.dialogCapture.revision }, harness.dependencies);
+    assert.equal(retried.retainedDialog.message, 'popup dialog');
+    assert.equal(retried.retainedDialog.pageUrl, popup.url());
+    assert.equal(retried.dialogCapture.pending, false);
+    await closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 });
+  }
+});
+
+test('a click abandoned behind a failed native dialog cannot send its remaining input after takeover', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const down = deferred();
+  let up = 0;
+  harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('capture failed'); };
+  harness.page.mouse.down = async () => {
+    harness.page.emit('dialog', createDialog('click interrupted'));
+    await down.promise;
+  };
+  harness.page.mouse.up = async () => { up += 1; };
+  await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'click', x: 100, y: 100 }, harness.dependencies), { statusCode: 409 });
+  await harness.dependencies.runtime.advanceGeneration(2);
+  const held = await getInteractiveStatus(view.id, harness.dependencies);
+  await runInteractiveDialog(view.id, { generation: 2, action: 'dismiss', dialogRevision: held.dialogCapture.revision }, harness.dependencies);
+  down.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(up, 0);
+  assert.equal((await getInteractiveStatus(view.id, harness.dependencies)).generation, 2);
+});
+
+test('fenced capture HTTP requires an explicit safe image selection before browser effects', async (t) => {
+  const harness = createVncHarness();
+  const base = await serve(t, { ...harness.dependencies, workerToken: 'worker-secret', createGateway: gatewayHarness().factory });
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  const route = `/interactive-sessions/${view.id}/capture`;
+  const before = [...harness.calls];
+  for (const expectedCandidateId of [undefined, '', false, 1, [], {}, 'a'.repeat(47), 'A'.repeat(48), 'f'.repeat(48) + '\n']) {
+    assert.equal((await request(base, route, { generation: 1, expectedCandidateId })).status, 400);
+  }
+  assert.deepEqual(harness.calls, before);
+  const saved = await (await request(base, route, { generation: 1, expectedCandidateId: null })).json();
+  assert.equal(saved.metadata.dialogCandidateId, null);
+  assert.deepEqual(await (await request(base, route, { generation: 1, expectedCandidateId: null })).json(), saved);
+  assert.equal((await request(base, route, { generation: 1, expectedCandidateId: 'f'.repeat(48) })).status, 409);
+  assert.equal(harness.captureCount(), 1);
+});
+
+test('save rejects a replaced preview, including a queued stale save, and retries only its finalized selection', async () => {
+  const harness = createVncHarness();
+  const view = await startHarness(harness, { url: URL, generation: 1 });
+  harness.page.emit('dialog', createDialog('preview A'));
+  await withDisplayLease(async () => {});
+  const first = await getInteractiveStatus(view.id, harness.dependencies);
+  await runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: first.dialogCapture.revision }, harness.dependencies);
+
+  const blocker = deferred();
+  const lease = withDisplayLease(() => blocker.promise);
+  harness.page.emit('dialog', createDialog('preview B'));
+  const oldSelection = { generation: 1, expectedCandidateId: first.retainedDialog.id };
+  const rejected = assert.rejects(captureInteractiveSession(view.id, harness.dependencies, oldSelection), { statusCode: 409 });
+  blocker.resolve();
+  await lease;
+  await rejected;
+  const next = await getInteractiveStatus(view.id, harness.dependencies);
+  assert.notEqual(next.retainedDialog.id, first.retainedDialog.id);
+  assert.equal(next.captureFinalized, false);
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, oldSelection), { statusCode: 409 });
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1, expectedCandidateId: null }), { statusCode: 409 });
+  const selection = { generation: 1, expectedCandidateId: next.retainedDialog.id };
+  const saved = await captureInteractiveSession(view.id, harness.dependencies, selection);
+  assert.equal(saved.dialogText, 'preview B');
+  assert.equal(saved.metadata.dialogCandidateId, next.retainedDialog.id);
+  assert.deepEqual(await captureInteractiveSession(view.id, harness.dependencies, selection), saved);
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, oldSelection), { statusCode: 409 });
+  await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, { generation: 1, expectedCandidateId: null }), { statusCode: 409 });
+  assert.equal(harness.captureCount(), 2);
+});
+
+test('a dialog replacing the selected image during inspection or page capture cannot be silently finalized', async (t) => {
+  for (const stage of ['inspection', 'page-capture']) {
+    await t.test(stage, async () => {
+      const harness = createVncHarness();
+      const view = await startHarness(harness, { url: URL, generation: 1 });
+      if (stage === 'inspection') {
+        harness.page.emit('dialog', createDialog('preview A'));
+        await withDisplayLease(async () => {});
+        const current = await getInteractiveStatus(view.id, harness.dependencies);
+        await runInteractiveDialog(view.id, { generation: 1, action: 'arm', dialogRevision: current.dialogCapture.revision }, harness.dependencies);
+      }
+      const selected = captureSelection(view.id, 1);
+      const dialog = createDialog('new target proof');
+      let injected = false;
+      if (stage === 'inspection') {
+        harness.dependencies.inspectChallengePage = async () => {
+          if (!injected) { injected = true; harness.page.emit('dialog', dialog); }
+          return { active: false };
+        };
+      } else {
+        const captured = deferred();
+        harness.dependencies.captureDesktopScreenshot = async () => {
+          if (!injected) {
+            injected = true;
+            harness.page.emit('dialog', dialog);
+            await captured.promise;
+            return Buffer.from('old page pixels').toString('base64');
+          }
+          captured.resolve();
+          return PNG.toString('base64');
+        };
+      }
+      await assert.rejects(captureInteractiveSession(view.id, harness.dependencies, selected), { statusCode: 409 });
+      const current = await getInteractiveStatus(view.id, harness.dependencies);
+      assert.equal(current.captureFinalized, false);
+      assert.equal(current.retainedDialog.message, 'new target proof');
+      assert.notEqual(current.retainedDialog.id, selected.expectedCandidateId);
+      assert.equal(dialog.isDismissed(), true);
+      const saved = await captureInteractiveSession(view.id, harness.dependencies, captureSelection(view.id, 1));
+      assert.equal(saved.dialogText, 'new target proof');
+      assert.equal(saved.metadata.dialogCandidateId, current.retainedDialog.id);
+      await closeInteractiveSessionById(view.id, harness.dependencies, { generation: 1 });
+    });
+  }
+});
+
+test('a key abandoned behind a failed native dialog cannot send keyup after dismissal or takeover', async (t) => {
+  for (const generation of [1, 2]) {
+    await t.test(`resume generation ${generation}`, async () => {
+      const harness = createVncHarness();
+      const view = await startHarness(harness, { url: URL, generation: 1 });
+      const down = deferred();
+      let up = 0;
+      harness.dependencies.captureDesktopScreenshot = async () => { throw new Error('capture failed'); };
+      harness.page.keyboard.down = async () => {
+        harness.page.emit('dialog', createDialog('keydown interrupted'));
+        await down.promise;
+      };
+      harness.page.keyboard.up = async () => { up += 1; };
+      await assert.rejects(runInteractiveInput(view.id, { generation: 1, action: 'key', key: 'Enter' }, harness.dependencies), { statusCode: 409 });
+      if (generation === 2) await harness.dependencies.runtime.advanceGeneration(generation);
+      const held = await getInteractiveStatus(view.id, harness.dependencies);
+      await runInteractiveDialog(view.id, { generation, action: 'dismiss', dialogRevision: held.dialogCapture.revision }, harness.dependencies);
+      down.resolve();
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(up, 0);
+      harness.page.keyboard.down = async () => {};
+      await runInteractiveInput(view.id, { generation, action: 'key', key: 'Tab' }, harness.dependencies);
+      assert.equal(up, 1, 'The new owner can still send a complete key action');
+      await closeInteractiveSessionById(view.id, harness.dependencies, { generation });
+    });
+  }
 });

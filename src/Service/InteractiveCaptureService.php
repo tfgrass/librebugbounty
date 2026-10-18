@@ -71,15 +71,15 @@ final class InteractiveCaptureService
     }
 
     /** Capture/files occur outside the lease lock; evidence and closing commit together. */
-    public function persistForLease(Finding $finding, string $sessionId, array $context, InteractiveBrowserLeaseService $lease, int $generation): InteractiveCaptureSaveResult
+    public function persistForLease(Finding $finding, string $sessionId, array $context, InteractiveBrowserLeaseService $lease, int $generation, ?string $expectedCandidateId): InteractiveCaptureSaveResult
     {
         $context['manual_entry'] = true;
         $context['input_method'] = 'vnc';
         $context['lease_generation'] = $generation;
-        return $this->persistCapture($finding, $sessionId, $context, $lease, $generation);
+        return $this->persistCapture($finding, $sessionId, $context, $lease, $generation, $expectedCandidateId);
     }
 
-    private function persistCapture(Finding $finding, string $sessionId, array $context, ?InteractiveBrowserLeaseService $lease = null, ?int $generation = null): InteractiveCaptureSaveResult
+    private function persistCapture(Finding $finding, string $sessionId, array $context, ?InteractiveBrowserLeaseService $lease = null, ?int $generation = null, ?string $expectedCandidateId = null): InteractiveCaptureSaveResult
     {
         $manager = $this->entityManager();
         $connection = $manager->getConnection();
@@ -104,7 +104,7 @@ final class InteractiveCaptureService
                 if (!$this->client instanceof FencedBrowserInteractiveClientInterface || $generation === null) {
                     throw new \LogicException('A generation-aware browser client is required.');
                 }
-                $result = $this->client->captureFenced($sessionId, $generation);
+                $result = $this->client->captureFenced($sessionId, $generation, $expectedCandidateId);
             } else {
                 $result = $this->client->captureInteractive($sessionId);
             }

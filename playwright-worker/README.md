@@ -134,10 +134,12 @@ invalidates all IDs.
 | Route | Behavior |
 | --- | --- |
 | `POST /interactive-sessions` | Accepts `{url, timeoutMs, generation, sessionId?}` in interactive mode; creates a session and returns 201 with its view. Generation is a positive integer; an optional reserved 48-hex ID supports lost-response recovery. Only HTTP(S) URLs are accepted (maximum 8192 characters). Navigation timeout defaults to 45000 ms and is bounded to 1000–120000 ms. Navigates once to `domcontentloaded`, records the initial state, and returns even if protection is still detected. |
-| `GET /interactive-sessions/{id}/status` | Re-inspects protection and returns the current session view. |
+| `GET /interactive-sessions/{id}/status` | Returns the session view; re-inspects protection only when no native dialog is pending. A held dialog never makes status wait for DOM inspection. |
+| `POST /interactive-sessions/{id}/dialog` | Accepts `{generation, action, dialogRevision}`; `action` is `arm`, `retry` or `dismiss`. Rejects stale generation/dialog state and finalized captures. Arm explicitly renews a bounded attempt allowance without losing the previous candidate. Retry/dismiss operate on the held native dialog. |
+| `GET /interactive-sessions/{id}/dialog-frame` | Retained PNG memory read, authenticated and generation-bound. Optional `candidateId` pins a specific retained candidate and rejects replacement races. No capture, navigation or dialog dismissal. |
 | `GET /interactive-sessions/{id}/frame` | Returns the current live viewport PNG with `Cache-Control: no-store`, never a retained dialog image; click coordinates stay aligned with the current page. |
 | `POST /interactive-sessions/{id}/input` | Accepts one bounded manual action, then refreshes protection state. |
-| `POST /interactive-sessions/{id}/capture` | Requires `{generation}` in interactive mode. Returns screenshot-result JSON, preferring a retained native dialog desktop image (`captureMethod: "desktop-dialog"`), otherwise a headed desktop page image (`"interactive-desktop-page"`). Leaves the context open and caches the result. |
+| `POST /interactive-sessions/{id}/capture` | Requires `{generation, expectedCandidateId}` in interactive mode: the confirmed 48-hex retained dialog ID or explicit `null` for the current page. A changed selection returns 409; missing or malformed selection returns 400. Returns screenshot-result JSON (`captureMethod: "desktop-dialog"` or `"interactive-desktop-page"`), leaves the context open and caches the result. |
 | `POST /interactive-sessions/{id}/close` | Requires `{generation}` in interactive mode. Removes the live ID before teardown, then closes without saving evidence. Retrying a recent closed/expired tombstone returns 200 with `{closed: true, id}`; an unknown ID returns 404. |
 
 Session views retain the required `id`, `createdAt`, `expiresAt`, `finalUrl`,
@@ -161,15 +163,26 @@ the worker's start request has no finding/job identifier.
 
 For native alerts/confirms/prompts, including popup dialogs, the worker attempts
 a desktop capture **before** dismissal under the display FIFO. The dialog's
-source page is foregrounded when needed. Each session allows at most two dialog
-capture attempts, each bounded to six seconds, to contain dialog loops.
+source page is foregrounded for capture. Each explicitly armed cycle allows at
+most two capture attempts, each bounded to six seconds. One successful capture
+disarms automatic replacement; subsequent dialogs do not replace its candidate.
+Explicit `arm` renews the bounded allowance. The old candidate remains until a
+new armed capture succeeds. A capture failure holds the native dialog open and
+pauses input until explicit `retry` or `dismiss`, or absolute session expiry.
+No display FIFO lease is held while waiting for the operator. Capture/save is
+rejected while a native dialog remains pending.
 `dialogObservation` records the source URL, detection/capture times, capture
 success/error and dismissal success. Observation, successful image capture and
 challenge clearance are independent facts: `dialogSeen` alone proves neither
 that the image contains a dialog nor that protection cleared.
 
-A successful retained dialog image wins at save time even after unrelated
-navigation. `captureSelection: "retained-dialog"`, `dialogImageCaptured: true`
+A confirmed retained dialog image is saved even after unrelated navigation.
+The UI pins its `retainedDialog.id` when asking for confirmation and carries it
+as `expectedCandidateId` through the application to the worker. The worker checks
+the selection again after asynchronous capture work and before finalizing; a
+new dialog cannot silently replace the confirmed image. The result records the
+selection as `metadata.dialogCandidateId` (explicit `null` for a page image).
+`captureSelection: "retained-dialog"`, `dialogImageCaptured: true`
 (in metadata), `sourceURL`/`finalUrl`, `dialogCapturedAt` and `capturedAt` identify
 that image and its original time. A current-page image uses
 `captureSelection: "current-page"`. Later inspection is recorded separately as
@@ -179,8 +192,18 @@ dialog image, or navigation during capture inspection, the image-associated
 current challenge is `unknown`. A failed dialog capture remains an observation;
 a later page image must not claim to contain the dialog.
 
+Session status adds `dialogCapture` with `state` (`waiting`, `capturing`,
+`captured`, `failed`, `exhausted`), monotonic `revision`, `armed`, `pending`, and
+`attemptsRemaining`. The expected dialog revision is required for mutations so a
+late request cannot dismiss a newer alert or re-arm twice after an uncertain
+response. `retainedDialog.id` identifies the current candidate. `captureLocked`
+also reflects temporary input gates; `captureFinalized` specifically identifies
+the immutable capture/save result. Failed automatic capture does not finalize it.
+
 The first successful capture is cached until close/expiry: repeated captures
-return identical bytes, metadata, and timestamp. Input then returns 409 to keep
+with the same selection return identical bytes, metadata, and timestamp. A
+different selection returns 409 even when a capture is already finalized.
+Input then returns 409 to keep
 that persistence retry deterministic; status and frame remain usable. A failed
 capture can be retried if its operation watchdog did not expire. The application
 closes after a committed evidence/job save. Storage/database errors leave the
@@ -266,6 +289,19 @@ recovery. These tests do not exercise real Chromium/Xvfb/ffmpeg or manual challe
 clearance. Browser fixtures used for acceptance checks live in the project's
 `tests/Support/` directory.
 
+For the real headed challenge-to-alert recovery acceptance, run:
+
+```bash
+docker exec ddev-librebugbounty-playwright-interactive node dialog-recovery-smoke.cjs
+```
+
+This creates a private Xvfb/RFB bridge, worker and noVNC client against local
+fixtures. It does not use the live worker, application database or an existing
+session. It covers immediate/delayed/popup alerts, explicit re-arm, an actual
+failed desktop capture with held-alert retry, attempt exhaustion and immutable
+final capture. PNGs are written to `var/interactive-dialog-recovery-smoke/`.
+Synthetic protection pages do not establish real Cloudflare compatibility.
+
 The noVNC runtime is implemented as the embedded interactive fallback. The built
 DDEV stack has exercised the public WSS route, same-finding takeover and native
 alert capture. One interactive desktop is shared globally; the four screenshot
@@ -273,8 +309,9 @@ lanes remain separate automated desktops. **Review interactively** (German UI
 **Interaktiv prüfen**) is always available with no detection prerequisite and
 uses a fresh context. With no readable image the noVNC panel is primary and
 starts on click. Takeover retains the context and cached proof. A retained native
-dialog frame alone does not set `captureLocked`; an explicit capture/save attempt
-does, after which input stays locked until explicit save/cancel. Saved proof
+dialog frame alone does not finalize a capture. `captureLocked` also reflects a
+temporary native-dialog input gate; `captureFinalized` distinguishes the immutable
+capture/save result, after which input stays locked until explicit save/cancel. Saved proof
 metadata retains the original capture ID, capture generation, capture time and
 URL; the save authorization generation is separate. The 20-minute TTL is
 absolute and reconnect does not renew it. The smoke below never starts or closes

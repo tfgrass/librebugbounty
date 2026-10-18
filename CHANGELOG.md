@@ -3,6 +3,70 @@
 The release history of LibreBugBounty. Historical dates below follow the
 repository's tagged commits.
 
+## Unreleased
+
+### Added
+
+- About shows cached stable-release availability, a manual check, release link
+  and upgrade guidance with commands for the exact published tag. A supervised
+  update worker checks daily with bounded GitHub requests and preserves the
+  last verified information on errors. Checks never install or change code;
+  opening About stays offline. The version and release name are centered.
+- Intake offers a small help dialog beside **Add URL**, with the current marker
+  visible beside **Add details** even when collapsed. Unchanged draft defaults
+  follow updated settings. It explains the reproducible URL and expected dialog text,
+  local capture/review flow, exact-URL duplicate handling and the configured
+  recheck/error intervals, with a Settings link. Help supports German and English,
+  keyboard use and small screens while preserving the intake draft.
+- Intake shows compact session progress, milestones, pace comparisons and
+  elapsed session time, with session/today/5–120 minute selections. Users
+  can collapse the strip to a single count/period line; the browser
+  remembers that choice while counts continue updating.
+  Browser contributions persist across tabs and reloads; duplicates and imports do not
+  increase personal session progress. Sessions split after 30 minutes without
+  intake and can be ended or explicitly continued. The default **Current session
+  only** filter can be cleared to show the latest 50 stored cases from any age;
+  the history heading displays the actual row count. A single scrollable list
+  includes failed or unconfirmed inputs for explicit recovery, with no separate
+  local-history panel.
+- Inventory **Workbasket** presents existing open reminders by earliest due
+  date, with the next step, chosen disclosure route and latest documented
+  disclosure activity. Today/Overdue/Open selections retain other filters;
+  the view supports saved views, mobile layouts and native forms. Export keeps
+  the selected reminder and follow-up filters.
+- System status includes bounded, read-only HTTP checks for the interactive
+  worker and gateway control, separate from stored free/busy/expired session
+  availability. Global readiness includes these services without starting a
+  browser or claiming that HTTP reachability proves working Chromium or WSS.
+
+### Changed
+
+- Interactive dialog capture can be explicitly re-armed for the next alert
+  without losing the previous candidate before a new image succeeds. Capture
+  failures hold the native dialog open for a bounded retry or explicit dismissal;
+  status stays responsive and saving waits until the pending dialog is resolved.
+  State, attempts and retained preview are visible in Review. Dialog revisions
+  and candidate IDs reject stale commands and preview replacements; finalized
+  evidence retains its immutable bytes, timestamp and source URL.
+- Add an isolated real Chromium/noVNC recovery probe using only local fixtures,
+  covering challenge-to-alert, delayed/popup dialogs, replacement, capture
+  failures, retry limits and immutable final capture.
+
+### Fixed
+
+- Saving interactive evidence binds the confirmed dialog image through to final
+  capture. If a newer dialog replaces it, Review refreshes the selection for
+  confirmation instead of silently saving the replacement. Persistence retries
+  remain bound to the same image.
+- An interrupted browser keypress no longer sends a delayed key release after
+  a failed dialog capture and session takeover.
+- Browser intake reserves the SQLite write lock before reading within its
+  transaction, allowing it to wait for concurrent writers without a lock-upgrade
+  failure.
+- Newly saved cases remain visible with their status and link when the global
+  history request fails, including after reload. The next successful history
+  response reconciles them without duplicate rows.
+
 ## 2.1.0 — Moneta (Conatus) (2026-10-18)
 
 ### Added

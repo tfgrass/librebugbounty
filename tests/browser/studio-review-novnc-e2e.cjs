@@ -209,7 +209,8 @@ async function main() {
       assert.equal(response.status(), 200); return response.json();
     };
     const post = async (target, name, operation, revision, extra = {}) => target.request.post(base + `/review/${f[name].id}/interactive/${operation}`, {
-      headers: { Accept: 'application/json' }, form: { _token: await token(target), channelId: await channel(target), expectedRevision: String(revision), ...extra },
+      headers: { Accept: 'application/json' }, form: { _token: await token(target), channelId: await channel(target), expectedRevision: String(revision),
+        ...(operation === 'save' ? { expectedCandidateId: '' } : {}), ...extra },
     });
 
     for (const name of dedicatedOnly ? [] : ['noImage', 'missing', 'queued', 'failed']) {

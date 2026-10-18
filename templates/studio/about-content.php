@@ -12,6 +12,37 @@
     <p class="studio-about-version">v<?= $escape($app['version']) ?><span><?= $escape($app['releaseName']) ?></span></p>
   </header>
 
+  <section class="studio-about-updates" data-release-update="<?= $escape($releaseUpdate['state']) ?>" aria-labelledby="about-update-title">
+    <div class="studio-about-update-heading">
+      <h3 id="about-update-title"><?= $escape($t('Updates')) ?></h3>
+      <form method="post" action="/about/check-update" data-release-check-form>
+        <input type="hidden" name="_token" value="<?= $escape($updateCsrfToken) ?>">
+        <button type="submit"><?= $escape($t('Jetzt prüfen')) ?></button>
+      </form>
+    </div>
+    <?php if ($releaseUpdate['state'] === 'error'): ?>
+      <p><?= $escape($t('Die letzte Updateprüfung ist fehlgeschlagen. Versuche es später erneut.')) ?></p>
+    <?php elseif ($releaseUpdate['state'] === 'unknown'): ?>
+      <p><?= $escape($t('Noch nicht auf neue Releases geprüft.')) ?></p>
+    <?php elseif ($releaseUpdate['state'] === 'stale'): ?>
+      <p><?= $escape($t('Der gespeicherte Releasestand ist veraltet. Eine neue Prüfung steht aus.')) ?></p>
+    <?php elseif ($releaseUpdate['state'] === 'current'): ?>
+      <p><?= $escape($t('Du verwendest den aktuellen stabilen Release.')) ?></p>
+    <?php elseif ($releaseUpdate['state'] === 'ahead'): ?>
+      <p><?= $escape($t('Deine Version ist neuer als der zuletzt veröffentlichte stabile Release.')) ?></p>
+    <?php endif; ?>
+    <?php if ($releaseUpdate['available']): ?>
+      <p class="studio-about-update-available"><a href="<?= $escape($releaseUpdate['releaseUrl']) ?>" target="_blank" rel="noopener noreferrer"><?= $escape($t('Version {version} ist verfügbar', ['version' => $releaseUpdate['latestVersion']])) ?> <span aria-hidden="true">↗</span></a></p>
+      <details class="studio-about-update-instructions">
+        <summary><?= $escape($t('Update durchführen')) ?></summary>
+        <p><?= $escape($t('Sichere deine Daten und lokalen Änderungen. Die Upgrade-Anleitung beschreibt Backup, Abhängigkeiten, Migrationen und Neustart.')) ?> <a href="/docs/readme#upgrade-an-existing-workspace"><?= $escape($t('Upgrade-Anleitung öffnen')) ?> →</a></p>
+        <p><?= $escape($t('Für eine Git-Installation den veröffentlichten Tag auswählen:')) ?></p>
+        <pre><code><?= $escape("git status --short\ngit fetch --tags origin\ngit switch --detach refs/tags/".$releaseUpdate['latestTag']) ?></code></pre>
+      </details>
+    <?php endif; ?>
+    <p class="studio-about-update-meta"><?= $escape($t('Automatische Prüfung einmal täglich. Nur stabile GitHub-Releases werden berücksichtigt.')) ?><?php if ($releaseUpdate['checkedAt'] !== null): ?> <?= $escape($t('Releasestand vom {time}', ['time' => $formatTime($releaseUpdate['checkedAt'])])) ?><?php endif; ?></p>
+  </section>
+
   <div class="studio-about-columns">
     <div class="studio-about-main">
       <section class="studio-about-release-notes" data-release-notes aria-labelledby="release-notes-title">

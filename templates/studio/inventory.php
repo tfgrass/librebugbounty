@@ -12,15 +12,19 @@ use App\Value\RetestResult;
 $filter = $view->filter;
 $pagination = $view->pagination;
 $path = $view->path;
+$isWorkbasket = $filter->view === 'workbasket';
+$today = \App\Service\DisclosureRecordService::today();
 $listQuery = $view->filterQuery + ['pageSize' => $pagination['pageSize'], 'page' => $pagination['page']];
 $returnPath = $path.'?'.http_build_query($listQuery, '', '&', PHP_QUERY_RFC3986);
 $pageUrl = static fn (int $page): string => $path.'?'.http_build_query(array_replace($listQuery, ['page' => $page]), '', '&', PHP_QUERY_RFC3986);
 $scopeUrl = static fn (string $scope): string => $path.'?'.http_build_query(array_replace($view->filterQuery, ['scope' => $scope, 'pageSize' => $pagination['pageSize']]), '', '&', PHP_QUERY_RFC3986);
-$resetUrl = $path.'?'.http_build_query(['pageSize' => $pagination['pageSize']], '', '&', PHP_QUERY_RFC3986);
+$resetUrl = $path.'?'.http_build_query(($isWorkbasket ? ['view' => 'workbasket', 'reminder' => 'open'] : []) + ['pageSize' => $pagination['pageSize']], '', '&', PHP_QUERY_RFC3986);
+$modeUrl = static fn (string $mode): string => $path.'?'.http_build_query(array_filter(array_replace($view->filterQuery, ['view' => $mode, 'reminder' => $mode === 'workbasket' && $filter->reminder === '' ? 'open' : $filter->reminder, 'pageSize' => $pagination['pageSize']]), static fn (string $value): bool => $value !== ''), '', '&', PHP_QUERY_RFC3986);
+$reminderUrl = static fn (string $reminder): string => $path.'?'.http_build_query(array_replace($view->filterQuery, ['view' => 'workbasket', 'reminder' => $reminder, 'pageSize' => $pagination['pageSize']]), '', '&', PHP_QUERY_RFC3986);
 $exportUrl = '/export?'.http_build_query($view->filterQuery, '', '&', PHP_QUERY_RFC3986);
 $scopeLabels = ['active' => 'Aktiv', 'discarded' => 'Verworfen', 'duplicates' => 'Duplikate', 'all' => 'Alle Fälle'];
-$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '' || $filter->pursuit !== '' || $filter->closureReason !== '' || $filter->contactWork !== '' || $filter->reminder !== '';
-$hasSelectionFilters = $hasAdditionalFilters || $filter->q !== '' || $filter->assessment !== '' || $filter->observation !== '' || $filter->contact !== '';
+$hasAdditionalFilters = $filter->domain !== '' || $filter->exactDomain || $filter->type !== '' || $filter->severity !== '' || $filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== '' || $filter->event !== '' || $filter->tld !== '' || $filter->sent !== '' || $filter->pursuit !== '' || $filter->closureReason !== '' || $filter->contactWork !== '' || (!$isWorkbasket && $filter->reminder !== '');
+$hasSelectionFilters = $isWorkbasket || $hasAdditionalFilters || $filter->q !== '' || $filter->assessment !== '' || $filter->observation !== '' || $filter->contact !== '';
 $isFirstStart = $view->stats['active']['count'] + $view->stats['discarded']['count'] === 0;
 $isArchivedOnly = !$isFirstStart && $view->stats['active']['count'] === 0 && $filter->scope === 'active' && !$hasSelectionFilters;
 $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet', 'contacted' => 'Als kontaktiert markiert', 'confirmed' => 'Erstmals manuell bestätigt', 'fixed' => 'Erstmals manuell behoben'];
@@ -52,6 +56,13 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
       <?php if ($message !== null && $message !== ''): ?><p class="studio-list-feedback" data-tone="success" role="status"><?= $escape($message) ?></p><?php endif; ?>
       <?php if ($error !== null && $error !== ''): ?><p class="studio-list-feedback" data-tone="error" role="alert"><?= $escape($error) ?></p><?php endif; ?>
 
+      <nav class="studio-list-modes" aria-label="<?= $escape($t('Ansicht')) ?>">
+        <?php foreach (['' => 'Bestandsliste', 'workbasket' => 'Arbeitskorb'] as $mode => $label): ?>
+          <a class="studio-list-button" data-inventory-view="<?= $escape($mode === '' ? 'inventory' : $mode) ?>" href="<?= $escape($modeUrl($mode)) ?>"<?= $filter->view === $mode ? ' aria-current="page"' : '' ?>><?= $escape($t($label)) ?></a>
+        <?php endforeach; ?>
+      </nav>
+      <?php if ($isWorkbasket): ?><p class="studio-list-workbasket-hint"><?= $escape($t('Offene Wiedervorlagen, früheste Termine zuerst. Sperren und beendete Nachverfolgung bleiben sichtbar; sie ändern den Termin nicht.')) ?></p><?php endif; ?>
+
       <?php require __DIR__.'/inventory-views.php'; ?>
 
       <section class="studio-list-tools" aria-label="<?= $escape($t('Suche und Filter')) ?>">
@@ -65,6 +76,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
         </nav>
         <form method="get" action="<?= $escape($path) ?>" id="finding-filters" class="studio-list-filters">
           <input type="hidden" name="scope" value="<?= $escape($filter->scope) ?>">
+          <?php if ($isWorkbasket): ?><input type="hidden" name="view" value="workbasket"><?php endif; ?>
           <input type="hidden" name="pageSize" value="<?= $escape($pagination['pageSize']) ?>">
           <div class="studio-list-search-row">
             <label class="studio-list-search" for="studio-list-search">
@@ -131,6 +143,13 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
             <a class="studio-list-reset" href="<?= $escape($resetUrl) ?>"><?= $escape($t('Zurücksetzen')) ?></a>
           </div>
         </form>
+        <?php if ($isWorkbasket): ?>
+          <nav class="studio-list-reminders" aria-label="<?= $escape($t('Offene Wiedervorlagen')) ?>">
+            <?php foreach (['overdue' => 'Überfällig', 'today' => 'Heute', 'open' => 'Alle offenen Wiedervorlagen'] as $reminder => $label): ?>
+              <a class="studio-list-button" href="<?= $escape($reminderUrl($reminder)) ?>" data-reminder-filter="<?= $escape($reminder) ?>"<?= $filter->reminder === $reminder ? ' aria-current="page"' : '' ?>><?= $escape($t($label)) ?></a>
+            <?php endforeach; ?>
+          </nav>
+        <?php endif; ?>
       </section>
 
       <?php if ($filter->legacyStatus !== '' || $filter->legacyBucket !== '' || $filter->legacyReview !== ''): ?>
@@ -142,9 +161,9 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
         <p class="studio-list-archive-hint" data-statistics-filter><?= $escape($t('Statistikauswahl: {event}{from}{to}{tld}. Die Bewertung daneben zeigt den heutigen Stand.', ['event' => $t($eventLabels[$filter->event] ?? 'Alle Ereignisse'), 'from' => $filter->from !== '' ? $t(' · ab {date}', ['date' => $formatDate($filter->from)]) : '', 'to' => $filter->to !== '' ? $t(' · bis {date}', ['date' => $formatDate($filter->to)]) : '', 'tld' => $filter->tld !== '' ? ' · TLD '.$filter->tld : ''])) ?></p>
       <?php endif; ?>
 
-      <section class="studio-list-results" aria-labelledby="studio-list-results-title">
-        <div class="studio-list-results-heading"><h2 id="studio-list-results-title"><?= $escape($t($scopeLabels[$filter->scope])) ?></h2><span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>"><?= $escape($t('{count} Fälle', ['count' => $formatNumber($pagination['totalFiltered'])])) ?> <span class="studio-list-order"><?= $escape($t(' · Neueste zuerst')) ?></span></span><a class="studio-list-button" data-export-selection href="<?= $escape($exportUrl) ?>"><?= $escape($t('Auswahl exportieren')) ?> <span aria-hidden="true">↗</span></a></div>
-        <div class="studio-list-column-headings" aria-hidden="true"><span><?= $escape($t('Fall')) ?></span><span><?= $escape($t('Manuelle Bewertung')) ?></span><span><?= $escape($t('Technische Beobachtung')) ?></span><span><?= $escape($t('Kontakt')) ?></span><span><?= $escape($t('Eingang')) ?></span><span></span></div>
+      <section class="studio-list-results<?= $isWorkbasket ? ' studio-list-workbasket' : '' ?>" aria-labelledby="studio-list-results-title">
+        <div class="studio-list-results-heading"><h2 id="studio-list-results-title"><?= $escape($isWorkbasket ? $t('Arbeitskorb').' · '.$t($scopeLabels[$filter->scope]) : $t($scopeLabels[$filter->scope])) ?></h2><span data-total-filtered="<?= $escape($pagination['totalFiltered']) ?>"><?= $escape($t('{count} Fälle', ['count' => $formatNumber($pagination['totalFiltered'])])) ?> <span class="studio-list-order"><?= $escape($t($isWorkbasket ? ' · Früheste Termine zuerst' : ' · Neueste zuerst')) ?></span></span><a class="studio-list-button" data-export-selection href="<?= $escape($exportUrl) ?>"><?= $escape($t('Auswahl exportieren')) ?> <span aria-hidden="true">↗</span></a></div>
+        <div class="studio-list-column-headings" aria-hidden="true"><?php foreach ($isWorkbasket ? ['Fall', 'Fälligkeit', 'Nächster Schritt', 'Gewählter Meldeweg', 'Letzte Meldeaktivität', ''] : ['Fall', 'Manuelle Bewertung', 'Technische Beobachtung', 'Kontakt', 'Eingang', ''] as $label): ?><span><?= $escape($t($label)) ?></span><?php endforeach; ?></div>
         <ol class="studio-findings">
           <?php foreach ($view->findings as $finding): ?>
             <?php
@@ -160,8 +179,26 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
                   <p class="studio-finding-title"><?= $escape($finding->title) ?></p>
                   <p class="studio-finding-url" title="<?= $escape($finding->url) ?>"><?= $escape($finding->url) ?></p>
                   <p class="studio-finding-record-meta"><code><?= $escape(substr($finding->id, 0, 8)) ?></code><span><?= $escape($finding->type) ?></span><span><?= $escape($finding->severity) ?></span></p>
+                  <?php if ($isWorkbasket): ?><span class="studio-finding-state" data-tone="<?= $escape($assessmentTone) ?>"><?= $escape($t(FindingReadLabels::assessment($finding->assessment, $finding->discardReason))) ?></span><?php endif; ?>
                   <details class="studio-finding-history" data-dimension="history"><summary><?= $escape($t('Historische Werte · Diagnose')) ?></summary><p><?= $escape($t('Historischer Status')) ?>: <code><?= $escape($finding->legacyStatus) ?></code> · <?= $escape($t('Frühere Review-Markierung')) ?>: <code><?= $escape($finding->legacyReviewState ?? $t('Kein Review-Wert')) ?></code><br><?= $escape($t($finding->assessment === null ? 'Historische Herkunft unklar; keine manuelle Entscheidung nachträglich abgeleitet.' : 'Kompatibilitätswerte; die manuelle Bewertung wird gesondert aufgezeichnet.')) ?></p></details>
                 </div>
+                <?php if ($isWorkbasket): ?>
+                  <div class="studio-finding-dimension" data-dimension="reminder"><span class="studio-finding-mobile-label"><?= $escape($t('Fälligkeit')) ?></span>
+                    <?php if ($finding->reminderDueOn !== null): ?>
+                      <time datetime="<?= $escape($finding->reminderDueOn) ?>"><?= $escape($formatDate($finding->reminderDueOn)) ?></time>
+                      <span class="studio-finding-state" data-tone="<?= $finding->reminderDueOn < $today ? 'overdue' : ($finding->reminderDueOn === $today ? 'today' : 'neutral') ?>"><?= $escape($t($finding->reminderDueOn < $today ? 'Überfällig' : ($finding->reminderDueOn === $today ? 'Heute' : 'Geplant'))) ?></span>
+                    <?php endif; ?>
+                  </div>
+                  <div class="studio-finding-dimension" data-dimension="next-step"><span class="studio-finding-mobile-label"><?= $escape($t('Nächster Schritt')) ?></span><span><?= $escape($finding->reminderNextStep ?? '') ?></span></div>
+                  <div class="studio-finding-dimension" data-dimension="contact-route"><span class="studio-finding-mobile-label"><?= $escape($t('Gewählter Meldeweg')) ?></span>
+                    <?php if ($finding->contactRouteChannel !== null): ?><span><?= $escape($t(\App\Service\DisclosureRecordService::CHANNELS[$finding->contactRouteChannel] ?? $finding->contactRouteChannel)) ?></span><small><?= $escape($finding->contactRouteDestination) ?></small>
+                    <?php else: ?><span><?= $escape($t('Kein Meldeweg gewählt')) ?></span><?php endif; ?>
+                  </div>
+                  <div class="studio-finding-dimension" data-dimension="disclosure-activity"><span class="studio-finding-mobile-label"><?= $escape($t('Letzte Meldeaktivität')) ?></span>
+                    <?php if ($finding->lastDisclosureActivityOn !== null): ?><span><?= $escape($t(\App\Service\DisclosureRecordService::ACTIVITIES[$finding->lastDisclosureActivity] ?? $finding->lastDisclosureActivity)) ?></span><time datetime="<?= $escape($finding->lastDisclosureActivityOn) ?>"><?= $escape($formatDate($finding->lastDisclosureActivityOn)) ?></time>
+                    <?php else: ?><span><?= $escape($t('Keine Meldeaktivität erfasst')) ?></span><?php endif; ?>
+                  </div>
+                <?php else: ?>
                 <div class="studio-finding-dimension" data-dimension="assessment"><span class="studio-finding-mobile-label"><?= $escape($t('Manuelle Bewertung')) ?></span><span class="studio-finding-state" data-tone="<?= $escape($assessmentTone) ?>"><?= $escape($t(FindingReadLabels::assessment($finding->assessment, $finding->discardReason))) ?></span>
                   <?php if ($finding->assessment !== null): ?><small><?= $escape($t('Manuell')) ?> · <?= $escape($formatTime($finding->assessedAt)) ?></small><?php elseif ($finding->legacyStatus !== 'new' || $finding->legacyReviewState !== null): ?><small><?= $escape($t('Historischer Bestand · Herkunft unklar')) ?></small><?php endif; ?>
                   <?php if ($finding->discarded && $finding->assessment === null): ?><small><?= $escape($t('Im Archiv · historische Kennzeichnung')) ?></small><?php endif; ?>
@@ -171,6 +208,7 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
                 </div>
                 <div class="studio-finding-dimension" data-dimension="contact"><span class="studio-finding-mobile-label"><?= $escape($t('Kontakt & Versand')) ?></span><span><?= $escape($t(FindingReadLabels::contact($finding->contactedAt))) ?></span><?php if ($finding->contactedAt !== null): ?><small><?= $escape($formatTime($finding->contactedAt)) ?></small><?php endif; ?><?php if ($finding->sentAt !== null): ?><small><?= $escape($t('Versendet')) ?> · <?= $escape($formatTime($finding->sentAt)) ?></small><?php endif; ?></div>
                 <div class="studio-finding-dimension" data-dimension="date"><span class="studio-finding-mobile-label"><?= $escape($t('Eingang')) ?></span><time datetime="<?= $escape(($finding->submittedAt ?? $finding->createdAt)->format(DATE_ATOM)) ?>"><?= $escape($formatTime($finding->submittedAt ?? $finding->createdAt)) ?></time><?php if ($finding->submittedAt === null): ?><small><?= $escape($t('Ablagezeit; Eingangszeit unbekannt')) ?></small><?php endif; ?></div>
+                <?php endif; ?>
                 <a class="studio-finding-open" href="<?= $escape($detailUrl) ?>" aria-label="<?= $escape($t('Fall {domain} öffnen', ['domain' => $finding->domain])) ?>"><?= $escape($t('Fall öffnen')) ?> <span aria-hidden="true">↗</span></a>
               </article>
             </li>
@@ -187,6 +225,10 @@ $eventLabels = ['reported' => 'Gemeldet (Ingest)', 'sent' => 'Erstmals versendet
               <p><?= $escape($t('Deine gespeicherten Fälle liegen im Archiv. Du kannst sie dort ansehen oder eine neue URL erfassen.')) ?></p>
               <a class="studio-list-button" href="<?= $escape($scopeUrl('discarded')) ?>"><?= $escape($t('Archiv ansehen')) ?></a>
               <a class="studio-list-button studio-list-button-primary" href="/"><?= $escape($t('URL erfassen')) ?></a>
+            <?php elseif ($isWorkbasket): ?>
+              <h3><?= $escape($t('Keine offenen Wiedervorlagen für diese Filter')) ?></h3>
+              <p><?= $escape($t('Wiedervorlagen legst du im Fall an. Prüfe den Zeitraum und die übrigen Filter.')) ?></p>
+              <a class="studio-list-button" href="<?= $escape($resetUrl) ?>"><?= $escape($t('Filter zurücksetzen')) ?></a>
             <?php else: ?>
               <h3><?= $escape($t('Keine Fälle für diese Filter')) ?></h3>
               <p><?= $escape($t('Ändere den Suchtext oder die Filter. Verworfene Fälle findest du im Archiv.')) ?></p>

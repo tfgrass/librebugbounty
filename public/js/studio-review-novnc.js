@@ -27,6 +27,19 @@ export function mountInteractivePanel(element) {
   let channel, status, rfb, liveCanvas, socketRevision, connecting = false;
   let disposed = false, pending = false, statusRequest, epoch = 0, timer, confirmation;
   let retryAfter = 0, deadline = 0;
+  const dialogCapture = () => {
+    const capture = status?.dialogCapture;
+    return capture && ['waiting', 'capturing', 'captured', 'failed', 'exhausted'].includes(capture.state)
+      && Number.isSafeInteger(capture.revision) && capture.revision >= 0
+      && Number.isSafeInteger(capture.attemptsRemaining) && capture.attemptsRemaining >= 0 ? capture : null;
+  };
+  const finalized = () => status?.captureFinalized === true || (status?.captureFinalized === undefined && status?.captureLocked === true);
+  const selectedCandidate = (data = status) => {
+    if (data?.retainedDialog == null) return null;
+    const id = data.retainedDialog.id;
+    // A retained image without an identity must never silently select the page.
+    return typeof id === 'string' && /^[a-f0-9]{48}$/.test(id) ? id : undefined;
+  };
   const say = (name, text) => { get(name).textContent = text || ''; };
   const notice = text => { say('notice', text); get('notice').hidden = !text; };
   const on = (target, name, fn, options = {}) => target.addEventListener(name, fn, { ...options, signal: lifecycle.signal });
@@ -54,7 +67,9 @@ export function mountInteractivePanel(element) {
     const key = retainedKey, revision = status.revision;
     const request = new AbortController(); previewRequest = request;
     try {
-      const response = await fetch(base + '/dialog-frame?revision=' + revision, {
+      const query = new URLSearchParams({ revision: String(revision) });
+      if (typeof status.retainedDialog?.id === 'string') query.set('candidateId', status.retainedDialog.id);
+      const response = await fetch(base + '/dialog-frame?' + query, {
         headers: { 'X-LBB-Tab': channel }, cache: 'no-store', signal: AbortSignal.any([request.signal, lifecycle.signal, AbortSignal.timeout(15000)]),
       });
       if (!response.ok || !response.headers.get('Content-Type')?.startsWith('image/png')) throw new Error('Preview unavailable');
@@ -138,6 +153,8 @@ export function mountInteractivePanel(element) {
   };
   const showButtons = () => {
     const own = status?.state === 'own_active';
+    const capture = dialogCapture(), final = finalized();
+    const dialogPending = capture?.pending === true;
     const usable = Boolean(channel && element.dataset.csrfToken && status);
     const blocked = ['policy_blocked', 'checks_blocked', 'discarded', 'invalid_url'].includes(status?.reason);
     const visible = {
@@ -147,12 +164,17 @@ export function mountInteractivePanel(element) {
       reconnect: own && status.reconnect === true && !status.captureLocked && !rfb && !connecting,
       save: own,
       release: own || status?.canRelease === true,
-      refresh: !own || !status.captureLocked,
+      refresh: !own || !final,
+      'dialog-arm': own && capture && !final && !dialogPending,
+      'dialog-retry': own && capture && !final && dialogPending && capture.state !== 'capturing' && capture.attemptsRemaining > 0,
+      'dialog-dismiss': own && capture && !final && dialogPending && capture.state !== 'capturing',
     };
     for (const button of buttons) {
       if (button.dataset.novncAction === 'acquire') button.textContent = status?.state === 'activating' ? messages.retryActivation : startLabel;
       button.hidden = !usable || !visible[button.dataset.novncAction];
       button.disabled = pending || Boolean(confirmation);
+      if (button.dataset.novncAction === 'save') button.disabled ||= Boolean(selectedCandidate() === undefined || dialogPending || capture?.state === 'capturing' || (status?.captureLocked && !final));
+      if (button.dataset.novncAction === 'dialog-arm') button.disabled ||= Boolean(capture?.armed || capture?.state === 'capturing' || status?.captureLocked);
     }
     controls.hidden = !channel;
     element.setAttribute('aria-busy', String(pending));
@@ -164,7 +186,7 @@ export function mountInteractivePanel(element) {
     if (seconds === 0 && status?.state === 'own_active') {
       status = { ...status, state: 'expired', reconnect: false };
       disconnect(); closeConfirmation(); clearPreview(); retainedKey = null;
-      get('retained').hidden = true; get('dialog').hidden = true; say('state', messages.expired);
+      get('retained').hidden = true; get('dialog').hidden = true; get('capture').hidden = true; say('state', messages.expired);
       element.dataset.state = 'expired'; showButtons();
     }
   };
@@ -216,32 +238,45 @@ export function mountInteractivePanel(element) {
   const applyStatus = data => {
     if (data.state === 'own_active' && Number.isFinite(data.expiresInSec) && data.expiresInSec <= 0) data = { ...data, state: 'expired', reconnect: false };
     if (!states.has(data.state) || !Number.isSafeInteger(data.revision) || data.revision < 0 || (data.findingId && data.findingId !== element.dataset.findingId && data.state === 'own_active')) throw new Error('Invalid status');
-    if (status && (status.revision !== data.revision || status.state !== data.state || Boolean(status.captureLocked) !== Boolean(data.captureLocked))) closeConfirmation();
+    if (status && (status.revision !== data.revision || status.state !== data.state || Boolean(status.captureLocked) !== Boolean(data.captureLocked)
+      || status.captureFinalized !== data.captureFinalized || status.dialogCapture?.revision !== data.dialogCapture?.revision
+      || selectedCandidate(status) !== selectedCandidate(data))) closeConfirmation();
     status = data;
     element.dataset.state = data.state;
     element.dataset.revision = String(data.revision);
     element.dataset.captureLocked = String(Boolean(data.captureLocked));
+    element.dataset.captureFinalized = String(finalized());
     const own = data.state === 'own_active';
-    say('state', own && data.captureLocked ? messages.locked : messages[data.state]);
-    say('placeholder-message', own ? (data.captureLocked ? messages.locked : messages.connecting) : ['available', 'expired'].includes(data.state) ? idlePlaceholder : messages[data.state]);
+    const lockedMessage = finalized() ? messages.locked : messages.dialogPaused;
+    say('state', own && data.captureLocked ? lockedMessage : messages[data.state]);
+    say('placeholder-message', own ? (data.captureLocked ? lockedMessage : messages.connecting) : ['available', 'expired'].includes(data.state) ? idlePlaceholder : messages[data.state]);
     if (!own || data.captureLocked || data.reconnect !== true || (rfb && socketRevision !== data.revision)) {
       disconnect(own && Boolean(data.captureLocked));
       say('connection', '');
     }
     deadline = Number.isFinite(data.expiresInSec) ? Date.now() + Math.max(0, data.expiresInSec) * 1000 : 0;
     updateExpiry();
+    const capture = own ? dialogCapture() : null;
+    get('capture').hidden = !capture || finalized();
+    element.dataset.dialogCaptureState = capture?.state || '';
+    const capturePaused = capture && capture.pending !== true && capture.armed !== true && ['waiting', 'failed', 'exhausted'].includes(capture.state);
+    const captureMessage = capturePaused ? 'capturePaused'
+      : { waiting: 'captureWaiting', capturing: 'captureCapturing', captured: 'captureCaptured', failed: 'captureFailed', exhausted: 'captureExhausted' }[capture?.state];
+    say('capture-state', messages[captureMessage]);
+    say('capture-hint', messages[captureMessage + 'Hint']);
+    say('capture-attempts', capture ? messages.captureAttempts.replace('{value}', String(capture.attemptsRemaining)) : '');
     const dialog = own && data.dialogObservation && typeof data.dialogObservation === 'object' ? data.dialogObservation : null;
     get('dialog').hidden = !dialog || !Object.keys(dialog).length;
     say('dialog-message', typeof dialog?.message === 'string' ? dialog.message.slice(0, 10000) : '');
     say('dialog-image', dialog?.captureSucceeded === true ? messages.dialogCaptured : messages.dialogUnconfirmed);
     const retained = own && data.retainedDialog && typeof data.retainedDialog.capturedAt === 'string' ? data.retainedDialog : null;
-    const nextRetainedKey = retained ? JSON.stringify([data.revision, retained.capturedAt]) : null;
+    const nextRetainedKey = retained ? JSON.stringify([data.revision, typeof retained.id === 'string' ? retained.id : retained.capturedAt]) : null;
     if (nextRetainedKey !== retainedKey) clearPreview();
     retainedKey = nextRetainedKey;
     get('retained').hidden = !retained;
     say('retained-message', typeof retained?.message === 'string' ? retained.message.slice(0, 10000) : '');
     say('retained-meta', retained ? [retained.capturedAt, retained.pageUrl].filter(value => typeof value === 'string').join(' · ') : '');
-    const reason = { checks_blocked: 'policy_blocked', stale_revision_or_busy: 'stale_revision', operation_failed: 'actionError' }[data.reason] || data.reason;
+    const reason = { checks_blocked: 'policy_blocked', stale_revision_or_busy: 'stale_revision', stale_dialog_revision: 'stale_revision', operation_failed: 'actionError' }[data.reason] || data.reason;
     notice(reason ? (messages[reason] || messages.actionError) : '');
     showButtons();
     if (own && !data.captureLocked) void connect();
@@ -263,7 +298,7 @@ export function mountInteractivePanel(element) {
     } catch (_) {
       if (!disposed && version === epoch && !pending) {
         disconnect(true); closeConfirmation(); status = undefined;
-        say('state', messages.statusError); clearPreview(); retainedKey = null; get('retained').hidden = true; get('dialog').hidden = true; notice(messages.statusError); showButtons();
+        say('state', messages.statusError); clearPreview(); retainedKey = null; get('retained').hidden = true; get('dialog').hidden = true; get('capture').hidden = true; notice(messages.statusError); showButtons();
       }
     } finally { statusRequest = undefined; }
     })();
@@ -275,8 +310,15 @@ export function mountInteractivePanel(element) {
     if (url.origin !== location.origin || !/^\/(?:review|findings)(?:[/?]|$)/.test(url.pathname)) return false;
     location.assign(url.href); return true;
   };
-  const mutate = async action => {
+  const mutate = async (action, expected = {}) => {
     if (!status || pending || disposed) return;
+    const isDialogAction = action.startsWith('dialog-');
+    const capture = dialogCapture();
+    if (isDialogAction && (status.state !== 'own_active' || finalized() || !capture || expected.dialogRevision !== capture.revision)) { void refresh(); return; }
+    if (action === 'save' && (status.state !== 'own_active' || expected.expectedCandidateId === undefined
+      || expected.expectedCandidateId !== selectedCandidate() || capture?.pending || capture?.state === 'capturing'
+      || (status.captureLocked && !finalized()))) { void refresh(); return; }
+    if (expected.revision !== undefined && expected.revision !== status.revision) { void refresh(); return; }
     const revision = status.revision;
     pending = true; ++epoch; closeConfirmation(); showButtons();
     // Stop local input immediately; the gateway enforces the authoritative gate.
@@ -288,8 +330,10 @@ export function mountInteractivePanel(element) {
       return_to: element.dataset.returnPath || '/review',
     });
     if (action === 'end-and-start') body.set('confirm', '1');
+    if (isDialogAction) body.set('dialogRevision', String(expected.dialogRevision));
+    if (action === 'save') body.set('expectedCandidateId', expected.expectedCandidateId ?? '');
     try {
-      const response = await fetch(action === 'save' ? `${base}/save` : `${base}/lease/${action}`, {
+      const response = await fetch(action === 'save' ? `${base}/save` : isDialogAction ? `${base}/dialog/${action.slice(7)}` : `${base}/lease/${action}`, {
         method: 'POST', credentials: 'same-origin', cache: 'no-store', body,
         headers: { Accept: 'application/json', 'X-CSRF-Token': element.dataset.csrfToken, 'X-LBB-Tab': channel },
         signal: AbortSignal.any([lifecycle.signal, AbortSignal.timeout(120000)]),
@@ -300,12 +344,12 @@ export function mountInteractivePanel(element) {
       if (response.ok && redirect(data.redirect)) return;
       pending = false;
       applyStatus(data);
-      if (!response.ok) notice(messages[data.reason] || messages.actionError);
+      if (!response.ok) notice(messages[['stale_dialog_revision', 'stale_revision_or_busy'].includes(data.reason) ? 'stale_revision' : data.reason] || messages.actionError);
       // A successful operation may keep the same authorized stream (e.g. an
       // unsuccessful capture); reopen only after fresh status confirms ownership.
       if (rfb && status.state === 'own_active' && !status.captureLocked && status.revision === revision) rfb.viewOnly = false;
     } catch (_) {
-      if (!disposed) { disconnect(true); status = undefined; clearPreview(); retainedKey = null; get('retained').hidden = true; notice(messages.actionError); }
+      if (!disposed) { disconnect(true); status = undefined; clearPreview(); retainedKey = null; get('retained').hidden = true; get('dialog').hidden = true; get('capture').hidden = true; notice(messages.actionError); }
     } finally {
       pending = false;
       if (!disposed) { showButtons(); void refresh(); }
@@ -317,12 +361,15 @@ export function mountInteractivePanel(element) {
     if (action === 'refresh') { void refresh(); return; }
     if (action === 'reconnect') { void connect(true); return; }
     if (action === 'acquire') { void mutate(action); return; }
-    confirmation = { action, revision: status.revision };
-    say('confirm-message', messages[{ takeover: 'confirmTakeover', 'end-and-start': 'confirmEndStart', save: 'confirmSave', release: 'confirmRelease' }[action]]);
+    const expected = { revision: status.revision, dialogRevision: dialogCapture()?.revision, expectedCandidateId: selectedCandidate() };
+    if (action === 'dialog-retry') { void mutate(action, expected); return; }
+    confirmation = { action, ...expected };
+    say('confirm-message', messages[{ takeover: 'confirmTakeover', 'end-and-start': 'confirmEndStart', save: 'confirmSave', release: 'confirmRelease', 'dialog-arm': 'confirmDialogArm', 'dialog-dismiss': 'confirmDialogDismiss' }[action]]);
     get('confirm').hidden = false; showButtons(); get('confirm-yes').focus();
   });
   on(get('confirm-yes'), 'click', () => {
-    if (confirmation && confirmation.revision === status?.revision) void mutate(confirmation.action);
+    if (confirmation && confirmation.revision === status?.revision && confirmation.dialogRevision === dialogCapture()?.revision
+      && confirmation.expectedCandidateId === selectedCandidate()) void mutate(confirmation.action, confirmation);
   });
   on(get('confirm-no'), 'click', () => {
     const action = confirmation?.action;

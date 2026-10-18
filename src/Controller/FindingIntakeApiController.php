@@ -6,6 +6,7 @@ use App\Entity\Finding;
 use App\Repository\FindingRepository;
 use App\Service\FindingService;
 use App\Service\IntakeStatusService;
+use App\Service\IntakeActivityService;
 use App\Service\UiTranslator;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,6 +28,7 @@ final class FindingIntakeApiController
         private readonly IntakeStatusService $intakeStatus,
         private readonly CsrfTokenManagerInterface $csrf,
         private readonly UiTranslator $i18n,
+        private readonly IntakeActivityService $activity,
     ) {
     }
 
@@ -60,16 +62,27 @@ final class FindingIntakeApiController
             $notes = $this->stringParameter($parameters, 'annotate');
             $url = trim($url);
             $payload = trim($payload);
+            $browserIntake = $parameters['browserIntake'] ?? false;
+            if (!in_array($browserIntake, [false, true, '1'], true)) {
+                throw new \InvalidArgumentException('Eingabefelder müssen Text enthalten.');
+            }
         } catch (\InvalidArgumentException $exception) {
             return $this->error($exception->getMessage(), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
         try {
-            $result = $this->findingService->createIntakeFinding(
-                url: $url,
-                expectedEvidence: $payload !== '' ? $payload : null,
-                privateNotes: $notes !== '' ? $notes : null,
+            $create = fn (?callable $recorder = null) => $this->findingService->createIntakeFinding(
+                url: $url, expectedEvidence: $payload !== '' ? $payload : null,
+                privateNotes: $notes !== '' ? $notes : null, onResult: $recorder,
             );
+            $receipt = null;
+            if ($browserIntake === true || $browserIntake === '1') {
+                $scope = $this->activity->browserId($request, true);
+                $receipt = $this->activity->capture($scope, $create);
+                $result = $receipt['result'];
+            } else {
+                $result = $create();
+            }
             $finding = $result->finding;
             $outcome = $result->created ? 'stored' : 'duplicate';
         } catch (\InvalidArgumentException) {
@@ -87,6 +100,11 @@ final class FindingIntakeApiController
                     'detailUrl' => '/findings/'.$finding->getId(),
                 ],
                 'status' => $this->intakeStatus->status($finding),
+                ...($receipt !== null ? [
+                    'intakeSessionId' => $receipt['sessionId'],
+                    'intakeSessionGeneration' => $receipt['generation'],
+                    'intakeScopeId' => $scope,
+                ] : []),
             ], $outcome === 'stored' ? Response::HTTP_CREATED : Response::HTTP_OK);
         } catch (\Throwable) {
             return $this->storageError();

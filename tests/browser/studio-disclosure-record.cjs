@@ -30,6 +30,8 @@ async function main() {
       await goto(page, '/findings?assessment=confirmed');
       const id = await page.locator('[data-finding-id]').first().getAttribute('data-finding-id'), detail = '/findings/' + id;
       await goto(page, detail);
+      const selectedRoute = page.locator('[data-selected-contact-route] > p:first-child code');
+      const routeDestination = await selectedRoute.count() ? await selectedRoute.textContent() : null;
       const activity = page.locator('[data-disclosure-activity]'), reminder = page.locator('[data-disclosure-reminder]');
       const today = await activity.locator('[name=occurred_on]').inputValue();
       const yesterday = new Date(Date.parse(today + 'T12:00:00Z') - 86400000).toISOString().slice(0, 10);
@@ -43,13 +45,35 @@ async function main() {
       }
       assert.equal(await page.locator('[data-disclosure-history] > li').count(), baseline + 3);
       assert.equal(await page.locator('[data-disclosure-history] script').count(), 0);
-      await reminder.locator('[name=due_on]').fill(today); await reminder.locator('[name=next_step]').fill('Wait for reply'); await submit(reminder);
+      await reminder.locator('[name=due_on]').fill(today); await reminder.locator('[name=next_step]').fill('Wait for reply <b>local text</b>'); await submit(reminder);
       await goto(page, '/findings?reminder=today'); assert.equal(await page.locator('[data-finding-id]').count(), 1);
+      await page.locator('[data-inventory-view=workbasket]').click();
+      assert.equal(new URL(page.url()).searchParams.get('view'), 'workbasket');
+      const workRow = page.locator(`[data-finding-id="${id}"]`);
+      assert.equal(await workRow.locator('[data-dimension=reminder] time').getAttribute('datetime'), today);
+      assert.equal(await workRow.locator('[data-dimension=next-step] > span:last-child').textContent(), 'Wait for reply <b>local text</b>');
+      assert.equal(await workRow.locator('[data-dimension=next-step] b').count(), 0);
+      assert.ok((await workRow.locator('[data-dimension=contact-route]').innerText()).includes(routeDestination ?? (locale === 'de' ? 'Kein Meldeweg gewählt' : 'No disclosure route selected')));
+      assert.ok((await workRow.locator('[data-dimension=disclosure-activity]').innerText()).includes(locale === 'de' ? 'Notiz' : 'Note'));
+      assert.equal(await workRow.locator('[data-dimension=disclosure-activity] time').getAttribute('datetime'), today);
+      assert.ok((await page.locator('.studio-list-order').textContent()).includes(locale === 'de' ? 'Früheste Termine zuerst' : 'Earliest due dates first'));
+      for (const control of ['[data-scope=discarded]', '[data-reminder-filter=overdue]', '[data-export-selection]']) {
+        assert.equal(new URL(await page.locator(control).getAttribute('href'), origin).searchParams.get('view'), 'workbasket');
+      }
+      const workReturn = new URL(await workRow.locator('.studio-finding-open').getAttribute('href'), origin).searchParams.get('return_to');
+      await workRow.locator('.studio-finding-open').click();
+      assert.equal(new URL(page.url()).searchParams.get('return_to'), workReturn);
+      await page.locator('.studio-detail-back').click();
+      assert.equal(new URL(page.url()).searchParams.get('view'), 'workbasket');
+      await workRow.scrollIntoViewIfNeeded();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.screenshot({ path: path.join(output, `workbasket-${locale}-${width}-${javaScriptEnabled ? 'js' : 'native'}.png`) });
       await open(page.locator('[data-inventory-views]')); await open(page.locator('[data-current-view-save]'));
       const viewName = 'Today ' + locale + width + javaScriptEnabled;
       await page.locator('[data-view-create] [name=name]').fill(viewName); await submit(page.locator('[data-view-create]'));
       const saved = page.locator('[data-saved-view]').filter({ has: page.locator('[data-view-open]', { hasText: viewName }) });
       assert.equal(new URL(await saved.locator('[data-view-open]').getAttribute('href'), origin).searchParams.get('reminder'), 'today');
+      assert.equal(new URL(await saved.locator('[data-view-open]').getAttribute('href'), origin).searchParams.get('view'), 'workbasket');
       await saved.locator('[data-view-open]').click(); assert.equal(await page.locator('[data-finding-id]').count(), 1);
       await goto(page, detail);
       const stale = await context.newPage(); await goto(stale, detail);
@@ -58,6 +82,14 @@ async function main() {
       assert.equal(new URL(stale.url()).searchParams.has('error'), true); await stale.close();
       await goto(page, '/findings?reminder=overdue'); assert.equal(await page.locator('[data-finding-id]').count(), 1);
       await goto(page, '/findings?reminder=today'); assert.equal(await page.locator('[data-finding-id]').count(), 0);
+      await goto(page, '/findings?view=workbasket&reminder=today');
+      assert.equal(await page.locator('[data-finding-id]').count(), 0);
+      assert.equal(await page.locator('[data-list-empty-state] h3').textContent(), locale === 'de' ? 'Keine offenen Wiedervorlagen für diese Filter' : 'No open reminders match these filters');
+      await page.locator('[data-reminder-filter=overdue]').click(); assert.equal(await page.locator('[data-finding-id]').count(), 1);
+      await page.locator('[data-reminder-filter=open]').click(); assert.equal(await page.locator('[data-finding-id]').count(), 1);
+      await page.locator('[data-inventory-view=inventory]').click();
+      assert.equal(new URL(page.url()).searchParams.has('view'), false);
+      assert.ok((await page.locator('.studio-list-order').textContent()).includes(locale === 'de' ? 'Neueste zuerst' : 'Newest first'));
       await goto(page, detail);
       await page.locator('.studio-detail-sections a[href="#meldung"]').click();
       await page.waitForFunction(() => document.querySelector('#meldung').getBoundingClientRect().top >= document.querySelector('.studio-detail-sections').getBoundingClientRect().bottom);
@@ -67,7 +99,7 @@ async function main() {
       assert.equal(await page.locator('[data-current-reminder]').getAttribute('data-reminder-open'), 'no');
       await goto(page, '/findings?reminder=overdue'); assert.equal(await page.locator('[data-finding-id]').count(), 0);
       await open(page.locator('[data-inventory-views]')); const row = page.locator('[data-saved-view]').filter({ has: page.locator('[data-view-open]', { hasText: viewName }) }); await open(row.locator('.studio-view-manage')); await submit(row.locator('[data-view-delete]'));
-      checks.push(`${locale} ${width}px ${javaScriptEnabled ? 'JS' : 'native'}: activities, reminder replace/complete, stale rejection, today/overdue, saved view and layout`);
+      checks.push(`${locale} ${width}px ${javaScriptEnabled ? 'JS' : 'native'}: activities, reminder replace/complete, stale rejection, today/overdue, workbasket fields, safe text, saved workbasket, return link, period controls and layout`);
       console.log('PASS ' + checks.at(-1)); await context.close();
     }
     assert.equal(await state(), before); assert.deepEqual(errors, []); assert.deepEqual(external, []); assert.deepEqual(writes, []);

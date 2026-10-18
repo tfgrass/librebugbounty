@@ -33,5 +33,5 @@ $workspaceItems = [
     <a class="studio-utility-link" href="/about" data-utility-open="about" title="<?= $escape($t('Über LibreBugBounty')) ?>" aria-label="<?= $escape($t('Über LibreBugBounty')) ?>" aria-haspopup="dialog"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></svg></a>
   </div>
 </nav>
-<link rel="stylesheet" href="/css/studio-utilities.css">
-<script src="/js/studio-utilities.js" defer></script>
+<link rel="stylesheet" href="/css/studio-utilities.css?v=<?= substr(hash_file('sha256', __DIR__.'/../../public/css/studio-utilities.css'), 0, 16) ?>">
+<script src="/js/studio-utilities.js?v=<?= substr(hash_file('sha256', __DIR__.'/../../public/js/studio-utilities.js'), 0, 16) ?>" defer></script>

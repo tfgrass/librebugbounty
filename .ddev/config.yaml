@@ -31,6 +31,9 @@ hooks:
     - exec: "supervisorctl restart webextradaemons:screenshot-worker-1 webextradaemons:screenshot-worker-2 webextradaemons:screenshot-worker-3 webextradaemons:screenshot-worker-4"
     - exec: "supervisorctl restart webextradaemons:recheck-worker-1 webextradaemons:recheck-worker-2 webextradaemons:recheck-worker-3 webextradaemons:recheck-worker-4"
 web_extra_daemons:
+  - name: update-worker
+    command: "until [ -f vendor/autoload.php ]; do sleep 1; done; exec php bin/console app:update:worker --no-interaction"
+    directory: /var/www/html
   - name: screenshot-worker-1
     command: "until [ -f vendor/autoload.php ]; do sleep 1; done; PLAYWRIGHT_WORKER_URL=http://playwright-shot-1:3000 exec php bin/console app:screenshot:worker --sleep=2 --worker-id=shot-1 --no-interaction"
     directory: /var/www/html

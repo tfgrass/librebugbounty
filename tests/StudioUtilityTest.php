@@ -4,6 +4,7 @@ namespace App\Tests;
 
 use App\AppInfo;
 use App\Service\BrowserHealthService;
+use App\Service\InteractiveHealthService;
 use App\Service\UiTranslator;
 use App\Service\WorkerHeartbeatService;
 use App\Service\WorkerHealthRegistry;
@@ -99,14 +100,15 @@ final class StudioUtilityTest extends DatabaseTestCase
             self::assertSame(0, $xpath->query('//*[@data-utility-warning or @data-health-kind]')->length);
             self::assertSame(0, $client->getRequestsCount());
         } else {
-            self::assertSame(2, $xpath->query('//*[@data-health-kind]')->length);
+            self::assertSame(3, $xpath->query('//*[@data-health-kind]')->length);
+            self::assertSame(2, $xpath->query('//*[@data-health-interactive-service]')->length);
             self::assertSame('/status', $xpath->evaluate('string(//a[contains(@class,"studio-health-refresh")]/@href)'));
             self::assertSame(0, $xpath->query('//*[@data-health-kind]//details')->length);
             self::assertSame(8, $xpath->query('//*[@data-health-worker and not(ancestor::details)]')->length);
             self::assertSame(4, $xpath->query('//meter[@data-health-meter and @aria-label]')->length);
             self::assertSame(2, $xpath->query('//*[@data-health-errors="technical" or @data-health-errors="screenshot"][not(ancestor::details)]')->length);
             $registry = self::getContainer()->get(WorkerHealthRegistry::class);
-            self::assertSame(2 * count($registry->browserUrls()), $client->getRequestsCount());
+            self::assertSame(2 * (count($registry->browserUrls()) + 2), $client->getRequestsCount());
         }
         self::assertSame($before, $this->databaseRows(), 'Both utility responses are read-only.');
     }
@@ -137,7 +139,7 @@ final class StudioUtilityTest extends DatabaseTestCase
             self::assertSame(Response::HTTP_OK, $response->getStatusCode());
             $xpath = $this->xpath($response->getContent());
             self::assertSame($warning, $xpath->evaluate('string(//*[@data-utility-content]/@data-utility-warning)'));
-            self::assertSame(2, $xpath->query('//*[@data-health-state="'.$state.'"]')->length);
+            self::assertSame(2, $xpath->query('//*[@data-health-kind!="interactive" and @data-health-state="'.$state.'"]')->length);
             self::assertSame($warning, $xpath->evaluate('string(//*[@data-service-warning]/@data-service-warning)'));
             $active = $time === 'now' ? $workers : 0;
             self::assertSame(2, $xpath->query('//meter[@data-health-meter="workers" and @value="'.$active.'" and @max="4"]')->length);
@@ -149,10 +151,68 @@ final class StudioUtilityTest extends DatabaseTestCase
         self::assertSame($before, $this->databaseRows());
     }
 
-    private function mockBrowsers(bool $reachable = true): MockHttpClient
+    public static function interactiveStates(): iterable
     {
-        $client = new MockHttpClient(static fn () => new MockResponse($reachable ? '{"ok":true}' : '{"ok":false}'));
+        yield 'worker down' => [false, true, 'available', 'available', 'true'];
+        yield 'gateway down' => [true, false, 'available', 'available', 'true'];
+        yield 'free' => [true, true, 'available', 'available', 'false'];
+        yield 'busy' => [true, true, 'active', 'busy', 'false'];
+        yield 'expired' => [true, true, 'active', 'expired', 'false'];
+    }
+
+    #[DataProvider('interactiveStates')]
+    public function testInteractiveServiceFailuresAffectOverallWarningWhileLeaseAvailabilityStaysSeparate(bool $worker, bool $gateway, string $leaseState, string $availability, string $warning): void
+    {
+        $this->mockBrowsers(true, false);
+        $registry = self::getContainer()->get(WorkerHealthRegistry::class);
+        $heartbeats = self::getContainer()->get(WorkerHeartbeatService::class);
+        foreach ([WorkerHeartbeatService::RECHECK, WorkerHeartbeatService::SCREENSHOT] as $kind) {
+            foreach (array_keys($registry->forKind($kind)) as $id) {
+                $heartbeats->touch($kind, new \DateTimeImmutable(), $id);
+            }
+        }
+        $connection = $this->entityManager->getConnection();
+        $connection->executeStatement('DROP TABLE IF EXISTS interactive_browser_lease');
+        require_once dirname(__DIR__).'/migrations/Version20261017000000.php';
+        $migration = new \DoctrineMigrations\Version20261017000000($connection, new \Psr\Log\NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        foreach ($migration->getSql() as $sql) {
+            $connection->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
+        }
+        $connection->executeStatement('UPDATE interactive_browser_lease SET state = ?, expires_at = ?, finding_id = ?, owner_hash = ?, channel_id = ?', [$leaseState, $availability === 'expired' ? time() - 1 : time() + 1200, 'private-finding', 'private-owner', 'private-channel']);
+        $client = new MockHttpClient(static fn (string $method, string $url) => new MockResponse(str_ends_with($url, '/health') ? ($worker ? '{"ok":true}' : '{"ok":false}') : ($gateway ? '{"activeGeneration":1,"sockets":[]}' : '{"error":"unavailable"}')));
+        self::getContainer()->set(InteractiveHealthService::class, new InteractiveHealthService($connection, $client, 'http://interactive:3000', 'private-token'));
+        $before = $this->databaseRows();
+        $leaseBefore = $connection->fetchAllAssociative('SELECT * FROM interactive_browser_lease');
+        try {
+            foreach (['/status', '/status?fragment=1'] as $path) {
+                $response = $this->request($path);
+                self::assertSame(200, $response->getStatusCode());
+                $html = $response->getContent();
+                $xpath = $this->xpath($html);
+                self::assertSame($warning, $xpath->evaluate('string(//*[@data-service-warning]/@data-service-warning)'));
+                self::assertSame($availability, $xpath->evaluate('string(//*[@data-health-interactive-availability]/@data-health-interactive-availability)'));
+                self::assertSame($worker && $gateway ? 'ok' : 'degraded', $xpath->evaluate('string(//*[@data-health-kind="interactive"]/@data-health-state)'));
+                self::assertSame(2, $xpath->query('//*[@data-health-kind!="interactive" and @data-health-state="ok"]')->length);
+                foreach (['private-finding', 'private-owner', 'private-channel', 'private-token'] as $secret) {
+                    self::assertStringNotContainsString($secret, $html);
+                }
+            }
+            self::assertSame(4, $client->getRequestsCount(), 'Each explicit status render performs exactly two read-only interactive checks.');
+            self::assertSame($before, $this->databaseRows());
+            self::assertSame($leaseBefore, $connection->fetchAllAssociative('SELECT * FROM interactive_browser_lease'));
+        } finally {
+            $connection->executeStatement('DROP TABLE interactive_browser_lease');
+        }
+    }
+
+    private function mockBrowsers(bool $reachable = true, bool $interactive = true): MockHttpClient
+    {
+        $client = new MockHttpClient(static fn (string $method, string $url) => new MockResponse(str_ends_with($url, '/vnc-control/state') ? '{"activeGeneration":null,"sockets":[]}' : ($reachable ? '{"ok":true}' : '{"ok":false}')));
         self::getContainer()->set(BrowserHealthService::class, new BrowserHealthService($client, self::getContainer()->get(WorkerHealthRegistry::class)));
+        if ($interactive) {
+            self::getContainer()->set(InteractiveHealthService::class, new InteractiveHealthService($this->entityManager->getConnection(), $client, 'http://interactive:3000', 'isolated-health-token'));
+        }
 
         return $client;
     }

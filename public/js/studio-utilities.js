@@ -44,20 +44,26 @@
         }
       }
     });
+    dialog.addEventListener('submit', event => {
+      const form = event.target;
+      if (kind !== 'about' || !body.contains(form) || !form.matches('[data-release-check-form]')) return;
+      event.preventDefault();
+      void load({ method: 'POST', data: new FormData(form) });
+    });
   };
   const loadStyles = () => new Promise(resolve => {
     if (document.querySelector('link[href="/css/studio-settings.css"]')) { resolve(); return; }
     const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/css/studio-settings.css';
     css.onload = css.onerror = resolve; document.head.append(css);
   });
-  const load = async () => {
+  const load = async ({ method = 'GET', data } = {}) => {
     const version = ++sequence; request?.abort(); request = new AbortController();
     if (body.contains(document.activeElement)) dialog.querySelector('[data-utility-close]').focus();
     body.textContent = labels().utilityLabelLoading; body.setAttribute('aria-busy', 'true');
-    const url = '/' + kind;
+    const url = method === 'POST' ? '/about/check-update' : '/' + kind;
     try {
       const [response] = await Promise.all([
-        fetch(url + '?fragment=1', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'text/html' }, signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) }),
+        fetch(url + '?fragment=1', { method, body: data, credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'text/html' }, signal: AbortSignal.any([request.signal, AbortSignal.timeout(15000)]) }),
         loadStyles(),
       ]);
       if (!response.ok || !response.headers.get('Content-Type')?.includes('text/html')) throw new Error('Unavailable');

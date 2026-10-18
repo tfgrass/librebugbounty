@@ -102,7 +102,7 @@ foreach ($detail?->screenshots ?? [] as $index => $shot) {
   <script src="/js/studio-review-viewer.js" defer></script>
   <script src="/js/studio-review-preload.js" defer></script>
   <script src="/js/studio-review.js" defer></script>
-  <script type="module" src="/js/studio-review-novnc.js"></script>
+  <script type="module" src="/js/studio-review-novnc.js?v=<?= substr(hash_file('sha256', __DIR__.'/../../public/js/studio-review-novnc.js'), 0, 16) ?>"></script>
 </head>
 <body data-studio data-studio-review data-review-trail="<?= $escape($reviewTrailId) ?>" data-review-decision-delay="<?= $reviewDecisionDelaySeconds ?>" data-total="<?= $view->total ?>" data-remaining="<?= $view->remaining ?>" data-current-id="<?= $escape($finding?->getId() ?? '') ?>">
   <div data-review-preloads="<?= $escape(json_encode($view->preloadImages, JSON_THROW_ON_ERROR)) ?>" class="studio-shell studio-review-shell<?= $finding !== null || $reviewBackAvailable ? ' review-has-card' : '' ?><?= $isNotice ? ' review-has-notice' : '' ?>">

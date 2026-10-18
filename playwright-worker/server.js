@@ -17,6 +17,7 @@ const INTERACTIVE_INPUT_WAIT_MS = 500;
 const MAX_INTERACTIVE_SESSIONS = 1;
 const INTERACTIVE_DIALOG_CAPTURE_TIMEOUT_MS = 6000;
 const MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS = 2;
+const MAX_INTERACTIVE_DIALOG_EVENTS_PER_ARM = 20;
 const INTERACTIVE_SWEEP_MS = 30000;
 const INTERACTIVE_OPERATION_TIMEOUT_MS = 15000;
 const MAX_BODY_BYTES = 64 * 1024;
@@ -250,7 +251,7 @@ function createInteractiveRuntime(dependencies = {}) {
       return {
         active: Boolean(session && session.expiresAt.getTime() > currentTime(dependencies)),
         expiresAt: session ? session.expiresAt.getTime() : null,
-        captureLocked: Boolean(gates.size || session?.inputGates || session?.gateFailed || session?.captureResult),
+        captureLocked: Boolean(gates.size || session?.inputGates || session?.openDialogs?.size || session?.gateFailed || session?.captureResult),
       };
     },
     onQuiesce(fn) { quiesceListeners.add(fn); return () => quiesceListeners.delete(fn); },
@@ -440,7 +441,8 @@ function interactiveSessionView(session) {
   return {
     id: session.id,
     generation: session.generation,
-    captureLocked: Boolean(session.captureResult || session.inputGates || session.gateFailed),
+    captureLocked: Boolean(session.captureResult || session.inputGates || session.openDialogs.size || session.gateFailed),
+    captureFinalized: Boolean(session.captureResult),
     captureId: session.captureResult?.metadata.captureId || null,
     captureGeneration: session.captureResult?.metadata.captureGeneration ?? null,
     createdAt: session.createdAt.toISOString(),
@@ -458,7 +460,15 @@ function interactiveSessionView(session) {
     navigationError: session.navigationError,
     dialogSeen: session.dialogInfo !== null,
     dialogObservation: session.dialogInfo ? { ...session.dialogInfo } : null,
+    dialogCapture: {
+      state: session.dialogCaptureState,
+      revision: session.dialogCaptureRevision,
+      armed: session.dialogCaptureArmed,
+      pending: session.openDialogs.size > 0,
+      attemptsRemaining: Math.max(0, MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS - session.dialogCaptureAttempts),
+    },
     retainedDialog: session.dialogFrame ? {
+      id: session.dialogFrame.id,
       capturedAt: session.dialogFrame.capturedAt, detectedAt: session.dialogFrame.detectedAt,
       pageUrl: session.dialogFrame.pageUrl, type: session.dialogFrame.type, message: session.dialogFrame.message,
     } : null,
@@ -466,6 +476,110 @@ function interactiveSessionView(session) {
     dialogFramePageUrl: session.dialogFrame?.pageUrl || null,
     dialogFrameDetectedAt: session.dialogFrame?.detectedAt || null,
   };
+}
+
+function updateDialogCapture(session, state = session.dialogCaptureState) {
+  session.dialogCaptureState = state;
+  session.dialogCaptureRevision += 1;
+}
+
+function heldDialogError() {
+  return httpError(409, 'A native dialog is waiting; retry its image or dismiss it explicitly.');
+}
+
+// A failed native dialog can stop an already running navigation, key command or
+// DOM inspection. Stop waiting on that command without closing the live browser;
+// the original promise is observed and may finish after explicit dismissal.
+async function pageOperationUnlessHeld(session, operation) {
+  if (session.heldDialog) throw heldDialogError();
+  const generation = session.generation;
+  let wake;
+  let active = true;
+  const checkCurrent = () => {
+    if (!active || session.closed || session.heldDialog) throw heldDialogError();
+    session.runtime?.checkMutation(session, generation);
+  };
+  const held = new Promise((_, reject) => { wake = () => reject(heldDialogError()); });
+  session.dialogHoldWaiters.add(wake);
+  try {
+    return await Promise.race([Promise.resolve().then(() => operation(checkCurrent)), held]);
+  } finally {
+    active = false;
+    session.dialogHoldWaiters.delete(wake);
+  }
+}
+
+function holdInteractiveDialog(session, item, error) {
+  item.held = true;
+  session.heldDialog ||= item;
+  item.info.captureError = error.message;
+  updateDialogCapture(session, session.dialogCaptureAttempts >= MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS
+    || session.dialogEventsSinceArm > MAX_INTERACTIVE_DIALOG_EVENTS_PER_ARM ? 'exhausted' : 'failed');
+  for (const wake of session.dialogHoldWaiters) wake();
+}
+
+async function dismissInteractiveDialog(session, item) {
+  try {
+    await item.dialog.dismiss();
+    item.info.dismissed = true;
+  } catch (error) {
+    // Do not release the input gate if the native dialog may still be present.
+    if (!session.closed && !item.sourcePage.isClosed?.()) {
+      holdInteractiveDialog(session, item, error);
+      throw error;
+    }
+  }
+  session.openDialogs.delete(item);
+  if (session.heldDialog === item) {
+    session.heldDialog = [...session.openDialogs].find((other) => other.held) || null;
+  }
+  updateDialogCapture(session);
+  item.releaseInput?.();
+  item.releaseInput = null;
+}
+
+async function captureInteractiveDialog(session, item, dependencies = {}) {
+  if (session.closed) return;
+  if (session.dialogCaptureAttempts >= MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS) {
+    holdInteractiveDialog(session, item, new Error('Dialog capture attempt limit reached; dismiss and arm again.'));
+    return;
+  }
+  session.dialogCaptureAttempts += 1;
+  updateDialogCapture(session, 'capturing');
+  try {
+    if (item.gateError || session.gateFailed) throw item.gateError || new Error('Session input gate failed.');
+    if (session.openDialogs.size !== 1) throw new Error('Multiple native dialogs are open; dismiss one before retrying.');
+    // Always focus the actual dialog owner, including a main page whose popup
+    // had previously stolen foreground. No DOM work is needed for this.
+    await item.sourcePage.bringToFront();
+    const wait = dependencies.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    await wait(dependencies.dialogRenderDelayMs ?? DIALOG_RENDER_DELAY_MS);
+    const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+    const screenshotBase64 = await captureDialogWithin(captureDesktop);
+    if (!screenshotBase64) throw new Error('Dialog desktop capture returned no image.');
+    if (session.closed) return;
+    // A second popup can steal the X11 foreground while ffmpeg runs. Its image
+    // must never be attributed to the first dialog's URL/message.
+    if (session.openDialogs.size !== 1 || !session.openDialogs.has(item)) {
+      throw new Error('Another native dialog appeared during capture; dismiss one before retrying.');
+    }
+    const capturedAt = new Date(currentTime(dependencies)).toISOString();
+    item.info.capturedAt = capturedAt;
+    item.info.captureSucceeded = true;
+    item.info.captureError = null;
+    session.dialogFrame = Object.freeze({
+      id: randomBytes(24).toString('hex'), screenshotBase64, capturedAt,
+      pageUrl: item.info.pageUrl, page: item.sourcePage,
+      navigationSequence: session.pageNavigationSequence.get(item.sourcePage),
+      detectedAt: item.info.detectedAt, type: item.info.type, message: item.info.message,
+      http: item.sourcePage === session.page ? { ...session.currentHttp } : emptyHttp(item.info.pageUrl),
+    });
+    session.dialogCaptureArmed = false;
+    updateDialogCapture(session, 'captured');
+    await dismissInteractiveDialog(session, item);
+  } catch (error) {
+    if (!session.closed) holdInteractiveDialog(session, item, error);
+  }
 }
 
 async function captureDialogWithin(captureDesktop) {
@@ -575,11 +689,14 @@ function emptyHttp(url = null) {
 }
 
 async function inspectInteractiveChallenge(session, dependencies = {}) {
+  if (session.openDialogs.size) {
+    return { state: 'unknown', active: null, snapshot: { reason: 'Native dialog is still open.' } };
+  }
   const inspect = dependencies.inspectChallengePage || inspectChallengePage;
   const navigationBefore = session.pageNavigationSequence.get(session.page);
   let inspection;
   try {
-    inspection = await inspect(session.page);
+    inspection = await pageOperationUnlessHeld(session, () => inspect(session.page));
   } catch (error) {
     inspection = { state: 'unknown', active: null, snapshot: { error: error.message } };
   }
@@ -635,7 +752,11 @@ async function launchInteractiveSession(payload, dependencies = {}) {
     lastChallenge: null, initialChallenge: null, navigationError: null,
     dialogInfo: null, dialogFrame: null, activeDialogTasks: new Set(), observedDialogs: new WeakSet(),
     pendingDialogs: [], backgroundDialogScheduled: false,
-    dialogCaptureAttempts: 0, pageNavigationSequence: new WeakMap(), pageHandlers: new Map(),
+    dialogCaptureAttempts: 0, dialogEventsSinceArm: 0,
+    dialogCaptureState: 'waiting', dialogCaptureRevision: 0, dialogCaptureArmed: true,
+    heldDialog: null, openDialogs: new Set(), dialogHoldWaiters: new Set(),
+    dialogWorkTail: Promise.resolve(),
+    pageNavigationSequence: new WeakMap(), pageHandlers: new Map(),
     closed: false, captureResult: null,
   };
   if (!SESSION_ID_PATTERN.test(record.id)) throw new Error('Invalid generated interactive session ID.');
@@ -702,50 +823,51 @@ async function launchInteractiveSession(payload, dependencies = {}) {
             dismissed: false, capturedAt: null, captureSucceeded: false, captureError: null,
           };
           record.dialogInfo = info;
-          let releaseInput;
-          let gateError;
-          try { releaseInput = record.runtime?.quiesce(record); }
-          catch (error) { gateError = error; }
-          const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+          record.dialogEventsSinceArm += 1;
+          const item = { dialog, sourcePage, info, releaseInput: null, gateError: null, held: false };
+          record.openDialogs.add(item);
+          updateDialogCapture(record);
+          try { item.releaseInput = record.runtime?.quiesce(record); }
+          catch (error) { item.gateError = error; }
           const handle = async () => {
-            try {
-              if (record.closed) return;
-              if (gateError) throw gateError;
-              if (record.dialogCaptureAttempts < MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS) {
-                record.dialogCaptureAttempts += 1;
-                // A popup can own the native dialog while the opener remains
-                // foregrounded. This runs inside the display lease.
-                if (sourcePage !== record.page) await sourcePage.bringToFront();
-                const wait = dependencies.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
-                await wait(dependencies.dialogRenderDelayMs ?? DIALOG_RENDER_DELAY_MS);
-                const screenshotBase64 = await captureDialogWithin(captureDesktop);
-                if (!screenshotBase64) throw new Error('Dialog desktop capture returned no image.');
-                const capturedAt = new Date(currentTime(dependencies)).toISOString();
-                info.capturedAt = capturedAt;
-                info.captureSucceeded = true;
-                record.dialogFrame ??= Object.freeze({
-                  screenshotBase64, capturedAt, pageUrl: info.pageUrl, page: sourcePage,
-                  navigationSequence: record.pageNavigationSequence.get(sourcePage),
-                  detectedAt: info.detectedAt, type: info.type, message: info.message,
-                  http: sourcePage === record.page ? { ...record.currentHttp } : emptyHttp(info.pageUrl),
-                });
-              }
-            } catch (error) {
-              info.captureError = error.message;
-            } finally {
-              try { await dialog.dismiss(); info.dismissed = true; }
-              catch { /* The page may have closed during capture. */ }
-              releaseInput?.();
+            if (record.closed) return;
+            // Never automatically dismiss a dialog held after failure. A second
+            // popup must wait for the operator too, rather than stealing proof.
+            if (record.heldDialog && record.heldDialog !== item) {
+              holdInteractiveDialog(record, item, new Error('Another native dialog is waiting for a decision.'));
+              return;
             }
+            if (record.dialogEventsSinceArm > MAX_INTERACTIVE_DIALOG_EVENTS_PER_ARM) {
+              record.dialogCaptureArmed = false;
+              holdInteractiveDialog(record, item, new Error('Dialog loop limit reached; dismiss and arm again.'));
+              return;
+            }
+            if (!record.captureResult && record.dialogCaptureArmed) {
+              await captureInteractiveDialog(record, item, dependencies);
+            } else {
+              // An unarmed later dialog is only observed; it cannot replace the
+              // selected candidate or mutate an already finalized capture.
+              try { await dismissInteractiveDialog(record, item); }
+              catch { /* Dismiss failure is retained for explicit recovery. */ }
+            }
+          };
+          const enqueueHandle = () => {
+            // Even background work already inside processPendingDialogs can
+            // receive another popup while awaiting capture/dismiss.
+            const task = record.dialogWorkTail.then(handle, handle);
+            record.dialogWorkTail = task.catch(() => {});
+            record.activeDialogTasks.add(task);
+            void task.finally(() => record.activeDialogTasks.delete(task)).catch(() => {});
+            return task;
           };
           // Dialogs triggered by navigation or input already own the display.
           // Between requests, queue capture behind the current desktop owner.
           if (record.displayOperationActive) {
-            const task = handle();
-            record.activeDialogTasks.add(task);
-            void task.finally(() => record.activeDialogTasks.delete(task)).catch(() => {});
+            // Page and context events can report distinct popups in the same
+            // turn. They still share one desktop and must not capture at once.
+            void enqueueHandle();
           } else {
-            record.pendingDialogs.push(handle);
+            record.pendingDialogs.push(enqueueHandle);
             scheduleBackgroundDialogs();
           }
         };
@@ -790,7 +912,7 @@ async function launchInteractiveSession(payload, dependencies = {}) {
       page.on('response', record.responseHandler);
       page.on('framenavigated', record.navigationHandler);
       try {
-        const response = await page.goto(payload.url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+        const response = await pageOperationUnlessHeld(record, () => page.goto(payload.url, { waitUntil: 'domcontentloaded', timeout: timeoutMs }));
         if (signal.aborted) throw httpError(504, 'Interactive start timed out.');
         if (response) {
           record.initialHttp = readResponse(response);
@@ -819,7 +941,8 @@ async function launchInteractiveSession(payload, dependencies = {}) {
         }
       }
       record.initialFinalUrl = record.initialHttp.url || page.url();
-      await page.bringToFront();
+      await drainActiveDialogs(record);
+      if (!record.openDialogs.size) await page.bringToFront();
       const initialInspectionNavigation = record.pageNavigationSequence.get(page);
       record.lastChallenge = await inspectInteractiveChallenge(record, dependencies);
       if (signal.aborted) throw httpError(504, 'Interactive start timed out.');
@@ -925,7 +1048,7 @@ async function getInteractiveSession(sessionId, dependencies) {
 
 // Pure retained-memory read: never enter the display FIFO, inspect a page,
 // drain/dismiss dialogs, capture pixels or tear down an expired browser.
-function getInteractiveDialogFrame(sessionId, generation, dependencies = {}) {
+function getInteractiveDialogFrame(sessionId, generation, dependencies = {}, candidateId = null) {
   requireGeneration(generation);
   dependencies.runtime?.checkMutation(null, generation);
   if (!SESSION_ID_PATTERN.test(sessionId)) throw httpError(404, 'Interactive browser session not found.');
@@ -943,6 +1066,7 @@ function getInteractiveDialogFrame(sessionId, generation, dependencies = {}) {
     throw httpError(410, 'Interactive browser session expired.');
   }
   if (!session.dialogFrame) throw httpError(404, 'No retained dialog image.');
+  if (candidateId !== null && candidateId !== session.dialogFrame.id) throw httpError(409, 'Stale retained dialog candidate.');
   const image = Buffer.from(session.dialogFrame.screenshotBase64, 'base64');
   if (!image.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
     throw httpError(502, 'Invalid retained dialog PNG.');
@@ -962,7 +1086,8 @@ function withInteractiveSession(sessionId, operation, dependencies = {}, timeout
         // A dialog may have queued after this request but before its lease was
         // entered. Capture/dismiss it here so a page API cannot wait on it.
         await processPendingDialogs(session);
-        await session.page.bringToFront();
+        await drainActiveDialogs(session);
+        if (!session.openDialogs.size) await session.page.bringToFront();
         if (session.expiresAt.getTime() <= currentTime(dependencies)) {
           interactiveSessions.delete(session.id);
           rememberSession(session.id, 'expired', currentTime(dependencies));
@@ -1018,65 +1143,140 @@ async function runInteractiveInput(sessionId, payload, dependencies = {}) {
   const input = validateInteractiveInput(payload);
   const wait = dependencies.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   return withInteractiveSession(sessionId, async (session) => {
+    if (session.openDialogs.size) throw heldDialogError();
     if (session.captureResult || session.gateFailed) throw httpError(409, 'Session input is locked; retry capture or close it.');
     const page = session.page;
-    switch (input.action) {
-      case 'click':
-        await page.mouse.move(input.x, input.y);
-        await page.mouse.down();
-        await page.mouse.up();
-        break;
-      case 'type': await page.keyboard.insertText(input.text); break;
-      case 'key': await page.keyboard.press(input.key); break;
-      case 'scroll': await page.mouse.wheel(0, Math.round(input.deltaY)); break;
-      case 'reload': await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
-      case 'back': await page.goBack({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
-    }
+    await pageOperationUnlessHeld(session, async (checkCurrent) => {
+      switch (input.action) {
+        case 'click':
+          await page.mouse.move(input.x, input.y);
+          checkCurrent();
+          await page.mouse.down();
+          checkCurrent();
+          await page.mouse.up();
+          break;
+        case 'type': await page.keyboard.insertText(input.text); break;
+        case 'key':
+          await page.keyboard.down(input.key);
+          checkCurrent();
+          await page.keyboard.up(input.key);
+          break;
+        case 'scroll': await page.mouse.wheel(0, Math.round(input.deltaY)); break;
+        case 'reload': await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
+        case 'back': await page.goBack({ waitUntil: 'domcontentloaded', timeout: 45000 }); break;
+      }
+    });
     await wait(INTERACTIVE_INPUT_WAIT_MS);
     if (session.closed) throw httpError(410, 'Interactive browser session closed.');
-    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     await drainActiveDialogs(session);
+    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     return interactiveSessionView(session);
   }, dependencies, ['reload', 'back'].includes(input.action) ? 50000 : INTERACTIVE_OPERATION_TIMEOUT_MS, payload);
 }
 
 async function getInteractiveStatus(sessionId, dependencies = {}) {
   return withInteractiveSession(sessionId, async (session) => {
-    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     await drainActiveDialogs(session);
+    session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
     return interactiveSessionView(session);
   }, dependencies);
 }
 
 async function getInteractiveFrame(sessionId, dependencies = {}) {
   return withInteractiveSession(sessionId, async (session) => {
+    if (session.openDialogs.size) throw heldDialogError();
     const priorDialog = session.dialogInfo;
     try {
-      return await session.page.screenshot({ type: 'png', timeout: 10000 });
+      return await pageOperationUnlessHeld(session, () => session.page.screenshot({ type: 'png', timeout: 10000 }));
     } catch (error) {
       await drainActiveDialogs(session);
+      if (session.openDialogs.size) throw heldDialogError();
       // A dialog may have interrupted the viewport screenshot. Its handler
       // dismisses it after preserving the desktop image; retry the live frame.
       if (session.dialogInfo === priorDialog || session.closed) throw error;
-      return session.page.screenshot({ type: 'png', timeout: 10000 });
+      return pageOperationUnlessHeld(session, () => session.page.screenshot({ type: 'png', timeout: 10000 }));
     }
   }, dependencies);
 }
 
+async function runInteractiveDialog(sessionId, payload, dependencies = {}) {
+  if (!['arm', 'retry', 'dismiss'].includes(payload.action)) throw httpError(400, 'Unsupported dialog action.');
+  if (!Number.isSafeInteger(payload.dialogRevision) || payload.dialogRevision < 0) {
+    throw httpError(400, 'dialogRevision must be a nonnegative safe integer.');
+  }
+  return withInteractiveSession(sessionId, async (session) => {
+    if (session.captureResult) throw httpError(409, 'Capture is finalized; dialog selection is immutable.');
+    if (payload.dialogRevision !== session.dialogCaptureRevision) throw httpError(409, 'Stale dialog capture revision.');
+    if (payload.action === 'arm') {
+      if (session.openDialogs.size) throw heldDialogError();
+      if (session.gateFailed) throw httpError(409, 'Session input gate failed; close the session.');
+      session.dialogCaptureAttempts = 0;
+      session.dialogEventsSinceArm = 0;
+      session.dialogCaptureArmed = true;
+      updateDialogCapture(session, 'waiting');
+    } else {
+      const item = session.heldDialog;
+      if (!item) throw httpError(409, 'No native dialog is waiting.');
+      if (payload.action === 'retry') {
+        if (session.dialogCaptureAttempts >= MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS) {
+          throw httpError(409, 'Dialog capture attempt limit reached; dismiss and arm again.');
+        }
+        session.dialogInfo = item.info;
+        await captureInteractiveDialog(session, item, dependencies);
+      } else {
+        session.dialogCaptureArmed = false;
+        await dismissInteractiveDialog(session, item);
+        updateDialogCapture(session, session.heldDialog
+          ? 'failed' : session.dialogCaptureAttempts >= MAX_INTERACTIVE_DIALOG_CAPTURE_ATTEMPTS
+            ? 'exhausted' : session.dialogFrame ? 'captured' : 'failed');
+      }
+    }
+    return interactiveSessionView(session);
+  }, dependencies, INTERACTIVE_OPERATION_TIMEOUT_MS, payload);
+}
+
 async function captureInteractiveSession(sessionId, dependencies = {}, payload = {}) {
   const captureDesktop = dependencies.captureDesktopScreenshot || captureDesktopScreenshot;
+  const hasCandidateSelection = Object.hasOwn(payload, 'expectedCandidateId');
+  if (workerMode(dependencies) === 'interactive') {
+    requireGeneration(payload.generation);
+    dependencies.runtime?.checkMutation(null, payload.generation);
+    if (!hasCandidateSelection) throw httpError(400, 'expectedCandidateId is required (null for the current page).');
+  }
+  if (hasCandidateSelection && payload.expectedCandidateId !== null
+      && (typeof payload.expectedCandidateId !== 'string' || !SESSION_ID_PATTERN.test(payload.expectedCandidateId))) {
+    throw httpError(400, 'expectedCandidateId must be null or exactly 48 lowercase hex characters.');
+  }
   return withInteractiveSession(sessionId, async (session) => {
+    // Bind fenced saves to the image the operator selected. The optional legacy
+    // API keeps its automatic selection only when no selector was supplied.
+    const expectedCandidateId = payload.expectedCandidateId;
+    const checkCandidate = () => {
+      if (!hasCandidateSelection) return;
+      const actualCandidateId = session.captureResult
+        ? session.captureResult.metadata.dialogCandidateId : session.dialogFrame?.id ?? null;
+      if (actualCandidateId !== expectedCandidateId) throw httpError(409, 'Screenshot candidate changed; refresh the preview before saving.');
+    };
+    checkCandidate();
     // Returning the exact bytes/timestamp lets persistence retry without creating
     // different evidence. Manual input is locked after this first capture.
     if (session.captureResult) return { ...session.captureResult, generation: session.generation };
     await drainActiveDialogs(session);
+    checkCandidate();
+    if (session.openDialogs.size) throw heldDialogError();
     session.lastChallenge = await inspectInteractiveChallenge(session, dependencies);
+    checkCandidate();
     const captureInspectionAt = new Date(currentTime(dependencies)).toISOString();
     const inspectionSequence = session.pageNavigationSequence.get(session.page);
     const view = interactiveSessionView(session);
     let normalImage = null;
-    if (!session.dialogFrame) normalImage = await captureDesktop();
+    if (!session.dialogFrame) {
+      normalImage = await captureDesktop();
+      checkCandidate();
+    }
     await drainActiveDialogs(session);
+    checkCandidate();
+    if (session.openDialogs.size) throw heldDialogError();
     const useDialogFrame = session.dialogFrame !== null;
     const screenshotBase64 = useDialogFrame ? session.dialogFrame.screenshotBase64 : normalImage;
     if (!screenshotBase64) throw new Error('Interactive screenshot capture completed without an image.');
@@ -1107,6 +1307,7 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
       metadata: {
         captureId: randomBytes(24).toString('hex'),
         captureGeneration: session.generation,
+        dialogCandidateId: session.dialogFrame?.id ?? null,
         ...(session.runtime ? { inputMethod: 'vnc', manualInteraction: null, manualActionCount: null } : {}),
         interactive: true,
         manual: true,
@@ -1144,6 +1345,8 @@ async function captureInteractiveSession(sessionId, dependencies = {}, payload =
         browserName: 'chromium',
       },
     };
+    session.dialogCaptureArmed = false;
+    updateDialogCapture(session);
     return session.captureResult;
   }, dependencies, INTERACTIVE_OPERATION_TIMEOUT_MS, { ...payload, capture: true });
 }
@@ -1686,7 +1889,7 @@ function createWorkerServer(dependencies = {}) {
         const session = await startInteractiveSession(await readJson(req), dependencies);
         return sendJson(res, 201, session);
       }
-      const match = pathname.match(/^\/interactive-sessions\/([^/]+)(?:\/(status|frame|dialog-frame|input|capture|close))?$/);
+      const match = pathname.match(/^\/interactive-sessions\/([^/]+)(?:\/(status|frame|dialog-frame|dialog|input|capture|close))?$/);
       if (match) {
         const [, sessionId, operation = 'status'] = match;
         if (req.method === 'GET' && operation === 'status') {
@@ -1698,7 +1901,11 @@ function createWorkerServer(dependencies = {}) {
           if (values.length !== 1 || !/^[1-9][0-9]*$/.test(values[0])) {
             throw httpError(400, 'generation query required.');
           }
-          const image = getInteractiveDialogFrame(sessionId, Number(values[0]), dependencies);
+          const candidates = requestUrl.searchParams.getAll('candidateId');
+          if (candidates.length > 1 || (candidates.length && !SESSION_ID_PATTERN.test(candidates[0]))) {
+            throw httpError(400, 'candidateId must contain exactly 48 lowercase hex characters.');
+          }
+          const image = getInteractiveDialogFrame(sessionId, Number(values[0]), dependencies, candidates[0] ?? null);
           res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store' });
           return res.end(image);
         }
@@ -1707,10 +1914,11 @@ function createWorkerServer(dependencies = {}) {
           res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': image.length, 'Cache-Control': 'no-store' });
           return res.end(image);
         }
-        if (req.method === 'POST' && ['input', 'capture', 'close'].includes(operation)) {
+        if (req.method === 'POST' && ['dialog', 'input', 'capture', 'close'].includes(operation)) {
           // Even empty-body operations must enforce the global transport limit.
           const payload = await readJson(req);
-          const result = operation === 'input' ? await runInteractiveInput(sessionId, payload, dependencies)
+          const result = operation === 'dialog' ? await runInteractiveDialog(sessionId, payload, dependencies)
+            : operation === 'input' ? await runInteractiveInput(sessionId, payload, dependencies)
             : operation === 'capture' ? await captureInteractiveSession(sessionId, dependencies, payload)
               : await closeInteractiveSessionById(sessionId, dependencies, payload);
           return sendJson(res, 200, result);
@@ -1806,6 +2014,7 @@ module.exports = {
   getInteractiveDialogFrame,
   getInteractiveFrame,
   runInteractiveInput,
+  runInteractiveDialog,
   captureInteractiveSession,
   closeInteractiveSessionById,
   runScreenshot,

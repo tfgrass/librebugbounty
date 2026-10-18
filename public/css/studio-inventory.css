@@ -146,6 +146,18 @@
 }
 
 .studio-list-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.studio-list-modes, .studio-list-reminders { display: flex; flex-wrap: wrap; gap: 8px; }
+.studio-list-modes { margin-bottom: 15px; }
+.studio-list-reminders { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--studio-line); }
+.studio-list-modes a[aria-current], .studio-list-reminders a[aria-current] { border-color: var(--studio-blue); background: #23364f; color: #dceaff; }
+.studio-list-workbasket-hint { margin: -3px 0 16px; color: var(--studio-muted); font-size: 12px; line-height: 1.6; }
+.studio-list-workbasket .studio-finding-dimension { overflow-wrap: anywhere; }
+.studio-list-workbasket .studio-finding-state[data-tone="overdue"] { background: #3b2729; color: #ffd0cb; }
+.studio-list-workbasket .studio-finding-state[data-tone="today"] { background: #3c3322; color: #f4dda5; }
+@media (min-width: 1101px) {
+  .studio-list-workbasket .studio-list-column-headings,
+  .studio-list-workbasket .studio-finding-row { grid-template-columns: minmax(0, 2.1fr) minmax(0, .9fr) minmax(0, 1.65fr) minmax(0, 1.4fr) minmax(0, 1.1fr) 76px; }
+}
 
 .studio-inventory-views { margin-bottom: 16px; padding: 13px 18px; border: 1px solid var(--studio-line); border-radius: 7px; background: var(--studio-panel); }
 .studio-inventory-views summary { cursor: pointer; color: #c5d8f2; font-size: 12px; overflow-wrap: anywhere; }

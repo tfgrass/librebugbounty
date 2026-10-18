@@ -16,6 +16,7 @@ const root = path.resolve(__dirname, '../..');
 const id = '11111111-1111-4111-8111-111111111111';
 const basePath = `/review/${id}/interactive`;
 const token = 'synthetic-csrf-token';
+const candidateIds = { first: 'a'.repeat(48), second: 'b'.repeat(48), retried: 'c'.repeat(48) };
 const output = process.env.STUDIO_BROWSER_OUTPUT || '/tmp/librebugbounty-review-novnc-ui';
 const renderPhp = String.raw`
 require getcwd().'/vendor/autoload.php';
@@ -44,9 +45,9 @@ function render(locale = 'en', embedded = false) {
   const pages = new Map();
   for (const locale of ['en', 'de']) for (const embedded of [false, true]) pages.set(`${locale}:${embedded}`, render(locale, embedded));
   let state = { state: 'available', findingId: id, revision: 0, reconnect: false, canTakeover: false, requiresEndStart: false };
-  let previewFailure = false;
-  let statusFailure = false, saveFailure = false, staleNext = false;
-  const posts = [], statuses = [], errors = [], outside = [], sockets = [];
+  let previewFailure = false, holdPreview = false, releasePreview, replaceCandidateOnSave;
+  let statusFailure = false, saveFailure = false, staleNext = false, staleDialogNext = false, retryCaptureFailure = false, ambiguousNext = false;
+  const posts = [], statuses = [], previews = [], errors = [], outside = [], sockets = [];
   const setState = extra => { state = { ...state, reason: undefined, ...extra }; };
   const server = http.createServer(async (req, res) => {
     try {
@@ -66,6 +67,9 @@ function render(locale = 'en', embedded = false) {
       if (url.pathname === basePath + '/dialog-frame') {
         assert.match(req.headers['x-lbb-tab'], /^[a-f0-9]{48}$/);
         assert.equal(url.searchParams.get('revision'), String(state.revision));
+        assert.equal(url.searchParams.get('candidateId'), state.retainedDialog?.id || null);
+        previews.push({ candidateId: url.searchParams.get('candidateId'), revision: url.searchParams.get('revision') });
+        if (holdPreview) await new Promise(resolve => { releasePreview = resolve; });
         if (previewFailure) { res.writeHead(409); res.end(); return; }
         res.setHeader('Content-Type', 'image/png');
         res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64')); return;
@@ -81,20 +85,60 @@ function render(locale = 'en', embedded = false) {
         assert.equal(req.headers.accept, 'application/json');
         assert.equal(body.return_to, `/review?card=${id}&images=all`);
         const action = url.pathname === basePath + '/save' ? 'save' : url.pathname.split('/').pop();
-        assert.equal(url.pathname, action === 'save' ? basePath + '/save' : basePath + '/lease/' + action);
+        const isDialogAction = ['arm', 'retry', 'dismiss'].includes(action);
+        assert.equal(url.pathname, action === 'save' ? basePath + '/save' : basePath + (isDialogAction ? '/dialog/' : '/lease/') + action);
         let code = 200;
         if (staleNext) { staleNext = false; setState({ state: 'busy', revision: state.revision + 1, canTakeover: true, reconnect: false, reason: 'stale_revision' }); code = 409; }
+        else if (staleDialogNext) {
+          staleDialogNext = false;
+          setState({ dialogCapture: { ...state.dialogCapture, revision: state.dialogCapture.revision + 1 }, reason: 'stale_dialog_revision' }); code = 409;
+        }
         else {
           assert.equal(Number(body.expectedRevision), state.revision);
-          if (action === 'end-and-start') assert.equal(body.confirm, '1');
-          if (action === 'save' && !saveFailure) {
-            res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ redirect: '/review?saved=1' })); return;
+          if (isDialogAction) {
+            assert.equal(state.state, 'own_active'); assert.equal(state.captureFinalized, false);
+            assert.equal(Number(body.dialogRevision), state.dialogCapture.revision);
+            const capture = state.dialogCapture;
+            if (action === 'arm') {
+              assert.equal(capture.pending, false);
+              setState({ dialogCapture: { state: 'waiting', revision: capture.revision + 1, armed: true, pending: false, attemptsRemaining: 2 } });
+            } else if (action === 'retry') {
+              assert.equal(capture.pending, true); assert.ok(capture.attemptsRemaining > 0);
+              setState({ captureLocked: retryCaptureFailure,
+                dialogCapture: { state: retryCaptureFailure ? 'exhausted' : 'captured', revision: capture.revision + 1,
+                  armed: retryCaptureFailure, pending: retryCaptureFailure, attemptsRemaining: capture.attemptsRemaining - 1 },
+                ...(!retryCaptureFailure ? { retainedDialog: { id: candidateIds.retried, capturedAt: '2026-10-17T05:33:28Z', pageUrl: 'https://fixture.invalid/after-challenge', message: 'Wanted alert', type: 'alert' } } : {}) });
+            } else {
+              assert.equal(capture.pending, true);
+              setState({ captureLocked: false, dialogCapture: { ...capture, state: state.retainedDialog ? 'captured' : capture.state, revision: capture.revision + 1, armed: false, pending: false } });
+            }
+          } else {
+            if (action === 'end-and-start') assert.equal(body.confirm, '1');
+            if (action === 'save') {
+              assert.ok(Object.hasOwn(body, 'expectedCandidateId'), 'Save must explicitly select a retained image or the current page');
+              assert.match(body.expectedCandidateId, /^(?:[a-f0-9]{48})?$/);
+              if (replaceCandidateOnSave) {
+                setState({ retainedDialog: replaceCandidateOnSave });
+                replaceCandidateOnSave = undefined;
+              }
+              if (body.expectedCandidateId !== (state.retainedDialog?.id || '')) {
+                res.writeHead(409, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ...state, reason: 'stale_dialog_revision' })); return;
+              }
+            }
+            if (action === 'save' && !saveFailure) {
+              res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ redirect: '/review?saved=1' })); return;
+            }
+            if (action === 'save') { assert.equal(state.dialogCapture?.pending, false); setState({ captureLocked: true, captureFinalized: true }); code = 503; }
+            else if (action === 'release') setState({ state: 'available', revision: state.revision + 1, reconnect: false, captureLocked: false, captureFinalized: false, dialogCapture: undefined, retainedDialog: undefined });
+            else setState({ state: 'own_active', revision: state.revision + 1, reconnect: true, captureLocked: false, captureFinalized: false,
+              dialogCapture: { state: 'waiting', revision: 0, armed: true, pending: false, attemptsRemaining: 2 },
+              expiresInSec: 1190, canTakeover: false, requiresEndStart: false });
           }
-          if (action === 'save') { setState({ captureLocked: true }); code = 503; }
-          else if (action === 'release') setState({ state: 'available', revision: state.revision + 1, reconnect: false, captureLocked: false });
-          else setState({ state: 'own_active', revision: state.revision + 1, reconnect: true, captureLocked: false, expiresInSec: 1190, canTakeover: false, requiresEndStart: false });
         }
-        res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(state)); return;
+        res.writeHead(code, { 'Content-Type': 'application/json' });
+        if (ambiguousNext) { ambiguousNext = false; res.end('{'); return; }
+        res.end(JSON.stringify(state)); return;
       }
       if (/^\/(css|js|vendor\/novnc)\//.test(url.pathname)) {
         const file = path.resolve(root, 'public', '.' + url.pathname);
@@ -140,7 +184,7 @@ function render(locale = 'en', embedded = false) {
   const button = (page, action) => page.locator(`[data-novnc-action="${action}"]`);
   const panel = page => page.locator('[data-review-novnc]');
   const refresh = page => page.evaluate(async () => {
-    const { mountInteractivePanel } = await import('/js/studio-review-novnc.js');
+    const { mountInteractivePanel } = await import(document.querySelector('script[src*="studio-review-novnc.js"]').src);
     await mountInteractivePanel(document.querySelector('[data-review-novnc]')).refresh();
     // Join an existing poll, then request the fixture state set by this test.
     await mountInteractivePanel(document.querySelector('[data-review-novnc]')).refresh();
@@ -185,6 +229,8 @@ function render(locale = 'en', embedded = false) {
 
     await button(page, 'acquire').click(); await waitState(page, 'own_active');
     await page.waitForFunction(() => document.querySelector('[data-novnc-connection]').textContent.includes('Live connection'));
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Waiting for a dialog');
+    assert.equal(await button(page, 'dialog-arm').isDisabled(), true);
     assert.equal(posts.length, 1); assert.equal(posts[0].url, basePath + '/lease/acquire');
     assert.ok(await page.locator('[data-novnc-screen] canvas').count());
     const options = await page.evaluate(() => window.wsOptions.at(-1));
@@ -251,10 +297,117 @@ function render(locale = 'en', embedded = false) {
     assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false);
     mark('Takeover and destructive end-and-start need explicit confirmation; stale revision never automatically repeats an action');
 
-    setState({ state: 'own_active', reconnect: true, revision: 13, canTakeover: false, captureLocked: false }); await refresh(page);
+    setState({ state: 'own_active', reconnect: true, revision: 13, canTakeover: false, captureLocked: false, captureFinalized: false }); await refresh(page);
     await page.waitForFunction(() => document.querySelector('[data-novnc-screen] canvas'));
+    setState({ captureLocked: true, dialogCapture: { state: 'capturing', revision: 1, armed: true, pending: true, attemptsRemaining: 1 } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Capturing dialog image …');
+    assert.equal(await button(page, 'save').isDisabled(), true);
+    assert.equal(await button(page, 'dialog-retry').isVisible(), false);
+    assert.equal(await button(page, 'dialog-dismiss').isVisible(), false);
+    const candidate = { id: candidateIds.first, capturedAt: '2026-10-17T05:33:27Z', pageUrl: 'https://fixture.invalid/challenge', message: 'Earlier dialog', type: 'alert' };
+    setState({ captureLocked: false, retainedDialog: candidate,
+      dialogCapture: { state: 'captured', revision: 2, armed: false, pending: false, attemptsRemaining: 1 } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Dialog image captured');
+    const beforeArm = posts.length;
+    await button(page, 'dialog-arm').click(); assert.equal(posts.length, beforeArm);
+    assert.ok((await page.locator('[data-novnc-confirm-message]').textContent()).includes('previous dialog image is kept'));
+    await page.locator('[data-novnc-confirm-no]').click(); assert.equal(posts.length, beforeArm);
+    await button(page, 'dialog-arm').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'waiting');
+    assert.equal(posts.at(-1).url, basePath + '/dialog/arm');
+    assert.equal(posts.at(-1).body.dialogRevision, '2');
+    assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), 'Earlier dialog');
+    const previewsBefore = previews.length;
+    holdPreview = true;
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-novnc-preview]').hidden);
+    for (let poll = 0; poll < 80 && previews.length === previewsBefore; ++poll) await page.waitForTimeout(10);
+    assert.equal(previews.length, previewsBefore + 1, 'The old candidate preview request reached the fixture');
+    setState({ retainedDialog: { ...candidate, id: candidateIds.second, message: 'Same timestamp, new dialog' },
+      dialogCapture: { state: 'captured', revision: 4, armed: false, pending: false, attemptsRemaining: 1 } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-preview]').isVisible(), false);
+    holdPreview = false; releasePreview();
+    assert.equal(previews.at(-1).candidateId, candidateIds.first);
+    await page.locator('[data-novnc-preview-open]').click();
+    await page.waitForFunction(() => !document.querySelector('[data-novnc-preview-image]').hidden);
+    assert.equal(previews.at(-1).candidateId, candidateIds.second);
+    await page.keyboard.press('Escape');
+    mark('Automatic waiting/capturing/captured states are visible; explicit rearm preserves the old image and candidate IDs invalidate in-flight previews even at the same timestamp');
+
+    await button(page, 'dialog-arm').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'waiting');
+    setState({ captureLocked: true,
+      dialogCapture: { state: 'failed', revision: 6, armed: true, pending: true, attemptsRemaining: 1 },
+      dialogObservation: { message: 'Wanted alert', captureSucceeded: false } }); await refresh(page);
+    assert.equal(await panel(page).getAttribute('data-capture-finalized'), 'false');
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Capture failed · dialog stays open');
+    assert.ok((await page.locator('[data-novnc-state]').textContent()).includes('dialog stays open'));
+    assert.ok(!(await page.locator('[data-novnc-state]').textContent()).includes('Only save'));
+    assert.equal(await page.locator('[data-novnc-screen]').isVisible(), false);
+    assert.equal(await button(page, 'save').isDisabled(), true);
+    assert.equal(await button(page, 'dialog-retry').isVisible(), true);
+    assert.equal(await button(page, 'dialog-dismiss').isVisible(), true);
+    assert.equal(await button(page, 'refresh').isVisible(), true);
+    await page.screenshot({ path: path.join(output, 'en-dialog-failed-held.png') });
+    retryCaptureFailure = true;
+    await button(page, 'dialog-retry').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'exhausted');
+    assert.equal(posts.at(-1).url, basePath + '/dialog/retry'); assert.equal(posts.at(-1).body.dialogRevision, '6');
+    assert.equal(await button(page, 'dialog-retry').isVisible(), false);
+    assert.equal(await button(page, 'save').isDisabled(), true);
+    assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), 'Same timestamp, new dialog');
+    const beforeDismiss = posts.length;
+    await button(page, 'dialog-dismiss').click(); await page.locator('[data-novnc-confirm-no]').click();
+    assert.equal(posts.length, beforeDismiss);
+    await button(page, 'dialog-dismiss').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.captureLocked === 'false');
+    assert.equal(posts.at(-1).url, basePath + '/dialog/dismiss'); assert.equal(posts.at(-1).body.dialogRevision, '7');
+    assert.equal(await button(page, 'save').isDisabled(), false);
+    assert.equal(await button(page, 'dialog-arm').isDisabled(), false);
+    assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), 'Same timestamp, new dialog');
+    mark('Capture failure holds the dialog with retry/continue controls and no save; exhausted retries require explicit dismissal and preserve the prior candidate');
+
+    const beforeStaleArm = posts.length;
+    await button(page, 'dialog-arm').click(); staleDialogNext = true;
+    await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-novnc-notice]').textContent.includes('status has changed'));
+    assert.equal(posts.length, beforeStaleArm + 1, 'A stale dialog action is never automatically replayed');
+    assert.equal(posts.at(-1).body.dialogRevision, '8');
+    await button(page, 'dialog-arm').click(); setState({ dialogCapture: { ...state.dialogCapture, revision: 10 } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'Dialog revision changes cancel pending confirmations');
+    const beforeAmbiguousArm = posts.length;
+    await button(page, 'dialog-arm').click(); ambiguousNext = true; await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'waiting');
+    assert.equal(posts.at(-1).body.dialogRevision, '10');
+    assert.equal(posts.length, beforeAmbiguousArm + 1, 'An ambiguous successful action refreshes state without replaying the request');
+    setState({ captureLocked: true, dialogCapture: { state: 'failed', revision: 12, armed: true, pending: true, attemptsRemaining: 1 } }); await refresh(page);
+    retryCaptureFailure = false; await button(page, 'dialog-retry').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'captured');
+    assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), 'Wanted alert');
+    assert.equal(await button(page, 'save').isDisabled(), false);
+    setState({ state: 'busy', reconnect: false }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-capture]').isVisible(), false);
+    for (const action of ['dialog-arm', 'dialog-retry', 'dialog-dismiss']) assert.equal(await button(page, action).isVisible(), false);
+    setState({ state: 'own_active', reconnect: true }); await refresh(page);
+    mark('Dialog actions pin both revisions, stale confirmations are invalidated without replay, successful retry replaces the candidate, and ownership loss hides dialog controls');
+
+    setState({ captureLocked: true, retainedDialog: undefined,
+      dialogCapture: { state: 'failed', revision: 14, armed: true, pending: true, attemptsRemaining: 1 } }); await refresh(page);
+    await button(page, 'dialog-dismiss').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.captureLocked === 'false');
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Dialog capture paused');
+    assert.equal(await button(page, 'dialog-arm').isDisabled(), false);
+    setState({ dialogCapture: { ...state.dialogCapture, state: 'exhausted', revision: 16, attemptsRemaining: 0 } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-capture-state]').textContent(), 'Dialog capture paused');
+    assert.equal(await button(page, 'dialog-dismiss').isVisible(), false);
+    assert.equal(await button(page, 'dialog-arm').isDisabled(), false);
+    await button(page, 'dialog-arm').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.dialogCaptureState === 'waiting');
+    assert.equal(state.dialogCapture.attemptsRemaining, 2);
+    mark('Dismissed failed/exhausted dialogs without an earlier image are described as paused, and explicit rearm starts a fresh attempt budget');
+
     const previewPosts = posts.length;
-    setState({ retainedDialog: { capturedAt: '2026-10-17T05:33:27Z', pageUrl: 'https://fixture.invalid/', message: '<img onerror=bad>', type: 'alert' },
+    setState({ retainedDialog: { id: candidateIds.retried, capturedAt: '2026-10-17T05:33:27Z', pageUrl: 'https://fixture.invalid/', message: '<img onerror=bad>', type: 'alert' },
       dialogObservation: { message: 'later event', captureSucceeded: false } }); await refresh(page);
     assert.equal(await page.locator('[data-novnc-retained-message]').textContent(), '<img onerror=bad>');
     const liveBeforePreview = await page.locator('[data-novnc-screen] canvas').elementHandle();
@@ -294,11 +447,47 @@ function render(locale = 'en', embedded = false) {
     assert.deepEqual(actions.sort(), ['release', 'save']);
     assert.equal(await page.locator('[data-novnc-screen]').isVisible(), false);
     assert.equal(posts.at(-1).url, basePath + '/save');
+    assert.equal(posts.at(-1).body.expectedCandidateId, '', 'Current-page saves are explicitly selected');
     const lockedSockets = sockets.length; await refresh(page); assert.equal(sockets.length, lockedSockets);
     await page.screenshot({ path: path.join(output, 'en-capture-locked.png') });
     saveFailure = false; await button(page, 'save').click(); await page.locator('[data-novnc-confirm-yes]').click();
     await page.waitForURL(origin + '/review?saved=1');
+    assert.equal(posts.at(-1).body.expectedCandidateId, '', 'Current-page metadata retry retains the same explicit selection');
     mark('Save failure retains immutable capture state with save/cancel only and safe dialog observation; successful save follows server redirect');
+
+    setState({ state: 'own_active', captureLocked: false, captureFinalized: false, reconnect: true, expiresInSec: 100,
+      retainedDialog: candidate, dialogCapture: { state: 'captured', revision: 18, armed: false, pending: false, attemptsRemaining: 1 } });
+    await page.goto(origin + basePath); await waitState(page, 'own_active');
+    const beforeCandidateConfirm = posts.length;
+    await button(page, 'save').click();
+    setState({ retainedDialog: { ...candidate, id: candidateIds.second } }); await refresh(page);
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false, 'A candidate replacement cancels confirmation even when neither revision changes');
+    assert.equal(posts.length, beforeCandidateConfirm);
+    for (const invalidId of [undefined, 'invalid-candidate']) {
+      setState({ retainedDialog: { ...candidate, id: invalidId } }); await refresh(page);
+      assert.equal(await button(page, 'save').isDisabled(), true, 'A retained image without a valid identity never falls back to the current page');
+    }
+    setState({ retainedDialog: candidate }); await refresh(page);
+    await button(page, 'save').click();
+    // Replace only when the POST reaches the server, so no status poll can
+    // reveal B before the user submits the still-visible candidate A.
+    replaceCandidateOnSave = { ...candidate, id: candidateIds.second, message: 'New dialog after confirmation' };
+    const beforeStaleSave = posts.length;
+    await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-novnc-retained-message]').textContent === 'New dialog after confirmation');
+    assert.equal(posts.length, beforeStaleSave + 1, 'A stale save is never automatically replayed');
+    assert.equal(posts.at(-1).body.expectedCandidateId, candidateIds.first);
+    assert.equal(page.url(), origin + basePath, 'A rejected stale save never redirects');
+    assert.equal(state.captureFinalized, false, 'Stale selection does not finalize another image');
+    assert.equal(await page.locator('[data-novnc-confirm]').isVisible(), false);
+    assert.equal(await button(page, 'save').isDisabled(), false);
+    saveFailure = true; await button(page, 'save').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForFunction(() => document.querySelector('[data-review-novnc]').dataset.captureFinalized === 'true');
+    assert.equal(posts.at(-1).body.expectedCandidateId, candidateIds.second, 'A new confirmation selects the replacement candidate');
+    saveFailure = false; await button(page, 'save').click(); await page.locator('[data-novnc-confirm-yes]').click();
+    await page.waitForURL(origin + '/review?saved=1');
+    assert.equal(posts.at(-1).body.expectedCandidateId, candidateIds.second, 'Metadata retry retains the finalized candidate');
+    mark('Save pins the confirmed candidate, cancels replaced confirmations, rejects unseen replacements without replay, and retries only the explicit retained selection');
 
     setState({ state: 'own_active', revision: 14, captureLocked: true, reconnect: true, dialogObservation: undefined });
     await page.goto(origin + basePath); await waitState(page, 'own_active');
@@ -347,7 +536,7 @@ function render(locale = 'en', embedded = false) {
     const beforeMount = posts.length;
     await page.evaluate(async () => {
       const old = document.querySelector('[data-review-novnc]'); const copy = old.cloneNode(true); old.replaceWith(copy);
-      const { mountInteractivePanel } = await import('/js/studio-review-novnc.js');
+      const { mountInteractivePanel } = await import(document.querySelector('script[src*="studio-review-novnc.js"]').src);
       const a = mountInteractivePanel(copy); if (a !== mountInteractivePanel(copy)) throw Error('mount not idempotent');
       await a.refresh();
     });

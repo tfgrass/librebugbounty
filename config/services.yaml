@@ -69,6 +69,11 @@ services:
       $workerUrl: '%env(default:app.playwright_worker_url:PLAYWRIGHT_INTERACTIVE_URL)%'
       $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'
 
+  App\Service\InteractiveHealthService:
+    arguments:
+      $workerUrl: '%env(default:app.playwright_worker_url:PLAYWRIGHT_INTERACTIVE_URL)%'
+      $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'
+
   App\Controller\InteractiveGatewayAuthController:
     arguments:
       $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'

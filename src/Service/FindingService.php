@@ -17,6 +17,8 @@ use App\Value\FindingStatus;
 use App\Value\ManualAssessment;
 use App\Value\ReviewState;
 use App\Value\ScreenshotJobStatus;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\SQLitePlatform;
 use Doctrine\ORM\EntityManagerInterface;
 
 final class FindingService
@@ -77,11 +79,13 @@ final class FindingService
         string $url,
         ?string $expectedEvidence = null,
         ?string $privateNotes = null,
+        ?callable $onResult = null,
     ): FindingCreateResult {
         return $this->createFindingResult(
             url: $url,
             expectedEvidence: $expectedEvidence,
             privateNotes: $privateNotes,
+            onResult: $onResult,
         );
     }
 
@@ -102,6 +106,7 @@ final class FindingService
         ?\DateTimeImmutable $notifiedOwnerAt = null,
         string $status = FindingStatus::NEW,
         bool $allowUnauthorizedStore = false,
+        ?callable $onResult = null,
     ): FindingCreateResult {
         $url = trim($url);
         $this->validation->assertSeverity($severity);
@@ -189,9 +194,27 @@ final class FindingService
             return new FindingCreateResult($finding, true);
         };
 
+        // Browser intake may append its confirmed contribution in the same
+        // transaction. Commit before releasing the queue lock, otherwise a
+        // concurrent intake could hold that lock while waiting for this writer.
+        $atomicCreate = $onResult === null ? $createOrFind : function () use ($createOrFind, $onResult): FindingCreateResult {
+            return $this->entityManager->getConnection()->transactional(function (Connection $connection) use ($createOrFind, $onResult): FindingCreateResult {
+                if ($connection->getDatabasePlatform() instanceof SQLitePlatform) {
+                    // Reserve the writer before reading Domain/Finding. Other
+                    // database writers do not share the queue lock; upgrading
+                    // an existing read transaction can fail without waiting.
+                    // A zero-row write keeps DBAL/PDO transaction ownership
+                    // intact and changes no findings or their timestamps.
+                    $connection->executeStatement('UPDATE finding SET id = id WHERE 1 = 0');
+                }
+                $result = $createOrFind();
+                $onResult($result);
+                return $result;
+            });
+        };
         $result = $this->screenshotOperationLock === null
-            ? $createOrFind()
-            : $this->screenshotOperationLock->synchronizedQueueMutation($createOrFind);
+            ? $atomicCreate()
+            : $this->screenshotOperationLock->synchronizedQueueMutation($atomicCreate);
 
         // Older data and an interrupted pre-queue intake may not have a job.
         // Re-submitting the same URL repairs that invariant without creating a

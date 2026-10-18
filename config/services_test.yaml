@@ -1,4 +1,12 @@
 services:
+  # Release tests never reach GitHub; normal About GET only reads cached data.
+  test.release_http_client:
+    class: Symfony\Component\HttpClient\MockHttpClient
+
+  App\Service\ReleaseUpdateService:
+    autowire: true
+    arguments:
+      $client: '@test.release_http_client'
   # The health UI must never contact real sidecars during PHPUnit tests.
   test.health_http_client:
     class: Symfony\Component\HttpClient\MockHttpClient
@@ -7,6 +15,13 @@ services:
     autowire: true
     arguments:
       $httpClient: '@test.health_http_client'
+
+  App\Service\InteractiveHealthService:
+    autowire: true
+    arguments:
+      $httpClient: '@test.health_http_client'
+      $workerUrl: '%env(default:app.playwright_worker_url:PLAYWRIGHT_INTERACTIVE_URL)%'
+      $gatewayToken: '%env(default::PLAYWRIGHT_GATEWAY_TOKEN)%'
 
   # Contact lookups in tests cannot make DNS or network requests.
   test.security_txt_http_client:

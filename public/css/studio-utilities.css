@@ -55,9 +55,20 @@
 .studio-about-identity { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #343c47; }
 .studio-about-identity h2 { margin: 0 0 8px; font-size: 27px; font-weight: 600; letter-spacing: -.6px; }
 .studio-about-identity .studio-about-lead { margin: 0; max-width: 620px; font-size: 13px; }
-.studio-about-identity .studio-about-version { align-self: start; margin: 3px 0 0; padding: 8px 12px; font-size: 14px; text-align: right; border-color: #48658c; background: #223046; }
+.studio-about-identity .studio-about-version { align-self: start; margin: 3px 0 0; padding: 8px 12px; font-size: 14px; text-align: center; border-color: #48658c; background: #223046; }
 .studio-about-identity .studio-about-version span { display: block; margin: 3px 0 0; color: #a9bfd9; font-size: 11px; }
 .studio-about-columns { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, 1fr); gap: 32px; padding-top: 26px; }
+.studio-about-updates { padding: 16px 0; border-bottom: 1px solid #343c47; }
+.studio-about-update-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.studio-about-updates .studio-about-update-heading h3 { margin: 0; font-size: 14px; }
+.studio-about-update-heading button { padding: 6px 11px; border: 1px solid #435064; border-radius: 6px; color: #dbe3ee; background: #252e39; font: inherit; font-size: 12px; cursor: pointer; }
+.studio-about-updates p { margin: 8px 0 0; color: #b2bece; font-size: 12px; line-height: 1.6; }
+.studio-about-updates .studio-about-update-meta { color: #8f9eaf; font-size: 11px; }
+.studio-about-updates a { color: #a9cbff; text-decoration: underline; text-underline-offset: 3px; }
+.studio-about-updates .studio-about-update-available { color: #bce6ce; font-weight: 600; }
+.studio-about-update-instructions { margin-top: 10px; }
+.studio-about-update-instructions summary { padding-block: 6px; color: #bdd6f7; font-size: 12px; cursor: pointer; }
+.studio-about-update-instructions pre { max-width: 100%; overflow-x: auto; margin: 10px 0 0; padding: 12px; border: 1px solid #353f4c; border-radius: 6px; background: #12171d; font-size: 12px; }
 .studio-about-main, .studio-about-sidebar { min-width: 0; }
 .studio-about-main h3, .studio-about-sidebar h3 { margin: 0 0 16px; font-size: 16px; font-weight: 600; color: #e1e9f4; }
 .studio-about-panel .studio-about-release-notes { margin-bottom: 30px; }
@@ -87,8 +98,7 @@
   .studio-about-sidebar { padding: 24px 0 0; border-left: 0; border-top: 1px solid #343c47; }
   .studio-about-identity { grid-template-columns: 48px minmax(0, 1fr); gap: 14px; }
   .studio-about-identity .studio-about-logo { width: 48px; height: 48px; }
-  .studio-about-identity .studio-about-version { grid-column: 2; justify-self: start; text-align: left; }
-  .studio-about-identity .studio-about-version span { display: inline; margin-left: 8px; }
+  .studio-about-identity .studio-about-version { grid-column: 2; justify-self: start; }
   .studio-about-identity h2 { font-size: 22px; overflow-wrap: anywhere; }
 }
 @media (max-width: 600px) {

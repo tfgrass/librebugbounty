@@ -8,8 +8,8 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 
 /**
- * Read-only health snapshot for the settings page: worker liveness from the
- * heartbeats plus the current recheck schedule and screenshot queue state.
+ * Read-only, explicitly requested infrastructure snapshot: automatic worker
+ * heartbeats/queues and interactive service reachability/lease availability.
  */
 final class SystemHealthService
 {
@@ -23,6 +23,7 @@ final class SystemHealthService
         private readonly WorkerHealthRegistry $registry,
         private readonly BrowserHealthService $browsers,
         private readonly FindingProblemService $problems,
+        private readonly ?InteractiveHealthService $interactive = null,
     ) {
     }
 
@@ -51,6 +52,10 @@ final class SystemHealthService
 
         return [
             'checkedAt' => $now,
+            'interactive' => $this->interactive?->snapshot($now) ?? [
+                'state' => 'unknown', 'workerReachable' => false, 'gatewayReachable' => false,
+                'gatewayConfigured' => false, 'availability' => 'unknown', 'expiresAt' => null,
+            ],
             'recheck' => $this->workerGroup(WorkerHeartbeatService::RECHECK, self::RECHECK_STALE_SECONDS, $browserStatus, $now) + [
                 'dueNow' => (int) $this->connection->fetchOne(
                     'SELECT COUNT(*) FROM finding WHERE '.$scope.' AND next_due_at IS NOT NULL AND next_due_at <= :now',

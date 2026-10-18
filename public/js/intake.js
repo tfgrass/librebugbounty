@@ -27,6 +27,19 @@
     const storageKey = root.dataset.intakeStorageKey || 'librebugbounty.intake.v1';
     const createEndpoint = root.dataset.intakeCreateUrl || '/api/findings';
     const statusEndpoint = root.dataset.intakeStatusUrl || '/api/findings/status';
+    const activityEndpoint = root.dataset.intakeActivityUrl || '/api/intake/activity';
+    const activity = root.querySelector('[data-intake-activity]');
+    const activityToggle = root.querySelector('[data-intake-activity-toggle]');
+    const activityDetails = root.querySelector('#intake-activity-details');
+    const activityControls = root.querySelector('#intake-activity-controls');
+    const compactSummary = root.querySelector('[data-intake-compact-summary]');
+    const sessionOnly = root.querySelector('[data-intake-session-only]');
+    const periodControl = root.querySelector('[data-intake-period]');
+    const minutesControl = root.querySelector('[data-intake-minutes]');
+    const activityNotice = root.querySelector('[data-intake-activity-notice]');
+    const endSessionButton = root.querySelector('[data-intake-session-end]');
+    const resumeSessionButton = root.querySelector('[data-intake-session-resume]');
+    const preferencesKey = 'librebugbounty.intake.preferences.v1';
     const maxEntries = 50;
     const idlePollDelay = 30000;
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,10 +51,26 @@
     let lifecycle = 0;
     let submissionController;
     let statusController;
+    let activityController;
+    let activityTimer;
+    let activitySequence = 0;
+    let activityActionPending = false;
+    let activitySnapshot = null;
+    let activityEntries = [];
+    let knownGeneration = 0;
+    let knownScope = '';
+    let renderedListSignature = '';
+    let previousMilestoneCount = null;
+    let announceMilestone = false;
+    let statsExpanded = true;
+    let statusReadSequence = 0;
+    const latestStatuses = new Map();
+    let channel;
     const restored = new Set();
     const text = (value) => typeof value === 'string' ? value : '';
     const findingLink = (id) => uuidPattern.test(text(id)) ? '/findings/' + encodeURIComponent(id) : null;
-    const draft = () => ({ url: urlInput.value, payload: payloadInput.value, notes: notesInput.value });
+    const draft = () => ({ url: urlInput.value, payload: payloadInput.value, defaultPayload: payloadInput.defaultValue, notes: notesInput.value });
+    const updatePayloadLabel = () => { if (payloadLabel) payloadLabel.textContent = payloadInput.value.trim() || payloadInput.placeholder; };
     const observationLabelKeys = {
       still_vulnerable: 'Nachweis (still_vulnerable)',
       fixed: 'Kein Nachweis (fixed)',
@@ -59,7 +88,7 @@
     };
 
     function persist() {
-      if (payloadLabel) payloadLabel.textContent = payloadInput.value || payloadInput.placeholder;
+      updatePayloadLabel();
       try {
         sessionStorage.setItem(storageKey, JSON.stringify({ version: 1, entries, draft: draft() }));
       } catch (_) {
@@ -114,6 +143,10 @@
             restored.add(entry.localId);
             return {
               localId: entry.localId, url: entry.url, notes: text(entry.notes), payload: text(entry.payload),
+              sessionId: text(entry.sessionId) || null,
+              legacy: entry.legacy === true || !Object.prototype.hasOwnProperty.call(entry, 'sessionId'),
+              pendingHistoryScope: text(entry.pendingHistoryScope),
+              globalHistoryScope: text(entry.globalHistoryScope),
               submittedAt: text(entry.submittedAt), findingId, outcome: entry.outcome === 'duplicate' ? 'duplicate' : 'stored',
               saveState: saveState === 'confirmed' && !findingId ? 'unconfirmed' : saveState,
               missing: entry.missing === true, status: normalizeStatus(entry.status, true),
@@ -128,7 +161,14 @@
           if (stored.draft && typeof stored.draft.url === 'string') {
             urlInput.value = stored.draft.url;
             notesInput.value = text(stored.draft.notes);
-            if (typeof stored.draft.payload === 'string') payloadInput.value = stored.draft.payload;
+            if (typeof stored.draft.payload === 'string') {
+              // Follow changed settings when the saved marker was the default.
+              // Legacy idle drafts have no reliable evidence of a per-case edit.
+              const followsDefault = typeof stored.draft.defaultPayload === 'string'
+                ? stored.draft.payload === stored.draft.defaultPayload
+                : !stored.draft.url.trim() && !text(stored.draft.notes).trim();
+              payloadInput.value = followsDefault ? payloadInput.defaultValue : stored.draft.payload;
+            }
           }
         }
       } catch (_) {
@@ -136,6 +176,33 @@
       }
     }
     restoreState();
+
+    try {
+      const preferences = JSON.parse(localStorage.getItem(preferencesKey) || 'null');
+      if (preferences && sessionOnly && periodControl && minutesControl) {
+        sessionOnly.checked = preferences.sessionOnly !== false;
+        if (['session', 'today', 'window'].includes(preferences.period)) periodControl.value = preferences.period;
+        if ([5, 10, 15, 30, 60, 120].includes(Number(preferences.minutes))) minutesControl.value = String(preferences.minutes);
+        statsExpanded = preferences.statsExpanded !== false;
+      }
+    } catch (_) { /* Preferences are optional; server-backed sessions do not depend on web storage. */ }
+    applyStatsExpansion();
+
+    function applyStatsExpansion() {
+      if (!activityToggle || !activityDetails || !activityControls || !compactSummary) return;
+      activityToggle.setAttribute('aria-expanded', String(statsExpanded));
+      activityDetails.hidden = !statsExpanded;
+      activityControls.hidden = !statsExpanded;
+      compactSummary.hidden = statsExpanded;
+      activity.dataset.collapsed = String(!statsExpanded);
+      if (!statsExpanded) root.querySelector('[data-intake-milestone-notice]').textContent = '';
+    }
+
+    function persistPreferences() {
+      try {
+        localStorage.setItem(preferencesKey, JSON.stringify({ sessionOnly: sessionOnly.checked, period: periodControl.value, minutes: Number(minutesControl.value), statsExpanded }));
+      } catch (_) { /* Keep the selected controls usable in memory. */ }
+    }
 
     function element(tag, value, className) {
       const node = document.createElement(tag);
@@ -217,13 +284,289 @@
       return row;
     }
 
+    function currentSession() {
+      return activitySnapshot?.activeSession || activitySnapshot?.resumableSession || null;
+    }
+
+    function sessionEntries() {
+      const session = currentSession();
+      const local = entries.filter((entry) => {
+        if (entry.legacy) return activityEntries.some((item) => item.findingId === entry.findingId);
+        if (entry.sessionId) return entry.sessionId === session?.id;
+        // An interrupted request may have reached the server without returning its session ID.
+        return !session || Date.parse(entry.submittedAt) >= Date.parse(session.startedAt);
+      });
+      const localIds = new Set(local.map((entry) => entry.findingId).filter(Boolean));
+      const combined = [...local, ...activityEntries.filter((entry) => !localIds.has(entry.findingId))];
+      return combined.sort((a, b) => (Date.parse(b.submittedAt) || 0) - (Date.parse(a.submittedAt) || 0)).slice(0, maxEntries);
+    }
+
+    function visibleEntries() {
+      const recovering = entries.filter((entry) => ['failed', 'unconfirmed', 'saving'].includes(entry.saveState));
+      const recoveringIds = new Set(recovering.map((entry) => entry.localId));
+      const offlineGlobal = !activitySnapshot && sessionOnly?.checked === false;
+      const globalHistory = [...activityEntries];
+      const globalIds = new Set(globalHistory.map((entry) => entry.findingId));
+      for (const entry of entries) {
+        const pending = entry.outcome === 'stored' && entry.pendingHistoryScope && (!activitySnapshot || entry.pendingHistoryScope === knownScope);
+        const cached = offlineGlobal && entry.globalHistoryScope;
+        if (entry.legacy || entry.saveState !== 'confirmed' || entry.missing || (!pending && !cached) || globalIds.has(entry.findingId)) continue;
+        globalHistory.push(entry);
+        globalIds.add(entry.findingId);
+      }
+      globalHistory.sort((a, b) => (Date.parse(b.submittedAt) || 0) - (Date.parse(a.submittedAt) || 0));
+      const history = offlineGlobal || activitySnapshot?.history.scope === 'all' ? globalHistory
+        : !activitySnapshot ? entries.filter((entry) => !entry.legacy) : sessionEntries();
+      // Keep explicit recovery available in the single list, even when the
+      // server already has 50 newer cases. An uncertain save is never matched
+      // to a stored case merely because they share a URL.
+      return [...recovering, ...history.filter((entry) => !recoveringIds.has(entry.localId))]
+        .slice(0, maxEntries)
+        .sort((a, b) => (Date.parse(b.submittedAt) || 0) - (Date.parse(a.submittedAt) || 0));
+    }
+
     function render() {
-      const fragment = document.createDocumentFragment();
-      if (countLabel) countLabel.textContent = String(entries.length);
+      const displayed = visibleEntries();
+      const globalHistory = activitySnapshot ? activitySnapshot.history.scope === 'all' : sessionOnly?.checked === false;
+      if (countLabel) countLabel.textContent = t('Letzte {count}', { count: displayed.length });
       const emptyState = root.querySelector('[data-intake-empty]');
-      if (emptyState) emptyState.hidden = entries.length > 0;
-      for (const entry of entries) fragment.append(studioEntry(entry));
-      list.replaceChildren(fragment);
+      if (emptyState) {
+        emptyState.hidden = displayed.length > 0;
+        const emptyTitle = emptyState.querySelector('p');
+        const emptyHint = emptyState.querySelector('span');
+        if (emptyTitle) emptyTitle.textContent = t(globalHistory ? 'Noch keine Fälle im Bestand' : 'Bereit für die erste URL');
+        if (emptyHint) emptyHint.textContent = t(globalHistory ? 'Neue gespeicherte Fälle erscheinen hier.' : 'Einfügen, Enter. Dein Verlauf erscheint hier.');
+      }
+      const nextSignature = JSON.stringify(displayed);
+      if (nextSignature !== renderedListSignature) {
+        const fragment = document.createDocumentFragment();
+        for (const entry of displayed) fragment.append(studioEntry(entry));
+        list.replaceChildren(fragment);
+        renderedListSignature = nextSignature;
+      }
+      list.setAttribute('aria-label', t(globalHistory ? 'Letzte {count} Einträge' : 'Letzte {count} Eingaben dieser Session', { count: displayed.length }));
+      const hint = root.querySelector('[data-intake-history-hint]');
+      if (hint) hint.textContent = t(!activitySnapshot ? 'Der lokale Verlauf bleibt sichtbar, bis die Session geladen werden kann.' : globalHistory
+        ? 'Bis zu 50 Einträge · unabhängig von Session und Alter.'
+        : 'Bis zu 50 Eingaben dieser Session · neue Fälle bleiben über Tabs und Neuladen erhalten.');
+    }
+
+    const formatNumber = (value, decimals = 0) => new Intl.NumberFormat(i18n.languageTag || 'de-DE', { maximumFractionDigits: decimals }).format(Math.max(0, Number(value) || 0));
+    const formatTime = (value) => {
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(i18n.languageTag || 'de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' }).format(date) : '—';
+    };
+    const formatDuration = (seconds) => {
+      const minutes = Math.max(0, Math.floor((Number(seconds) || 0) / 60));
+      if (minutes < 1) return t('unter 1 Min');
+      if (minutes < 60) return t('{minutes} Min', { minutes });
+      return t('{hours} Std {minutes} Min', { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
+    };
+
+    function renderActivity() {
+      if (!activity || !activitySnapshot) return;
+      const stats = activitySnapshot.stats || {};
+      const session = currentSession();
+      const active = activitySnapshot.activeSession;
+      const count = Math.max(0, Number(stats.count) || 0);
+      const minutes = Number(stats.minutes) || Number(minutesControl?.value) || 15;
+      root.querySelector('[data-intake-stat-count]').textContent = formatNumber(count);
+      if (compactSummary) compactSummary.textContent = t('{count} neu · {period}', {
+        count: formatNumber(count),
+        period: stats.period === 'today' ? t('Heute') : stats.period === 'window' ? t('Letzte {minutes} Min', { minutes }) : t('Session'),
+      });
+      const milestone = [10, 25, 50, 100].find((goal) => count < goal) || (Math.floor(count / 100) + 1) * 100;
+      const progress = root.querySelector('[data-intake-milestone]');
+      progress.max = milestone;
+      progress.value = count;
+      root.querySelector('[data-intake-milestone-label]').textContent = [10, 25, 50, 100].includes(count)
+        ? t('{count} geschafft · weiter bis {next}', { count: formatNumber(count), next: formatNumber(milestone) })
+        : t('Etappe {count}', { count: formatNumber(milestone) });
+      root.querySelector('[data-intake-stat-pace]').textContent = t('{count} letzte {minutes} Min · davor {previous}', { count: formatNumber(stats.currentCount), minutes, previous: formatNumber(stats.previousCount) });
+      const partialComparison = ['session', 'today'].includes(stats.period) && Number(stats.durationSeconds) < minutes * 120;
+      root.querySelector('[data-intake-stat-average]').textContent = stats.averagePerWindow === null
+        ? t('Anlaufphase · Ø ab {minutes} Min', { minutes })
+        : partialComparison
+          ? t('Ø {count}/{minutes} Min · Anlaufphase', { count: formatNumber(stats.averagePerWindow, 1), minutes })
+          : t('Ø {count} pro {minutes} Min', { count: formatNumber(stats.averagePerWindow, 1), minutes });
+      root.querySelector('[data-intake-stat-time]').textContent = session
+        ? t('{duration} · seit {time}', { duration: formatDuration(session.durationSeconds), time: formatTime(session.startedAt) })
+        : t('Noch keine Session');
+      endSessionButton.hidden = !active;
+      endSessionButton.disabled = activityActionPending || saving;
+      const sessionHint = root.querySelector('[data-intake-session-hint]');
+      sessionHint.hidden = Boolean(active);
+      sessionHint.textContent = t(session ? 'Session abgeschlossen' : 'Startet mit deiner ersten Erfassung');
+      root.querySelector('[data-intake-activity-context]').textContent = t(stats.period === 'session'
+        ? 'Nur deine URL-Erfassungen · 30 Min ohne Eingabe trennen Sessions.'
+        : 'Gesamter Bestand · inklusive Importe · Tagesgrenze Europe/Berlin.');
+      const summary = root.querySelector('[data-intake-session-summary]');
+      const resumable = activitySnapshot.resumableSession;
+      summary.hidden = !resumable;
+      if (resumable) {
+        root.querySelector('[data-intake-session-summary-text]').textContent = t('{count} neue Fälle in {duration}. {ending}', {
+          count: formatNumber(resumable.count), duration: formatDuration(resumable.durationSeconds),
+          ending: t(resumable.state === 'idle' ? 'Nach 30 Min ohne Eingabe pausiert.' : 'Session abgeschlossen.'),
+        });
+      }
+      resumeSessionButton.disabled = activityActionPending || saving;
+      activity.hidden = false;
+    }
+
+    function rememberStatus(id, status, missing, sequence) {
+      const previous = latestStatuses.get(id);
+      if (previous && previous.sequence > sequence) return previous;
+      const current = { status, missing, sequence };
+      latestStatuses.delete(id);
+      latestStatuses.set(id, current);
+      while (latestStatuses.size > maxEntries * 3) latestStatuses.delete(latestStatuses.keys().next().value);
+      return current;
+    }
+
+    function applyActivity(data, statusRead) {
+      if (!data || !data.stats || !data.history || !Array.isArray(data.history.findings)) throw new Error('activity unavailable');
+      const generation = Number(data.sessionGeneration) || 0;
+      if (Object.prototype.hasOwnProperty.call(data, 'scopeId') && text(data.scopeId) !== knownScope) {
+        knownScope = text(data.scopeId);
+        knownGeneration = 0;
+      }
+      if (generation < knownGeneration) return false;
+      knownGeneration = generation;
+      activitySnapshot = data;
+      const session = data.activeSession || data.resumableSession;
+      if (statsExpanded && announceMilestone && session && previousMilestoneCount?.id === session.id) {
+        const crossed = [10, 25, 50, 100].filter((goal) => previousMilestoneCount.count < goal && Number(session.count) >= goal).pop();
+        if (crossed) root.querySelector('[data-intake-milestone-notice]').textContent = t('Etappe {count} erreicht. Gut erfasst!', { count: crossed });
+      }
+      previousMilestoneCount = session ? { id: session.id, count: Number(session.count) || 0 } : null;
+      announceMilestone = false;
+      activityEntries = data.history.findings.filter((finding) => findingLink(finding.id)).map((finding) => {
+        const current = rememberStatus(finding.id, normalizeStatus(finding.status), false, statusRead);
+        return {
+          localId: 'finding-' + finding.id, findingId: finding.id, url: text(finding.url), notes: '', payload: '',
+          submittedAt: text(finding.createdAt), saveState: 'confirmed', outcome: 'stored', missing: current.missing,
+          status: current.status, errorKey: '', error: '',
+        };
+      });
+      // Keep this tab's richer attempt details, while taking current status from the server.
+      let historyReconciled = false;
+      for (const entry of entries) {
+        const finding = activityEntries.find((item) => item.findingId === entry.findingId);
+        // Only a successful, accepted snapshot retires this save receipt. A
+        // global snapshot is authoritative even when the case is now absent
+        // (deleted or outside the latest 50); an outage must retain the receipt.
+        if (entry.pendingHistoryScope && (entry.pendingHistoryScope !== knownScope || finding || data.history.scope === 'all')) {
+          entry.pendingHistoryScope = '';
+          historyReconciled = true;
+        }
+        // Offline global history may reuse only receipts that this scope's
+        // last global snapshot included, never every old local confirmation.
+        const globalScope = data.history.scope === 'all'
+          ? finding && entry.saveState === 'confirmed' ? knownScope : ''
+          : entry.globalHistoryScope === knownScope ? knownScope : '';
+        if (text(entry.globalHistoryScope) !== globalScope) {
+          entry.globalHistoryScope = globalScope;
+          historyReconciled = true;
+        }
+        if (finding && entry.saveState === 'confirmed') {
+          entry.status = finding.status;
+          entry.missing = finding.missing;
+          if (data.history.scope === 'session' && session) entry.sessionId = session.id;
+        }
+      }
+      if (historyReconciled) persist();
+      const filter = root.querySelector('[data-intake-history-filter]');
+      if (filter) filter.hidden = false;
+      renderActivity();
+      render();
+      schedulePoll(0);
+      return true;
+    }
+
+    function activityQuery() {
+      return new URLSearchParams({ period: periodControl?.value || 'session', minutes: minutesControl?.value || '15', history: sessionOnly?.checked === false ? 'all' : 'session' });
+    }
+
+    function scheduleActivity() {
+      clearTimeout(activityTimer);
+      if (document.visibilityState === 'visible') activityTimer = setTimeout(refreshActivity, idlePollDelay);
+    }
+
+    async function refreshActivity() {
+      if (!activity || saving || activityActionPending || document.visibilityState !== 'visible') return;
+      clearTimeout(activityTimer);
+      activityController?.abort();
+      const controller = new AbortController();
+      activityController = controller;
+      const sequence = ++activitySequence;
+      const statusRead = ++statusReadSequence;
+      const requestLifecycle = lifecycle;
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      activity.setAttribute('aria-busy', 'true');
+      try {
+        const response = await fetch(activityEndpoint + '?' + activityQuery(), { headers: { Accept: 'application/json' }, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+        const data = await response.json();
+        if (requestLifecycle !== lifecycle || sequence !== activitySequence) return;
+        if (!response.ok) throw new Error('activity unavailable');
+        if (!applyActivity(data, statusRead)) return;
+        activityNotice.textContent = '';
+      } catch (_) {
+        if (requestLifecycle !== lifecycle || sequence !== activitySequence) return;
+        activity.hidden = false;
+        if (activitySnapshot) {
+          sessionOnly.checked = activitySnapshot.history.scope !== 'all';
+          periodControl.value = activitySnapshot.stats.period;
+          minutesControl.value = String(activitySnapshot.stats.minutes);
+          persistPreferences();
+        }
+        activityNotice.textContent = t('Fortschritt und gemeinsamer Verlauf sind gerade nicht erreichbar. Deine Eingabe bleibt benutzbar.');
+      } finally {
+        clearTimeout(timeout);
+        if (requestLifecycle === lifecycle && sequence === activitySequence) {
+          activity.removeAttribute('aria-busy');
+          scheduleActivity();
+        }
+      }
+    }
+
+    async function changeSession(action) {
+      const target = action === 'end' ? activitySnapshot?.activeSession : activitySnapshot?.resumableSession;
+      if (!target || saving || activityActionPending) return;
+      activityActionPending = true;
+      ++activitySequence;
+      activityController?.abort();
+      clearTimeout(activityTimer);
+      renderActivity();
+      const controller = new AbortController();
+      activityController = controller;
+      const requestLifecycle = lifecycle;
+      const statusRead = ++statusReadSequence;
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        const body = { _token: form.elements.namedItem('_token').value, action, sessionId: target.id,
+          expectedSessionGeneration: Number(activitySnapshot?.sessionGeneration) || 0,
+          expectedActiveSessionId: activitySnapshot?.activeSession?.id || null };
+        const response = await fetch(activityEndpoint + '?' + activityQuery(), { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, credentials: 'same-origin', cache: 'no-store', body: JSON.stringify(body), signal: controller.signal });
+        const data = await response.json();
+        if (requestLifecycle !== lifecycle) return;
+        if (!response.ok) {
+          if (response.status === 409) activityNotice.textContent = t('Die Session hat sich in einem anderen Tab geändert. Der aktuelle Stand wird geladen.');
+          else throw new Error('session action unavailable');
+        } else {
+          applyActivity(data, statusRead);
+          activityNotice.textContent = t(action === 'end' ? 'Session beendet. Die nächste Erfassung startet eine neue Session.' : 'Vorige Session wird fortgesetzt.');
+          channel?.postMessage({ type: 'activity' });
+        }
+      } catch (_) {
+        if (requestLifecycle !== lifecycle) return;
+        activityNotice.textContent = t('Die Sessionänderung wurde nicht bestätigt. Der aktuelle Stand wird neu geladen.');
+      } finally {
+        clearTimeout(timeout);
+        if (requestLifecycle !== lifecycle) return;
+        activityActionPending = false;
+        renderActivity();
+        refreshActivity();
+      }
     }
 
     function signature(status) {
@@ -268,7 +611,7 @@
     }
 
     function idsToRefresh() {
-      return [...new Set(entries.filter((entry) => entry.findingId && entry.saveState === 'confirmed'
+      return [...new Set([...visibleEntries(), ...entries].filter((entry) => entry.findingId && entry.saveState === 'confirmed'
         && (refreshAll || (!entry.missing && (!entry.status || ['queued', 'running'].includes(entry.status.screenshot.state)))))
         .map((entry) => entry.findingId))].slice(0, maxEntries);
     }
@@ -280,7 +623,7 @@
         pollTimer = setTimeout(poll, delay);
         return;
       }
-      if (entries.some((entry) => entry.findingId && entry.saveState === 'confirmed')) {
+      if ([...visibleEntries(), ...entries].some((entry) => entry.findingId && entry.saveState === 'confirmed')) {
         pollTimer = setTimeout(() => {
           refreshAll = true;
           poll();
@@ -299,6 +642,7 @@
       }
       polling = true;
       const requestLifecycle = lifecycle;
+      const statusRead = ++statusReadSequence;
       const controller = new AbortController();
       statusController = controller;
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -312,15 +656,20 @@
         if (!response.ok || !Array.isArray(data.findings) || !Array.isArray(data.missingIds)) throw new Error('status unavailable');
         const statuses = new Map(data.findings.map(normalizeStatus).filter(Boolean).map((status) => [status.id, status]));
         const missing = new Set(data.missingIds.filter((id) => ids.includes(id)));
+        const currentStatuses = new Map();
+        ids.forEach((id) => {
+          if (statuses.has(id) || missing.has(id)) currentStatuses.set(id, rememberStatus(id, statuses.get(id) || null, missing.has(id), statusRead));
+        });
         const changes = new Map();
         let stateChanged = false;
-        for (const entry of entries) {
-          if (!ids.includes(entry.findingId) || (!statuses.has(entry.findingId) && !missing.has(entry.findingId))) continue;
+        for (const entry of [...entries, ...activityEntries]) {
+          const current = currentStatuses.get(entry.findingId);
+          if (!current) continue;
           const previousStatus = entry.status;
           const previous = signature(entry.status);
           const wasMissing = entry.missing;
-          entry.missing = missing.has(entry.findingId);
-          entry.status = entry.missing ? null : statuses.get(entry.findingId);
+          entry.missing = current.missing;
+          entry.status = current.status;
           const changed = wasMissing !== entry.missing || previous !== signature(entry.status);
           stateChanged ||= changed;
           if (!restored.has(entry.localId) && changed) {
@@ -350,9 +699,14 @@
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       if (saving || !form.reportValidity()) return;
+      if (activityActionPending) {
+        notice.textContent = t('Die Session wird gerade aktualisiert. Bitte danach erneut erfassen.');
+        return;
+      }
       const submitted = draft();
       const entry = {
         localId: globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(16).slice(2),
+        sessionId: activitySnapshot?.activeSession?.id || null, legacy: false,
         url: submitted.url.trim(), notes: submitted.notes, payload: submitted.payload,
         submittedAt: new Date().toISOString(), saveState: 'saving', findingId: null,
         outcome: null, status: null, missing: false, errorKey: '', error: '',
@@ -360,18 +714,23 @@
       entries.unshift(entry);
       entries = entries.slice(0, maxEntries);
       saving = true;
+      ++activitySequence;
+      activityController?.abort();
+      clearTimeout(activityTimer);
       submitButton.disabled = true;
       submitButton.textContent = t('Speichert …');
       form.setAttribute('aria-busy', 'true');
       notice.textContent = t('Wird gespeichert …');
       render();
+      renderActivity();
       persist();
       const controller = new AbortController();
       submissionController = controller;
       const requestLifecycle = lifecycle;
+      const statusRead = ++statusReadSequence;
       const timeout = setTimeout(() => controller.abort(), 15000);
       try {
-        const body = new URLSearchParams({ url: entry.url, payload: entry.payload, annotate: entry.notes, _token: form.elements.namedItem('_token').value });
+        const body = new URLSearchParams({ url: entry.url, payload: entry.payload, annotate: entry.notes, browserIntake: '1', _token: form.elements.namedItem('_token').value });
         const response = await fetch(createEndpoint, { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, credentials: 'same-origin', body, signal: controller.signal });
         const data = await response.json();
         if (requestLifecycle !== lifecycle) return;
@@ -389,8 +748,18 @@
         entry.saveState = 'confirmed';
         entry.findingId = data.finding.id;
         entry.outcome = data.outcome;
+        entry.sessionId = text(data.intakeSessionId) || entry.sessionId;
+        entry.pendingHistoryScope = data.outcome === 'stored' ? text(data.intakeScopeId) : '';
+        if (text(data.intakeScopeId) && data.intakeScopeId !== knownScope) {
+          knownScope = data.intakeScopeId;
+          knownGeneration = 0;
+        }
+        knownGeneration = Math.max(knownGeneration, Number(data.intakeSessionGeneration) || 0);
+        announceMilestone = data.outcome === 'stored';
         const status = normalizeStatus(data.status);
-        entry.status = status?.id === entry.findingId ? status : null;
+        const current = rememberStatus(entry.findingId, status?.id === entry.findingId ? status : null, false, statusRead);
+        entry.status = current.status;
+        entry.missing = current.missing;
         const activeField = document.activeElement;
         // Preserve edits typed while the request was still in flight.
         if (urlInput.value === submitted.url) urlInput.value = '';
@@ -411,8 +780,13 @@
         submitButton.textContent = submitLabel;
         form.removeAttribute('aria-busy');
         render();
+        renderActivity();
         persist();
-        if (entry.saveState === 'confirmed') poll();
+        if (entry.saveState === 'confirmed') {
+          poll();
+          channel?.postMessage({ type: 'activity' });
+        }
+        refreshActivity();
       }
     });
 
@@ -420,10 +794,12 @@
     const refreshVisible = () => {
       if (document.visibilityState !== 'visible') {
         clearTimeout(pollTimer);
+        clearTimeout(activityTimer);
         return;
       }
       refreshAll = true;
       poll();
+      refreshActivity();
     };
     document.addEventListener('visibilitychange', refreshVisible);
     window.addEventListener('focus', refreshVisible);
@@ -435,15 +811,19 @@
       // Re-read the shared state after the browser finishes restoring its DOM.
       lifecycle++;
       statusController?.abort();
+      activityController?.abort();
+      ++activitySequence;
       restoreState();
       saving = false;
       polling = false;
+      activityActionPending = false;
+      openChannel();
       submitButton.disabled = false;
       submitButton.textContent = submitLabel;
       form.removeAttribute('aria-busy');
       notice.textContent = '';
       toasts.replaceChildren();
-      if (payloadLabel) payloadLabel.textContent = payloadInput.value || payloadInput.placeholder;
+      updatePayloadLabel();
       render();
       refreshVisible();
     });
@@ -452,11 +832,39 @@
       lifecycle++;
       submissionController?.abort();
       statusController?.abort();
+      activityController?.abort();
       clearTimeout(pollTimer);
+      clearTimeout(activityTimer);
+      channel?.close();
+      channel = null;
     });
+    if (sessionOnly && periodControl && minutesControl) {
+      activityToggle?.addEventListener('click', () => {
+        statsExpanded = !statsExpanded;
+        applyStatsExpansion();
+        persistPreferences();
+      });
+      [sessionOnly, periodControl, minutesControl].forEach((control) => control.addEventListener('change', () => {
+        persistPreferences();
+        refreshActivity();
+      }));
+      endSessionButton?.addEventListener('click', () => changeSession('end'));
+      resumeSessionButton?.addEventListener('click', () => changeSession('resume'));
+    }
+    function openChannel() {
+      if (channel) return;
+      try {
+        channel = new BroadcastChannel('librebugbounty.intake.activity');
+        channel.addEventListener('message', (event) => {
+          if (event.data?.type === 'activity') refreshActivity();
+        });
+      } catch (_) { /* Focus and periodic refresh still synchronize tabs. */ }
+    }
+    openChannel();
     history.hidden = false;
-    if (payloadLabel) payloadLabel.textContent = payloadInput.value || payloadInput.placeholder;
+    updatePayloadLabel();
     render();
     poll();
+    refreshActivity();
   }
 })();

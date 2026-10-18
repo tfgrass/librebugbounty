@@ -67,7 +67,11 @@ final class InteractiveBrowserController
         try {
             $channel = $this->channel($request->headers->get('X-LBB-Tab'), true);
             $revision = $this->requiredRevision($this->revision($request->query->all()['revision'] ?? null));
-            $image = $this->browser->dialogPreview($finding, $this->owner($request), $channel, $revision);
+            $candidateId = $request->query->all()['candidateId'] ?? null;
+            if ($candidateId !== null && (!is_string($candidateId) || preg_match('/^[a-f0-9]{48}$/D', $candidateId) !== 1)) {
+                throw new \RuntimeException('Invalid interactive dialog candidate.', 400);
+            }
+            $image = $this->browser->dialogPreview($finding, $this->owner($request), $channel, $revision, $candidateId);
             return new Response($image, 200, [
                 'Content-Type' => 'image/png', 'Cache-Control' => 'no-store', 'X-Content-Type-Options' => 'nosniff',
             ]);
@@ -75,6 +79,15 @@ final class InteractiveBrowserController
             $code = in_array((int) $error->getCode(), [400, 401, 403, 404, 409, 410, 503], true) ? (int) $error->getCode() : 502;
             return $this->json(['state' => 'revoked', 'reason' => $code === 410 ? 'expired' : 'dialog_preview_unavailable'], $code);
         }
+    }
+
+    #[Route('/review/{id}/interactive/dialog/{action}', name: 'studio_review_novnc_dialog', requirements: ['action' => 'arm|retry|dismiss'], methods: ['POST'])]
+    public function dialog(string $id, string $action, Request $request): Response
+    {
+        return $this->operation($id, $request, function (Finding $finding, string $owner, string $channel, ?int $revision, array $body) use ($action): void {
+            $dialogRevision = $this->requiredRevision($this->revision($body['dialogRevision'] ?? null));
+            $this->browser->dialog($finding, $owner, $channel, $this->requiredRevision($revision), $action, $dialogRevision);
+        });
     }
 
     #[Route('/review/{id}/interactive/lease/{operation}', name: 'studio_review_novnc_lease', requirements: ['operation' => 'acquire|takeover|release|end-and-start'], methods: ['POST'])]
@@ -96,7 +109,15 @@ final class InteractiveBrowserController
     public function save(string $id, Request $request): Response
     {
         return $this->operation($id, $request, function (Finding $finding, string $owner, string $channel, ?int $revision, array $body) use ($request): array {
-            $saved = $this->browser->save($finding, $owner, $channel, $this->requiredRevision($revision));
+            if (!array_key_exists('expectedCandidateId', $body)) {
+                throw new \RuntimeException('Interactive capture selection required.', 400);
+            }
+            $candidateId = $body['expectedCandidateId'];
+            if ($candidateId === '') { $candidateId = null; } // URL-encoded current-page selection.
+            if ($candidateId !== null && (!is_string($candidateId) || preg_match('/^[a-f0-9]{48}$/D', $candidateId) !== 1)) {
+                throw new \RuntimeException('Invalid interactive dialog candidate.', 400);
+            }
+            $saved = $this->browser->save($finding, $owner, $channel, $this->requiredRevision($revision), $candidateId);
             $redirect = $this->evidenceReturn($request, $finding, $saved->evidence->getId(), $body['return_to'] ?? null);
             return ['saved' => true, 'redirect' => $redirect, 'contextClosed' => $saved->sessionClosed];
         });

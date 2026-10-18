@@ -10,6 +10,8 @@ use App\Service\BrowserScreenshotClientInterface;
 use App\Service\EvidenceStorageInterface;
 use App\Service\FindingService;
 use App\Service\SettingsService;
+use App\Service\UiTranslator;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Session\Session;
@@ -18,6 +20,11 @@ use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 final class StudioIntakeTest extends DatabaseTestCase
 {
     private Session $session;
+
+    protected function usesGermanCopy(): bool
+    {
+        return false;
+    }
 
     protected function setUp(): void
     {
@@ -97,6 +104,9 @@ final class StudioIntakeTest extends DatabaseTestCase
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         $xpath = $this->xpath($response->getContent());
         self::assertSame($payload, $this->payload($xpath));
+        self::assertSame($payload, $xpath->evaluate('string(//details/summary//*[@data-intake-payload-label])'));
+        self::assertSame(1, $xpath->query('//*[@data-intake-help-open]')->length);
+        self::assertSame(1, $xpath->query('//*[contains(@class,"studio-intake-title-row")]/a[@data-intake-help-open][@href="/intake/help"]')->length);
         self::assertSame(0, $xpath->query('//*[@id="fixture-settings-markup"]')->length);
         self::assertSame($before, $this->snapshot());
     }
@@ -110,6 +120,83 @@ final class StudioIntakeTest extends DatabaseTestCase
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode());
         self::assertSame(SettingsService::DEFAULTS['intake.default_payload'], $this->payload($this->xpath($response->getContent())));
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public static function helpLocales(): iterable
+    {
+        yield 'German' => ['de', 'URL erfassen – so funktioniert’s', '23 Tagen', '7 Tagen'];
+        yield 'English' => ['en', 'Adding a URL – how it works', '23 days', '7 days'];
+    }
+
+    #[DataProvider('helpLocales')]
+    public function testIntakeHelpUsesCurrentSettingsInTheModalAndReadOnlyFallback(string $locale, string $title, string $interval, string $backoff): void
+    {
+        self::getContainer()->set(UiTranslator::class, new UiTranslator($locale));
+        self::getContainer()->get(SettingsService::class)->save([
+            'recheck.interval_days' => '23',
+            'recheck.error_backoff_days' => '7',
+        ]);
+        $before = $this->snapshot();
+        $storage = self::getContainer()->get(EvidenceStorageInterface::class);
+        $paths = $storage->listPaths();
+        $contents = [];
+
+        foreach (['/', '/intake/help'] as $path) {
+            $response = $this->request($path);
+            self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+            self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+            $xpath = $this->xpath($response->getContent());
+            self::assertSame($locale, $xpath->evaluate('string(/html/@lang)'));
+            self::assertSame(1, $xpath->query('//*[@data-intake-help-content]')->length);
+            self::assertSame(4, $xpath->query('//*[@data-intake-help-content]/section')->length);
+            self::assertSame(1, $xpath->query('//*[@data-intake-help-content]//a[@href="/settings"]')->length);
+            $content = $xpath->evaluate('normalize-space(//*[@data-intake-help-content])');
+            self::assertStringContainsString($interval, $content);
+            self::assertStringContainsString($backoff, $content);
+            $contents[] = $content;
+            if ($path === '/') {
+                self::assertSame($title, $xpath->evaluate('string(//dialog[@id="studio-intake-help"]//h2)'));
+                self::assertSame(1, $xpath->query('//dialog//*[@data-intake-help-content]')->length);
+            } else {
+                self::assertSame($title, $xpath->evaluate('string(//main//h1)'));
+                self::assertSame(1, $xpath->query('//nav[contains(@class,"studio-workspace-nav")]')->length);
+                self::assertSame(0, $xpath->query('//*[@data-intake-help-content]//form')->length);
+            }
+        }
+
+        self::assertSame($contents[0], $contents[1], 'Modal and no-JavaScript fallback use the same help content.');
+        self::assertSame($before, $this->snapshot());
+        self::assertSame($paths, $storage->listPaths());
+    }
+
+    public function testIntakeHelpTreatsTheConfiguredMarkerAsPlainExampleText(): void
+    {
+        $marker = "\"</code><script id=\"fixture-help-markup\">alert('injected')</script>\n\\end";
+        self::getContainer()->get(SettingsService::class)->save(['intake.default_payload' => $marker]);
+        $before = $this->snapshot();
+
+        foreach (['/', '/intake/help'] as $path) {
+            $response = $this->request($path);
+            self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+            $xpath = $this->xpath($response->getContent());
+            self::assertSame(0, $xpath->query('//*[@id="fixture-help-markup"]')->length);
+            $example = $xpath->evaluate('string(//code[@data-intake-help-example])');
+            self::assertStringStartsWith('alert(', $example);
+            self::assertStringEndsWith(')', $example);
+            self::assertSame($marker, json_decode(substr($example, 6, -1), true, 512, JSON_THROW_ON_ERROR));
+        }
+
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testIntakeHelpFallbackDoesNotAcceptWrites(): void
+    {
+        $before = $this->snapshot();
+        $response = $this->request('/intake/help', 'POST', ['url' => 'http://help-post.localhost/fixture']);
+
+        self::assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $response->getStatusCode());
+        self::assertStringContainsString('GET', (string) $response->headers->get('Allow'));
         self::assertSame($before, $this->snapshot());
     }
 

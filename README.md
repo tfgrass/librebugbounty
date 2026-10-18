@@ -187,6 +187,19 @@ matching pre-upgrade database and artifact snapshot in a separate recovery
 directory. Follow [the recovery instructions](BACKUP.md#restore-into-a-new-directory)
 instead of pointing older application code at an upgraded database.
 
+**About → Updates** shows the latest cached stable GitHub release, its release
+link and the upgrade instructions. **Check now** refreshes that information;
+opening About itself stays offline. The supervised DDEV update worker checks
+once a day, or retries after one hour on errors. It only reads release metadata;
+you apply the update using the steps above. Git installations are shown the
+specific published tag to select instead of an unqualified `git pull`.
+
+For another installation, schedule `php bin/console app:update:worker --once`
+hourly, or keep `php bin/console app:update:worker` running under your process
+supervisor. The shared cache enforces the daily interval and a one-minute
+minimum between manual checks. Failed lookups retain the last verified release
+and are shown as errors. No GitHub token or additional package is required.
+
 ## Backup
 
 Create and validate a private local snapshot with Python 3.11 or newer:

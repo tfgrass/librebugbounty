@@ -33,6 +33,13 @@ $screenshotHints = [
     'none' => 'Bericht und Metadaten ohne angehängte Bilddateien.',
 ];
 $downloadFormat = strtoupper($view->downloadFormat);
+$inventoryFilters = array_filter([
+    'view' => ['Ansicht', $filter->view, ['workbasket' => 'Arbeitskorb']],
+    'reminder' => ['Wiedervorlage', $filter->reminder, ['today' => 'Heute', 'overdue' => 'Überfällig', 'open' => 'Alle offenen Wiedervorlagen']],
+    'pursuit' => ['Nachverfolgung', $filter->pursuit, ['active' => 'Wird weiterverfolgt', 'closed' => 'Nicht weiterverfolgen']],
+    'closure_reason' => ['Beendigungsgrund', $filter->closureReason, \App\Value\PursuitStatus::REASONS],
+    'contact_work' => ['Kontaktarbeit', $filter->contactWork, ['allowed' => 'Nicht gesperrt', 'blocked' => 'Gesperrt']],
+], static fn (array $field): bool => $field[1] !== '');
 ?>
 <!doctype html>
 <html lang="<?= $escape($locale) ?>">
@@ -81,6 +88,7 @@ $downloadFormat = strtoupper($view->downloadFormat);
 
         <form class="studio-export-layout" id="export-filters" method="get" action="/export">
           <input type="hidden" name="profile" value="<?= $escape($profile) ?>">
+          <?php foreach ($inventoryFilters as $name => [$label, $value]): ?><input type="hidden" name="<?= $escape($name) ?>" value="<?= $escape($value) ?>"><?php endforeach; ?>
           <section class="studio-export-panel studio-export-selection" aria-labelledby="export-selection-title">
             <div class="studio-export-panel-heading"><h2 id="export-selection-title"><?= $escape($t('Auswahl')) ?></h2><a class="studio-export-text-link" href="/export"><?= $escape($t('Zurücksetzen')) ?></a></div>
             <label class="studio-export-field studio-export-scope"><?= $escape($t('Bereich')) ?>
@@ -89,6 +97,7 @@ $downloadFormat = strtoupper($view->downloadFormat);
               </select>
             </label>
             <p class="studio-export-hint"><?= $escape($t($filter->scope === 'active' ? 'Standardauswahl: aktive Fälle. Für archivierte Fälle wähle bewusst einen anderen Bereich.' : 'Diese Auswahl enthält archivierte Fälle.')) ?> <?= $escape($t('Alle Filter gelten gemeinsam.')) ?></p>
+            <?php if ($inventoryFilters !== []): ?><p class="studio-export-hint" data-export-preserved-filters><?php $parts = []; foreach ($inventoryFilters as [$label, $value, $choices]) $parts[] = $t($label).': '.$t($choices[$value] ?? $value); ?><?= $escape(implode(' · ', $parts)) ?></p><?php endif; ?>
 
             <div class="studio-export-fields">
               <label class="studio-export-field studio-export-field-wide"><?= $escape($t('Suche')) ?>

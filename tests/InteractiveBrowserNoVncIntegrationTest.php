@@ -224,13 +224,78 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
     public function testCsrfPolicyAndUrlRejectionsNeverReachWorker(): void
     {
         $before = $this->snapshot();
-        foreach (['lease/acquire', 'lease/takeover', 'lease/release', 'lease/end-and-start', 'save'] as $operation) {
+        foreach (['lease/acquire', 'lease/takeover', 'lease/release', 'lease/end-and-start', 'save', 'dialog/arm', 'dialog/retry', 'dialog/dismiss'] as $operation) {
             self::assertSame(403, $this->post('noImage', $operation, self::A, 0, ['_token' => 'invalid'])->getStatusCode());
         }
         self::assertSame(409, $this->post('blocked', 'lease/acquire', self::A, 0)->getStatusCode());
         self::assertSame(409, $this->post('invalid', 'lease/acquire', self::A, 0)->getStatusCode());
         self::assertSame([], $this->worker->state['calls']);
         self::assertSame($before, $this->snapshot());
+    }
+
+    public function testSaveSelectionIsRequiredAndValidatedBeforeCapture(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $before = $this->snapshot(); $mutations = $this->mutations();
+        foreach ([[], ['expectedCandidateId' => []], ['expectedCandidateId' => false], ['expectedCandidateId' => 'page'],
+            ['expectedCandidateId' => str_repeat('A', 48)], ['expectedCandidateId' => str_repeat('a', 48)."\n"]] as $extra) {
+            $response = $this->request($this->path('noImage').'/save', 'POST', $extra + [
+                '_token' => $this->token('noImage'), 'channelId' => self::A, 'expectedRevision' => (string) $started['revision'],
+            ], ['HTTP_ACCEPT' => 'application/json']);
+            self::assertSame(400, $response->getStatusCode(), $response->getContent());
+        }
+        self::assertSame($mutations, $this->mutations());
+        self::assertNull($this->worker->state['capture']);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testReplacedCandidateCannotBeSavedThroughAnEarlierConfirmation(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $first = str_repeat('a', 48); $second = str_repeat('b', 48);
+        $this->worker->state['session']['retainedDialog']['id'] = $first;
+        self::assertSame($first, $this->panelStatus('noImage', self::A)['retainedDialog']['id']);
+        // The next poll has not yet exposed the replacement to the user.
+        $this->worker->state['session']['retainedDialog']['id'] = $second;
+        $before = $this->snapshot();
+        foreach ([$first, ''] as $selected) {
+            $response = $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['expectedCandidateId' => $selected]), 409);
+            self::assertSame($second, $response['retainedDialog']['id']);
+            self::assertFalse($response['captureFinalized']);
+            self::assertSame('stale_revision_or_busy', $response['reason']);
+            self::assertNull($this->worker->state['capture']);
+            self::assertSame($before, $this->snapshot());
+        }
+        self::assertNotContains('close', $this->operations());
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['expectedCandidateId' => $second]), 200);
+        $calls = array_values(array_filter($this->worker->state['calls'], static fn (array $call): bool => str_ends_with($call['path'], '/capture')));
+        self::assertSame([$first, null, $second], array_column(array_column($calls, 'body'), 'expectedCandidateId'));
+        $job = $this->entityManager->getConnection()->fetchAssociative('SELECT capture_metadata FROM screenshot_job WHERE finding_id = ?', [$this->id('noImage')]);
+        self::assertSame($second, json_decode($job['capture_metadata'], true)['dialogCandidateId']);
+    }
+
+    public function testFinalizedRetryRejectsAnotherSelectionAndKeepsTheSameProof(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $candidate = str_repeat('b', 48);
+        $this->worker->state['session']['retainedDialog']['id'] = $candidate;
+        $db = $this->entityManager->getConnection();
+        $db->executeStatement("CREATE TRIGGER selection_reject_capture BEFORE INSERT ON evidence BEGIN SELECT RAISE(ABORT, 'Deliberate evidence failure'); END");
+        try {
+            self::assertSame(502, $this->post('noImage', 'save', self::A, $started['revision'], ['expectedCandidateId' => $candidate])->getStatusCode());
+        } finally { $db->executeStatement('DROP TRIGGER selection_reject_capture'); }
+        $proof = $this->worker->state['capture']; $before = $this->snapshot();
+        self::assertNotNull($proof);
+        foreach (['', str_repeat('a', 48)] as $selected) {
+            self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'], ['expectedCandidateId' => $selected])->getStatusCode());
+            self::assertSame($proof, $this->worker->state['capture']);
+            self::assertSame($before, $this->snapshot());
+        }
+        self::assertNotContains('close', $this->operations());
+        $this->json($this->post('noImage', 'save', self::A, $started['revision'], ['expectedCandidateId' => $candidate]), 200);
+        self::assertSame($proof, $this->worker->state['capture']);
     }
 
     public function testSourceLessSaveReturnsToReviewWithoutInventingTriggerAssessmentOrBasis(): void
@@ -240,6 +305,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         // The ordinary form contract is 303; JSON clients use the same save API.
         $saved = $this->request($this->path('noImage').'/save', 'POST', [
             '_token' => $this->token('noImage'), 'channelId' => self::A, 'expectedRevision' => (string) $started['revision'],
+            'expectedCandidateId' => '',
         ]);
         self::assertSame(303, $saved->getStatusCode(), $saved->getContent());
         $after = $this->snapshot();
@@ -413,6 +479,137 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
         }
     }
 
+    public function testDialogControlsRetainCandidateAndExposeOnlySanitizedCaptureState(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $retained = $this->retainDialog();
+        $candidateId = str_repeat('a', 48);
+        $this->worker->state['session']['retainedDialog']['id'] = $candidateId;
+        $this->worker->state['session']['dialogCapture']['secret'] = 'hidden';
+        $lease = $this->lease(); $before = $this->snapshot();
+        $status = $this->panelStatus('noImage', self::A);
+        self::assertSame($retained + ['id' => $candidateId], $status['retainedDialog']);
+        self::assertSame(['state' => 'waiting', 'revision' => 0, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2], $status['dialogCapture']);
+        self::assertFalse($status['captureFinalized']);
+        self::assertStringNotContainsString('hidden', json_encode($status));
+        $armed = $this->json($this->post('noImage', 'dialog/arm', self::A, $started['revision'], ['dialogRevision' => '0']), 200);
+        self::assertSame(1, $armed['dialogCapture']['revision']);
+        self::assertSame($status['retainedDialog'], $armed['retainedDialog']);
+        $calls = array_values(array_filter($this->mutations(), static fn (array $call): bool => basename($call['path']) === 'dialog'));
+        self::assertCount(1, $calls);
+        self::assertSame(['generation' => $started['revision'], 'action' => 'arm', 'dialogRevision' => 0], $calls[0]['body']);
+        foreach ([self::B, null] as $channel) {
+            $foreign = $this->panelStatus('noImage', $channel);
+            self::assertArrayNotHasKey('dialogCapture', $foreign);
+            self::assertArrayNotHasKey('captureFinalized', $foreign);
+        }
+        self::assertSame($lease, $this->lease()); self::assertSame($before, $this->snapshot());
+        self::assertNull($this->worker->state['capture']); self::assertSame(1, $this->worker->state['starts']);
+    }
+
+    public function testDialogControlsRejectStaleDialogLeaseChannelAndMalformedInputs(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $before = $this->snapshot(); $mutations = $this->mutations();
+        foreach ([[], ['dialogRevision' => '-1'], ['dialogRevision' => '0.5'], ['dialogRevision' => ['0']]] as $body) {
+            self::assertSame(400, $this->post('noImage', 'dialog/arm', self::A, $started['revision'], $body)->getStatusCode());
+        }
+        foreach ([self::B, 'invalid'] as $channel) {
+            self::assertSame($channel === self::B ? 409 : 400, $this->post('noImage', 'dialog/arm', $channel, $started['revision'], ['dialogRevision' => 0])->getStatusCode());
+        }
+        self::assertSame(400, $this->post('noImage', 'dialog/arm', self::A, $started['revision'], ['dialogRevision' => 0, 'expectedRevision' => ''])->getStatusCode());
+        self::assertSame(409, $this->post('noImage', 'dialog/arm', self::A, $started['revision'] + 1, ['dialogRevision' => 0])->getStatusCode());
+        self::assertSame($mutations, $this->mutations(), 'Invalid owner or input cannot mutate worker state');
+        self::assertSame(409, $this->post('noImage', 'dialog/arm', self::A, $started['revision'], ['dialogRevision' => 1])->getStatusCode());
+        self::assertSame(0, $this->worker->state['session']['dialogCapture']['revision']);
+        self::assertSame($before, $this->snapshot());
+    }
+
+    public function testPendingDialogRetryDismissAndFinalCaptureUseSeparateControls(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $before = $this->snapshot();
+        $this->worker->state['session']['captureLocked'] = true;
+        $this->worker->state['session']['dialogCapture'] = ['state' => 'failed', 'revision' => 1, 'armed' => true, 'pending' => true, 'attemptsRemaining' => 1];
+        $failed = $this->panelStatus('noImage', self::A);
+        self::assertTrue($failed['captureLocked']); self::assertFalse($failed['captureFinalized']);
+        self::assertSame(409, $this->post('noImage', 'save', self::A, $started['revision'])->getStatusCode());
+        self::assertSame($before, $this->snapshot()); self::assertNotContains('close', $this->operations());
+        $retried = $this->json($this->post('noImage', 'dialog/retry', self::A, $started['revision'], ['dialogRevision' => 1]), 200);
+        self::assertSame('captured', $retried['dialogCapture']['state']); self::assertFalse($retried['captureLocked']);
+        self::assertFalse($retried['dialogCapture']['pending']); self::assertSame(str_repeat('e', 48), $retried['retainedDialog']['id']);
+        $candidate = $retried['retainedDialog'];
+        $this->worker->state['session']['captureLocked'] = true;
+        $this->worker->state['session']['dialogCapture'] = ['state' => 'failed', 'revision' => 3, 'armed' => true, 'pending' => true, 'attemptsRemaining' => 0];
+        $dismissed = $this->json($this->post('noImage', 'dialog/dismiss', self::A, $started['revision'], ['dialogRevision' => 3]), 200);
+        self::assertFalse($dismissed['dialogCapture']['pending']); self::assertFalse($dismissed['captureLocked']);
+        self::assertSame($candidate, $dismissed['retainedDialog']);
+        $this->worker->state['session']['captureLocked'] = true;
+        $this->worker->state['session']['captureFinalized'] = true;
+        foreach (['arm', 'retry', 'dismiss'] as $action) {
+            self::assertSame(409, $this->post('noImage', 'dialog/'.$action, self::A, $started['revision'], ['dialogRevision' => 4])->getStatusCode());
+        }
+        self::assertSame($candidate, $this->panelStatus('noImage', self::A)['retainedDialog']);
+        self::assertSame($before, $this->snapshot()); self::assertNull($this->worker->state['capture']);
+    }
+
+    public function testPreviewCandidateIdentityPreventsReadingAnotherCandidate(): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $candidateId = str_repeat('a', 48);
+        $this->worker->state['session']['retainedDialog']['id'] = $candidateId;
+        $path = $this->path('noImage').'/dialog-frame?revision='.$started['revision'].'&candidateId=';
+        $response = $this->request($path.$candidateId, 'GET', [], ['HTTP_X_LBB_TAB' => self::A]);
+        self::assertSame(200, $response->getStatusCode());
+        $call = end($this->worker->state['calls']);
+        self::assertSame('generation='.$started['revision'].'&candidateId='.$candidateId, $call['query']);
+        self::assertSame(409, $this->request($path.str_repeat('b', 48), 'GET', [], ['HTTP_X_LBB_TAB' => self::A])->getStatusCode());
+        $calls = $this->worker->state['calls'];
+        self::assertSame(400, $this->request($path.'invalid', 'GET', [], ['HTTP_X_LBB_TAB' => self::A])->getStatusCode());
+        self::assertSame($calls, $this->worker->state['calls']);
+    }
+
+    #[DataProvider('dialogRaces')]
+    public function testDialogMutationsPinRightsPolicyAndUrlBeforeAndAfterRpc(string $change, bool $during): void
+    {
+        $started = $this->json($this->post('noImage', 'lease/acquire', self::A, 0), 200);
+        $this->retainDialog();
+        $changeRights = function () use ($change): void {
+            $db = $this->entityManager->getConnection();
+            switch ($change) {
+                case 'takeover':
+                    self::getContainer()->get(InteractiveBrowserLeaseService::class)->takeover($this->id('noImage'), $this->lease()['owner_hash'], self::B, $this->lease()['generation']); break;
+                case 'owner': $db->executeStatement('UPDATE interactive_browser_lease SET owner_hash = ?', [str_repeat('f', 64)]); break;
+                case 'channel': $db->executeStatement('UPDATE interactive_browser_lease SET channel_id = ?', [self::B]); break;
+                case 'expiry': $db->executeStatement('UPDATE interactive_browser_lease SET expires_at = ?', [time() - 1]); break;
+                case 'closing': $db->executeStatement("UPDATE interactive_browser_lease SET state = 'closing'"); break;
+                case 'url': $db->update('finding', ['url' => 'http://127.0.0.1/changed'], ['id' => $this->id('noImage')]); break;
+                case 'policy': $db->update('finding', ['status' => 'discarded'], ['id' => $this->id('noImage')]); break;
+                case 'worker': $db->executeStatement('UPDATE interactive_browser_lease SET worker_id = ?', [str_repeat('c', 48)]); break;
+            }
+        };
+        if ($during) $this->worker->afterDialog = $changeRights; else $changeRights();
+        $mutations = count($this->mutations());
+        $response = $this->post('noImage', 'dialog/arm', self::A, $started['revision'], ['dialogRevision' => 0]);
+        self::assertContains($response->getStatusCode(), [409, 410]);
+        $payload = json_decode($response->getContent(), true, flags: JSON_THROW_ON_ERROR);
+        self::assertArrayNotHasKey('dialogCapture', $payload); self::assertArrayNotHasKey('retainedDialog', $payload);
+        self::assertCount($mutations + ($during ? 1 : 0), $this->mutations());
+        self::assertNotContains('capture', $this->operations()); self::assertNotContains('close', $this->operations());
+        self::assertSame(1, $this->worker->state['starts']); self::assertNull($this->worker->state['capture']);
+    }
+
+    public static function dialogRaces(): iterable
+    {
+        foreach (['takeover', 'owner', 'channel', 'expiry', 'closing', 'url', 'policy', 'worker'] as $change) {
+            foreach ([false, true] as $during) {
+                if ($change === 'worker' && !$during) continue;
+                yield $change.($during ? ' during' : ' before') => [$change, $during];
+            }
+        }
+    }
+
     private function newSession(): Session
     {
         $session = new Session(new MockArraySessionStorage());
@@ -437,6 +634,7 @@ final class InteractiveBrowserNoVncIntegrationTest extends DatabaseTestCase
 
     private function post(string $name, string $operation, string $channel, int $revision, array $extra = []): Response
     {
+        if ($operation === 'save') { $extra += ['expectedCandidateId' => '']; }
         return $this->request($this->path($name).'/'.$operation, 'POST', $extra + [
             '_token' => $this->token($name), 'channelId' => $channel, 'expectedRevision' => (string) $revision,
         ], ['HTTP_ACCEPT' => 'application/json']);

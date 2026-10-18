@@ -118,6 +118,7 @@ final class InventoryViewService
     public function vocabulary(): array
     {
         $fields = [
+            'view' => ['Ansicht', ['workbasket' => 'Arbeitskorb']],
             'scope' => ['Bestand', ['active' => 'Aktiver Bestand', 'discarded' => 'Archiv: Verworfen', 'duplicates' => 'Archiv: Duplikate', 'all' => 'Alle Fälle']],
             'q' => ['Suche', null], 'domain' => ['Domain', null],
             'assessment' => ['Manuelle Bewertung', ['unknown' => FindingReadLabels::assessment(null), 'confirmed' => FindingReadLabels::assessment('confirmed'), 'fixed' => FindingReadLabels::assessment('fixed'), 'discarded' => FindingReadLabels::assessment('discarded')]],

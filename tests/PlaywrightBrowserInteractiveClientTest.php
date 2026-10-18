@@ -76,6 +76,66 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
         }
     }
 
+    public function testDialogActionsUseAuthenticatedRevisionBoundPostAndRetainCandidateIdentity(): void
+    {
+        $capture = ['state' => 'waiting', 'revision' => 4, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2];
+        $candidateId = str_repeat('a', 48);
+        $http = new MockHttpClient(static function (string $method, string $url, array $options) use ($capture, $candidateId): MockResponse {
+            self::assertSame('POST', $method);
+            self::assertSame(self::WORKER.'/interactive-sessions/'.self::ID.'/dialog', $url);
+            self::assertSame(['generation' => 7, 'action' => 'arm', 'dialogRevision' => 3], json_decode($options['body'], true));
+            self::assertContains('Authorization: Bearer '.self::TOKEN, $options['headers']);
+            self::assertSame(0, $options['max_redirects']);
+            return self::jsonResponse(self::session(['generation' => 7, 'captureFinalized' => false,
+                'dialogCapture' => $capture, 'retainedDialog' => ['id' => $candidateId]]));
+        });
+        $result = (new PlaywrightBrowserInteractiveClient($http, self::WORKER, self::TOKEN))->dialogFenced(self::ID, 7, 'arm', 3);
+        self::assertSame($capture, $result->dialogCapture);
+        self::assertFalse($result->captureFinalized);
+        self::assertSame($candidateId, $result->retainedDialog['id']);
+        foreach ([null, 6, '7'] as $generation) {
+            try {
+                $this->client(self::jsonResponse(self::session(['generation' => $generation])))->dialogFenced(self::ID, 7, 'arm', 0);
+                self::fail('Changed generation was accepted.');
+            } catch (\RuntimeException $error) { self::assertSame(409, $error->getCode()); }
+        }
+        foreach ([['unknown', 0], ['retry', -1]] as [$action, $revision]) {
+            try {
+                (new PlaywrightBrowserInteractiveClient(new MockHttpClient(static fn () => self::fail('Invalid mutation reached HTTP')), self::WORKER, self::TOKEN))->dialogFenced(self::ID, 7, $action, $revision);
+                self::fail('Invalid action or revision accepted.');
+            } catch (\InvalidArgumentException) { self::assertTrue(true); }
+        }
+    }
+
+    public function testCandidateIdentityIsPassedToPreviewAndMalformedIdentityNeverReachesHttp(): void
+    {
+        $candidateId = str_repeat('a', 48);
+        $http = new MockHttpClient(static function (string $method, string $url) use ($candidateId): MockResponse {
+            self::assertSame('GET', $method);
+            self::assertSame(self::WORKER.'/interactive-sessions/'.self::ID.'/dialog-frame?generation=7&candidateId='.$candidateId, $url);
+            return new MockResponse(base64_decode(self::PNG, true), ['response_headers' => ['Content-Type: image/png']]);
+        });
+        self::assertSame(base64_decode(self::PNG, true), (new PlaywrightBrowserInteractiveClient($http, self::WORKER, self::TOKEN))->interactiveDialogFrame(self::ID, 7, $candidateId));
+        $this->expectException(\InvalidArgumentException::class);
+        (new PlaywrightBrowserInteractiveClient(new MockHttpClient(static fn () => self::fail('Invalid candidate reached HTTP')), self::WORKER, self::TOKEN))->interactiveDialogFrame(self::ID, 7, 'invalid');
+    }
+
+    #[DataProvider('invalidDialogCaptureFields')]
+    public function testMalformedDialogCaptureFailsFast(array $override): void
+    {
+        $capture = array_replace(['state' => 'failed', 'revision' => 1, 'armed' => true, 'pending' => true, 'attemptsRemaining' => 1], $override);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('invalid dialogCapture');
+        $this->client(self::jsonResponse(self::session(['dialogCapture' => $capture])))->interactiveStatus(self::ID);
+    }
+
+    public static function invalidDialogCaptureFields(): iterable
+    {
+        foreach (['state' => 'done', 'revision' => -1, 'armed' => 'true', 'pending' => 1, 'attemptsRemaining' => -1] as $field => $value) yield [[$field => $value]];
+        yield [['revision' => null]];
+        yield [['attemptsRemaining' => '2']];
+    }
+
     public function testLifecycleUsesDedicatedRoutesAndPreservesSessionAndCaptureData(): void
     {
         $calls = [];
@@ -200,7 +260,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function httpErrors(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'dialog', 'capture', 'close'] as $operation) {
             foreach ([400, 401, 403, 404, 405, 409, 410, 413, 422, 429, 500, 502, 503, 504] as $status) {
                 yield "$operation HTTP $status worker JSON" => [$operation, $status, '{"errorMessage":"Worker rejected this request."}', 'Worker rejected this request.'];
             }
@@ -226,7 +286,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
     public static function invalidIds(): iterable
     {
         foreach (['', 'fixture-session-id', str_repeat('a', 47), str_repeat('a', 49), str_repeat('A', 48), str_repeat('g', 48), self::ID."\n", '../'.self::ID, self::ID.'/status'] as $id) {
-            foreach (['status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
+            foreach (['status', 'input', 'frame', 'dialog-frame', 'dialog', 'capture', 'close'] as $operation) {
                 yield [$id, $operation];
             }
         }
@@ -252,7 +312,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
         }
         yield [['expiresAt' => '2026-10-17T12:00:00.123Z'], 'invalid session expiry timestamp'];
         yield [['expiresAt' => '2026-10-17T11:59:59.999Z'], 'invalid session expiry timestamp'];
-        foreach (['finalUrl' => [], 'httpStatus' => '200', 'challenge' => false, 'initialChallenge' => 'cleared', 'navigationError' => []] as $field => $value) {
+        foreach (['finalUrl' => [], 'httpStatus' => '200', 'challenge' => false, 'initialChallenge' => 'cleared', 'navigationError' => [], 'captureFinalized' => 'true', 'dialogCapture' => 'failed'] as $field => $value) {
             yield [[$field => $value], 'invalid '.$field];
         }
         foreach (['httpStatus', 'initialHttpStatus'] as $field) {
@@ -332,7 +392,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function invalidJson(): iterable
     {
-        foreach (['start', 'status', 'input', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'dialog', 'capture', 'close'] as $operation) {
             foreach (['', '{', '<html>not JSON</html>', "\x89PNG\r\n\x1a\n"] as $body) {
                 if ($operation === 'close' && $body === '') {
                     continue;
@@ -367,7 +427,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function successErrors(): iterable
     {
-        foreach (['start', 'status', 'input', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'dialog', 'capture', 'close'] as $operation) {
             foreach (['Worker reported a failure.', '', ['bad' => true]] as $message) {
                 yield [$operation, $message];
             }
@@ -401,7 +461,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function missingTokens(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'dialog', 'capture', 'close'] as $operation) {
             foreach ([null, '', '   ', "bad\r\nInjected: header", 'bad token'] as $token) {
                 yield [$operation, $token];
             }
@@ -450,7 +510,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
 
     public static function transportFailures(): iterable
     {
-        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'capture', 'close'] as $operation) {
+        foreach (['start', 'status', 'input', 'frame', 'dialog-frame', 'dialog', 'capture', 'close'] as $operation) {
             yield [$operation, false];
             yield [$operation, true];
         }
@@ -539,6 +599,7 @@ final class PlaywrightBrowserInteractiveClientTest extends KernelTestCase
             'input' => $client->interactiveInput($id, ['action' => 'reload']),
             'frame' => $client->interactiveFrame($id),
             'dialog-frame' => $client->interactiveDialogFrame($id, 7),
+            'dialog' => $client->dialogFenced($id, 7, 'arm', 0),
             'capture' => $client->captureInteractive($id),
             'close' => $client->closeInteractive($id),
         };

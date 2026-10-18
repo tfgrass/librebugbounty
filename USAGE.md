@@ -23,9 +23,57 @@ The normal path is **Intake → Screenshot → Review → Export**:
 4. After assessment, use Inventory to revisit the case and Export to prepare
    the selected data or evidence.
 
+The **?** beside **Add URL** opens a short help dialog. The marker is shown
+beside **Add details**, including when collapsed. Unchanged marker
+defaults follow your current settings; deliberate draft overrides are retained.
+The dialog explains four parts of intake:
+
+- Enter the complete reproducible URL, including any required payload. The
+  marker describes expected browser-dialog text; it does not insert code into
+  the URL. The example uses your current marker.
+- Saving stores the case locally and queues a screenshot for later Review.
+  It does not send a disclosure or confirm a vulnerability.
+- An identical URL returns the existing case without replacing its marker or
+  notes. Different parameters, payloads or encodings can create separate cases
+  for the same underlying issue.
+- Rechecks use the displayed configured intervals for ordinary checks and
+  technical errors; **Settings** lets you change them. These are due intervals,
+  not guaranteed execution times. Manual checking and check restrictions pause
+  checks; fixed and discarded cases are excluded.
+
+Escape closes the dialog and returns focus to its opener; your draft stays in
+the form. The help remains available through its link without JavaScript.
+
 Repeated intake detects duplicates. If a save could not be confirmed, check
-Inventory before submitting it again. The intake session list retains the last
-50 entries in that browser tab; Inventory is the durable record of your cases.
+Inventory before submitting it again. **Last …** shows the number of displayed
+entries, up to 50, and defaults to **Current session only**. Clear the checkbox
+to see recent stored cases regardless of their age or session. Failed or
+unconfirmed local inputs remain available in the same list for explicit
+recovery; they are never submitted again automatically. Older confirmed tab
+history has no separate list.
+
+The compact progress strip counts newly stored cases, shows the next milestone,
+and compares intake pace over 5, 10, 15, 30, 60 or 120 minutes. **Current session**
+counts browser intake only; duplicates, review work and imports do not add to
+personal progress. **Today** and **Last time window** use the whole inventory,
+including imports. Today follows the Europe/Berlin calendar day.
+
+Click **Your progress** to collapse the strip to a single line showing the count
+and selected period. Click it again for pace, milestones and session controls.
+The browser remembers this display preference across reloads and tabs; counting
+continues while collapsed. The full view is shown until you choose otherwise.
+
+A session starts with the first successfully handled intake, including a
+duplicate, and continues across tabs and reloads in the same browser session.
+After 30 minutes without intake, the next submission starts a new session.
+**End session** shows a closing summary; **Continue previous session** lets you
+continue after a long research break. The displayed duration is elapsed session
+time, not measured active working time. Counters are independent of the 50-row
+list. Form drafts remain local to each tab.
+
+Session tracking needs the additive `Version20261018000000` migration
+(`ddev exec php bin/console app:db:init`). Existing cases are not retrospectively
+assigned to personal sessions. No additional background worker is required.
 
 An empty active inventory can also mean that all cases are archived. Use the
 archive selection to find them. If filters have no matches, clear the filters
@@ -115,6 +163,15 @@ reminder. This feature needs additive `Version20261010020000`; back up first,
 then run `ddev exec php bin/console app:db:init`. No historical activities or
 reminders are inferred from old markers.
 
+Choose **Workbasket** in Inventory for open reminders ordered by earliest due
+date. **Today**, **Overdue** and **All open reminders** keep the other filters.
+Each row shows the due date, next step, chosen disclosure route and latest
+documented disclosure activity. Cases with ended follow-up or contact/check
+restrictions remain visibly marked; a reminder does not lift those restrictions.
+The view can be saved and works without JavaScript. The normal **Inventory list**
+keeps its newest-first order. Export preserves the selected reminder and follow-up
+filters and shows them in its inherited-filter summary.
+
 ## Manual review
 
 ### Interactive verification
@@ -133,9 +190,16 @@ This is a display-only change and does not start or replace a session.
 
 Only one operator controls the shared interactive desktop. A second operator
 sees a busy state and must explicitly take over the same finding. Takeover keeps
-the existing browser context and cached proof. A native dialog can be retained as
-provenance, but it does not lock input and you may continue navigating after it.
-An explicit capture/save attempt sets `captureLocked`; the proof is then immutable
+the existing browser context and cached proof. Automatic dialog capture runs in
+that same browser after you manually complete a protection challenge. A captured
+dialog image remains available after the dialog closes and navigation continues.
+Use **Capture next dialog** to arm another automatic capture; the previous image
+stays available until the new capture succeeds. Review the image in the preview.
+If capture fails, the native dialog stays open and browser input pauses. Use
+**Retry capture**, or explicitly **Close dialog and continue**. Attempts are
+bounded; explicitly arming the next dialog renews the capture allowance. No image
+is silently replaced by a later dialog. The session's absolute expiry still applies.
+An explicit successful capture/save sets `captureFinalized`; the proof is then immutable
 and input remains locked until the new owner chooses **Save** or **Cancel**. The
 original capture ID, capture generation, capture time and URL remain attached to
 that proof; a later save authorization generation is only the current permission
@@ -252,8 +316,10 @@ Another finding requires confirmed **End and start**. A worker restart loses
 the in-memory browser; use the displayed recovery action and start explicitly.
 
 Use **Save evidence** to retain another screenshot with
-interactive provenance. A native alert is photographed on the desktop before
-dismissal is attempted. If a dialog image was retained, saving prefers that
+interactive provenance. A native alert is photographed on the desktop while it
+is open, before successful capture allows dismissal. Capture failures offer an
+explicit retry or dismissal; saving is blocked while that dialog remains pending.
+If a dialog image was retained, saving prefers that
 image, even after navigation; the saved source URL and timestamp describe the
 dialog image. The live control view continues to show the current viewport.
 Observing a dialog alone does not prove that its image was captured or that
@@ -504,10 +570,17 @@ The **System status** dialog shows active versus expected workers
 and the last signal for each worker ID. Browser-service reachability is checked
 separately using a bounded, read-only `/health` request; this does not start a
 browser or visit a case URL. Green requires all expected worker signals to be
-recent and their browser services to respond. Partial operation appears amber,
+recent and their browser services, interactive worker and gateway control to
+respond. Partial operation appears amber,
 expired signals red, and workers without a signal grey. Recheck signals expire
 after 10 minutes, screenshot signals after 5 minutes; these are recent liveness
 signals, not proof that a particular capture can succeed.
+
+The **Interactive browser** card separately shows bounded HTTP reachability for
+the worker and gateway control, plus free/busy/expired availability from the
+stored session state. Availability is independent of reachability. These checks
+do not verify Chromium, the streamed desktop or a complete WSS connection, and
+never start a session, renew its lifetime or visit a target.
 
 The panel also shows rechecks due now, scheduled or paused for review, the next
 due time, and screenshot job counts. **Completed captures** counts historical
@@ -539,6 +612,20 @@ The About section shows the version and release name, release highlights,
 credits, project links, and license. **Release history** directly shows
 Moneta, Scriptor Quo, and Scriptor, with the newest milestone first. The
 [changelog](CHANGELOG.md) lists the changes in each release.
+
+**Updates** shows whether a newer stable GitHub release is available. The
+background update worker checks daily; **Check now** requests a manual check
+(at most once per minute). Opening About only reads the cached result. Errors,
+outdated information and an unchecked installation are labelled explicitly;
+the last verified release link remains available after a network failure.
+
+For a newer release, **Apply update** reveals the upgrade guide link and Git
+commands for that exact release tag. Back up the workspace and preserve local
+changes, then follow the guide for dependencies, migrations and restart. The
+checker never installs a release or changes your checkout. DDEV starts the
+update worker automatically; other installations can schedule
+`php bin/console app:update:worker --once` hourly. The worker contacts only the
+project's public GitHub releases endpoint and sends no workspace data.
 
 ### Local documentation
 

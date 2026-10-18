@@ -28,6 +28,7 @@ final class StudioReviewNoVncWorkerFixture
     /** Read-response barriers for deterministic ownership and policy races. */
     public ?Closure $afterStatus = null;
     public ?Closure $afterDialogFrame = null;
+    public ?Closure $afterDialog = null;
     /** Pause after PHP's persistence commit, before the worker close side effect. */
     public ?Closure $beforeClose = null;
 
@@ -57,7 +58,8 @@ final class StudioReviewNoVncWorkerFixture
                 $session = $this->state['session'];
                 $status = ($query['generation'] ?? null) !== (string) $this->state['generation'] ? 409
                     : ($session === null || !str_contains($path, $session['id']) ? 410
-                    : (empty($session['retainedDialog']) ? 404 : 200));
+                    : (empty($session['retainedDialog']) ? 404
+                    : (isset($query['candidateId']) && $query['candidateId'] !== ($session['retainedDialog']['id'] ?? null) ? 409 : 200)));
                 if ($this->afterDialogFrame !== null) {
                     $hook = $this->afterDialogFrame; $this->afterDialogFrame = null; $hook();
                 }
@@ -110,10 +112,12 @@ final class StudioReviewNoVncWorkerFixture
                 'challenge' => ['state' => 'unknown', 'active' => null],
                 'initialChallenge' => ['state' => 'unknown', 'active' => null],
                 'dialogObservation' => [], 'captureLocked' => false, 'captureId' => null, 'captureGeneration' => null,
+                'captureFinalized' => false,
+                'dialogCapture' => ['state' => 'waiting', 'revision' => 0, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2],
             ];
             return [201, $this->state['session']];
         }
-        if (!preg_match('~^/interactive-sessions/([a-f0-9]{48})/(status|capture|close)$~D', $path, $match)) {
+        if (!preg_match('~^/interactive-sessions/([a-f0-9]{48})/(status|capture|close|dialog)$~D', $path, $match)) {
             throw new RuntimeException('Unexpected P8 transport operation: '.$method.' '.$path);
         }
         $session = $this->state['session'];
@@ -126,12 +130,54 @@ final class StudioReviewNoVncWorkerFixture
         }
         if ($method !== 'POST') return [405, ['errorMessage' => 'POST required']];
         if (($body['generation'] ?? null) !== $this->state['generation']) return [409, ['errorMessage' => 'stale_generation']];
+        if ($match[2] === 'dialog') {
+            $dialog = $session['dialogCapture'];
+            if (($session['captureFinalized'] ?? false) || ($body['dialogRevision'] ?? null) !== $dialog['revision']) {
+                return [409, ['errorMessage' => 'Dialog capture changed or finalized']];
+            }
+            if (!in_array($body['action'] ?? null, ['arm', 'retry', 'dismiss'], true)) return [400, ['errorMessage' => 'Invalid dialog action']];
+            if ($body['action'] === 'arm') {
+                if ($dialog['pending']) return [409, ['errorMessage' => 'Dialog pending']];
+                $dialog = ['state' => 'waiting', 'revision' => $dialog['revision'] + 1, 'armed' => true, 'pending' => false, 'attemptsRemaining' => 2];
+            } elseif (!$dialog['pending']) {
+                return [409, ['errorMessage' => 'No pending dialog']];
+            } elseif ($body['action'] === 'dismiss') {
+                $dialog = array_replace($dialog, ['state' => $dialog['attemptsRemaining'] === 0 ? 'exhausted' : (empty($session['retainedDialog']) ? 'failed' : 'captured'), 'revision' => $dialog['revision'] + 1, 'pending' => false, 'armed' => false]);
+                $this->state['session']['captureLocked'] = false;
+            } else {
+                if ($dialog['attemptsRemaining'] < 1) return [409, ['errorMessage' => 'Dialog retry exhausted']];
+                $this->state['session']['retainedDialog'] = [
+                    'id' => str_repeat('e', 48), 'capturedAt' => gmdate('Y-m-d\TH:i:s.000\Z'),
+                    'detectedAt' => gmdate('Y-m-d\TH:i:s.000\Z'), 'pageUrl' => $session['finalUrl'],
+                    'type' => 'alert', 'message' => 'Retried fixture dialog',
+                ];
+                $dialog = array_replace($dialog, ['state' => 'captured', 'revision' => $dialog['revision'] + 1, 'pending' => false, 'armed' => false, 'attemptsRemaining' => $dialog['attemptsRemaining'] - 1]);
+                $this->state['session']['captureLocked'] = false;
+            }
+            $this->state['session']['dialogCapture'] = $dialog;
+            $result = $this->state['session'];
+            if ($this->afterDialog !== null) {
+                $hook = $this->afterDialog; $this->afterDialog = null; $hook();
+            }
+            return [200, $result];
+        }
         if ($match[2] === 'close') {
             if ($this->beforeClose !== null) {
                 $hook = $this->beforeClose; $this->beforeClose = null; $hook();
             }
             $this->state['session'] = null;
             return [200, ['id' => $session['id'], 'closed' => true]];
+        }
+        if ($session['dialogCapture']['pending'] || $session['dialogCapture']['state'] === 'capturing') {
+            return [409, ['errorMessage' => 'Pending dialog must be resolved before capture']];
+        }
+        if (!array_key_exists('expectedCandidateId', $body)
+            || ($body['expectedCandidateId'] !== null && (!is_string($body['expectedCandidateId']) || preg_match('/^[a-f0-9]{48}$/D', $body['expectedCandidateId']) !== 1))) {
+            return [400, ['errorMessage' => 'Explicit capture selection required']];
+        }
+        $selected = $this->state['capture'] === null ? ($session['retainedDialog']['id'] ?? null) : $this->state['capture']['metadata']['dialogCandidateId'];
+        if ($body['expectedCandidateId'] !== $selected) {
+            return [409, ['errorMessage' => 'Stale retained dialog candidate']];
         }
         if ($this->state['capture'] === null) {
             $this->state['capture'] = [
@@ -140,10 +186,12 @@ final class StudioReviewNoVncWorkerFixture
                 'dialogSeen' => false, 'metadata' => [
                     'inputMethod' => 'vnc', 'manualActionCount' => null, 'manualInteraction' => null,
                     'captureId' => 'p8-proof-'.$this->state['starts'], 'captureGeneration' => $this->state['generation'],
+                    'dialogCandidateId' => $selected,
                     'challenge' => $session['challenge'], 'initialChallenge' => $session['initialChallenge'],
                 ],
             ];
             $this->state['session']['captureLocked'] = true;
+            $this->state['session']['captureFinalized'] = true;
             $this->state['session']['captureId'] = $this->state['capture']['metadata']['captureId'];
             $this->state['session']['captureGeneration'] = $this->state['capture']['metadata']['captureGeneration'];
         }

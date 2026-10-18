@@ -52,6 +52,9 @@ final class StudioController
         $message = is_string($query['message'] ?? null) ? $query['message'] : null;
         $error = is_string($query['error'] ?? null) ? $query['error'] : null;
         $defaultPayload = $this->settings->getDefaultPayload();
+        $recheckIntervalDays = $this->settings->getRecheckIntervalDays();
+        $recheckErrorBackoffDays = $this->settings->getRecheckErrorBackoffDays();
+        $helpDialogExample = $this->intakeHelpDialogExample($defaultPayload);
         $csrfToken = $this->csrf->getToken('finding_create')->getValue();
         $languageReturnPath = $request->getRequestUri();
         $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -62,6 +65,25 @@ final class StudioController
         $html = ob_get_clean();
 
         return new Response($html, Response::HTTP_OK, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
+    #[Route(path: '/intake/help', name: 'studio_intake_help', methods: ['GET'])]
+    public function intakeHelp(Request $request): Response
+    {
+        $recheckIntervalDays = $this->settings->getRecheckIntervalDays();
+        $recheckErrorBackoffDays = $this->settings->getRecheckErrorBackoffDays();
+        $helpDialogExample = $this->intakeHelpDialogExample($this->settings->getDefaultPayload());
+        $languageReturnPath = $request->getRequestUri();
+        $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $this->i18nVariables($locale, $t, $formatTime, $formatDate, $formatNumber, $i18nJson);
+
+        ob_start();
+        require dirname(__DIR__, 2).'/templates/studio/intake-help-page.php';
+
+        return new Response(ob_get_clean(), Response::HTTP_OK, [
             'Content-Type' => 'text/html; charset=UTF-8',
             'Cache-Control' => 'no-store',
         ]);
@@ -194,6 +216,11 @@ final class StudioController
             'Content-Type' => 'text/html; charset=UTF-8',
             'Cache-Control' => 'no-store',
         ]);
+    }
+
+    private function intakeHelpDialogExample(string $marker): string
+    {
+        return 'alert('.json_encode($marker, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE).')';
     }
 
     private function redirectWithQuery(string $path, Request $request): RedirectResponse

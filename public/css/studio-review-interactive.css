@@ -121,6 +121,12 @@
 .novnc-confirm p { margin-bottom: 10px; }
 .novnc-confirm button + button { margin-inline-start: 8px; }
 .novnc-dialog p { font-size: 13px; white-space: pre-wrap; }
+.novnc-capture { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--studio-line, #343a42); border-radius: 8px; }
+.novnc-capture p { font-size: 13px; }
+.novnc-capture-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.novnc-panel[data-dialog-capture-state="captured"] .novnc-capture { border-color: var(--studio-green, #83d4ac); }
+.novnc-panel[data-dialog-capture-state="failed"] .novnc-capture,
+.novnc-panel[data-dialog-capture-state="exhausted"] .novnc-capture { border-color: var(--studio-amber, #e8bf78); background: #30291e; }
 .novnc-shell { width: min(1800px, 100%); margin: 0 auto; }
 .novnc-shell .novnc-viewport { height: clamp(280px, 64vh, 1000px); }
 /* Fullscreen keeps local controls reachable; the remote framebuffer takes the
@@ -137,6 +143,7 @@
 .novnc-panel[data-fullscreen="true"] .novnc-viewport { height: auto; min-height: 100px; flex: 1 0 100px; }
 .novnc-panel[data-fullscreen="true"] .novnc-connection:empty { display: none; }
 .novnc-panel[data-fullscreen="true"] .novnc-dialog { max-height: 24vh; overflow: auto; }
+.novnc-panel[data-fullscreen="true"] .novnc-capture { flex-shrink: 0; }
 @media (max-width: 600px) {
   .novnc-panel { padding: 12px; gap: 10px; }
   .novnc-heading { flex-direction: column; }

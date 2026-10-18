@@ -7,6 +7,7 @@ use App\Service\RecheckScheduleService;
 use App\Service\SettingsService;
 use App\Service\SystemHealthService;
 use App\Service\UiTranslator;
+use App\Service\ReleaseUpdateService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -21,6 +22,7 @@ final class SettingsController
         private readonly SystemHealthService $health,
         private readonly \App\Service\FollowUpService $followUp,
         private readonly \Symfony\Component\Security\Csrf\CsrfTokenManagerInterface $csrf,
+        private readonly ReleaseUpdateService $updates,
     ) {
     }
 
@@ -150,6 +152,20 @@ final class SettingsController
         return $this->renderUtility($request, 'about');
     }
 
+    #[Route(path: '/about/check-update', name: 'studio_release_check', methods: ['POST'])]
+    public function checkUpdate(Request $request): Response
+    {
+        $token = $request->request->all()['_token'] ?? null;
+        if (!is_string($token) || !$this->csrf->isTokenValid(new \Symfony\Component\Security\Csrf\CsrfToken('release_check', $token))) {
+            return new Response($this->i18n->trans('Das Formular ist abgelaufen oder ungültig. Bitte lade die Seite neu.'), Response::HTTP_FORBIDDEN, ['Cache-Control' => 'no-store']);
+        }
+        $this->updates->check(force: true);
+
+        return $request->query->getString('fragment') === '1'
+            ? $this->renderUtility($request, 'about')
+            : new RedirectResponse('/about');
+    }
+
     #[Route(path: '/status', name: 'studio_status', methods: ['GET'])]
     public function status(Request $request): Response
     {
@@ -184,7 +200,10 @@ final class SettingsController
         $i18nJson = $this->i18n->browserCatalogJson();
         if ($utility === 'status') {
             $health = $this->health->snapshot();
-            $utilityWarning = $health['recheck']['state'] !== 'ok' || $health['screenshot']['state'] !== 'ok';
+            $utilityWarning = $health['recheck']['state'] !== 'ok' || $health['screenshot']['state'] !== 'ok' || $health['interactive']['state'] !== 'ok';
+        } else {
+            $releaseUpdate = $this->updates->snapshot();
+            $updateCsrfToken = $this->csrf->getToken('release_check')->getValue();
         }
 
         ob_start();

@@ -88,9 +88,41 @@
       </section>
     </article>
     <?php endforeach; ?>
+    <?php $interactive = $health['interactive']; ?>
+    <article class="studio-settings-health-card" data-health-kind="interactive" data-health-state="<?= $escape($interactive['state']) ?>">
+      <header>
+        <span class="studio-settings-health-dot" data-state="<?= $escape($interactive['state']) ?>" aria-hidden="true"></span>
+        <h3><?= $escape($t('Interaktiver Browser')) ?></h3>
+        <span class="studio-health-group-state" data-state="<?= $escape($interactive['state']) ?>"><?= $escape($t($interactive['state'] === 'ok' ? 'Dienste erreichbar' : 'Dienststatus prüfen')) ?></span>
+      </header>
+      <section class="studio-health-fleet" aria-labelledby="health-interactive-services">
+        <h4 id="health-interactive-services"><?= $escape($t('Technische Erreichbarkeit')) ?></h4>
+        <ul class="studio-health-workers">
+          <?php foreach (['worker' => 'Interaktiver Worker (HTTP)', 'gateway' => 'Gateway-Steuerung (HTTP)'] as $service => $label):
+              $reachable = $interactive[$service.'Reachable'];
+          ?>
+          <li data-health-interactive-service="<?= $escape($service) ?>" data-service-state="<?= $reachable ? 'ok' : 'unavailable' ?>">
+            <div class="studio-health-worker-identity"><strong><?= $escape($t($label)) ?></strong></div>
+            <div class="studio-health-worker-signals"><span class="studio-health-browser" data-state="<?= $reachable ? 'ok' : 'unavailable' ?>"><?= $escape($t($service === 'gateway' && !$interactive['gatewayConfigured'] ? 'Zugang nicht konfiguriert' : ($reachable ? 'Erreichbar' : 'Nicht erreichbar'))) ?></span></div>
+          </li>
+          <?php endforeach; ?>
+        </ul>
+      </section>
+      <section class="studio-health-context" aria-labelledby="health-interactive-availability">
+        <h4 id="health-interactive-availability"><?= $escape($t('Belegung')) ?></h4>
+        <dl>
+          <div><dt><?= $escape($t('Interaktiver Arbeitsplatz')) ?></dt><dd data-health-interactive-availability="<?= $escape($interactive['availability']) ?>"><?= $escape($t(['available' => 'Frei', 'busy' => 'Belegt', 'expired' => 'Sitzung abgelaufen', 'unknown' => 'Unbekannt'][$interactive['availability']])) ?></dd></div>
+          <?php if ($interactive['expiresAt'] !== null): ?>
+          <div><dt><?= $escape($t('Sitzungsende')) ?></dt><dd><?= $escape($formatTime($interactive['expiresAt'], true)) ?></dd></div>
+          <?php endif; ?>
+        </dl>
+        <p class="studio-settings-field-hint"><?= $escape($t('Belegung aus dem gespeicherten Sitzungsstand; unabhängig von der Diensterreichbarkeit.')) ?></p>
+      </section>
+      <p class="studio-settings-field-hint"><?= $escape($t('HTTP-Antworten bestätigen die Dienste. Chromium, Bildschirmübertragung und WSS-Verbindung werden hier nicht geprüft.')) ?></p>
+    </article>
   </div>
   <div class="studio-health-explainer">
-    <p><?= $escape($t('Grün bedeutet: alle erwarteten Worker senden aktuelle Signale und ihre Browserdienste antworten. Die Dienstprüfung startet keine Browseraufnahme.')) ?></p>
+    <p><?= $escape($t('Grün bedeutet: alle erwarteten automatischen Worker senden aktuelle Signale; ihre Browserdienste sowie interaktiver Worker und Gateway antworten. Die Dienstprüfung startet keine Browseraufnahme.')) ?></p>
     <p><?= $escape($t('Signale gelten für Rechecks 10 Minuten und für Screenshots 5 Minuten. Auftragszahlen enthalten die Historie; abgeschlossene Aufnahmen bestätigen nicht die Lesbarkeit der Bilddateien.')) ?></p>
     <nav aria-label="<?= $escape($t('Fehlerdiagnose')) ?>"><a href="/errors"><?= $escape($t('Fehlerübersicht öffnen')) ?> <span aria-hidden="true">→</span></a><a href="/errors?kind=missing" data-health-errors="missing"><?= $escape($t('Gespeicherte Bilddateien prüfen')) ?> <span aria-hidden="true">→</span></a></nav>
   </div>

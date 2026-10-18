@@ -39,6 +39,7 @@ try:
                     raise RuntimeError("Fixture server did not start")
                 time.sleep(0.1)
         subprocess.run(["node", "tests/browser/studio-preferences.cjs"], cwd=project, env=env, check=True, timeout=180)
+        subprocess.run(["node", "tests/browser/studio-status.cjs"], cwd=project, env=env, check=True, timeout=180)
         subprocess.run(["node", "tests/browser/studio-diagnostics.cjs"], cwd=project, env=env, check=True, timeout=180)
         subprocess.run(["node", "tests/browser/studio-inventory-views.cjs"], cwd=project, env=env, check=True, timeout=180)
         subprocess.run(["node", "tests/browser/studio-follow-up.cjs"], cwd=project, env=env, check=True, timeout=180)

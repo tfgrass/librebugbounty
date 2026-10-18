@@ -18,6 +18,7 @@ $novncMessages = [
     'expired' => $t('Die interaktive Browser-Session ist abgelaufen.'),
     'worker_unavailable' => $t('Der interaktive Browser ist derzeit nicht verfügbar.'),
     'locked' => $t('Aufnahme bereits festgehalten. Nur Speichern oder Abbrechen ist noch möglich.'),
+    'dialogPaused' => $t('Der Browser-Dialog bleibt offen. Wähle, wie du fortfahren möchtest.'),
     'connected' => $t('Live verbunden · Maus und Tastatur steuern den Browser'),
     'connecting' => $t('Live-Verbindung wird aufgebaut …'),
     'retryActivation' => $t('Browser-Aktivierung erneut versuchen'),
@@ -36,6 +37,21 @@ $novncMessages = [
     'confirmEndStart' => $t('Andere Session beenden und hier neu starten? Nicht gespeicherte Inhalte der anderen Session gehen verloren.'),
     'confirmSave' => $t('Beleg speichern? Ein festgehaltenes Dialogbild wird bevorzugt. Die Bewertung bleibt eine gesonderte Entscheidung.'),
     'confirmRelease' => $t('Session ohne Speichern beenden? Nicht gespeicherte Inhalte gehen verloren.'),
+    'confirmDialogArm' => $t('Den nächsten Browser-Dialog aufnehmen? Das bisherige Dialogbild bleibt erhalten, bis eine neue Aufnahme gelingt.'),
+    'confirmDialogDismiss' => $t('Dialog ohne neue Aufnahme schließen und im Browser fortfahren? Das bisherige Dialogbild bleibt erhalten.'),
+    'captureWaiting' => $t('Warte auf Dialog'),
+    'captureWaitingHint' => $t('Löse die Schutzabfrage im Browser. Der nächste Browser-Dialog wird automatisch aufgenommen.'),
+    'capturePaused' => $t('Dialogaufnahme pausiert'),
+    'capturePausedHint' => $t('Aktiviere die Aufnahme erneut, um den nächsten Browser-Dialog festzuhalten.'),
+    'captureCapturing' => $t('Dialogbild wird aufgenommen …'),
+    'captureCapturingHint' => $t('Der Dialog bleibt während der Aufnahme offen.'),
+    'captureCaptured' => $t('Dialogbild festgehalten'),
+    'captureCapturedHint' => $t('Prüfe das Dialogbild in der Vorschau. Für einen weiteren Dialog kannst du die Aufnahme erneut aktivieren.'),
+    'captureFailed' => $t('Aufnahme fehlgeschlagen · Dialog bleibt offen'),
+    'captureFailedHint' => $t('Versuche die Aufnahme erneut oder schließe den Dialog ausdrücklich, um fortzufahren.'),
+    'captureExhausted' => $t('Keine Aufnahmeversuche mehr verfügbar'),
+    'captureExhaustedHint' => $t('Ein offener Dialog kann geschlossen werden. Ein bereits festgehaltenes Dialogbild bleibt erhalten.'),
+    'captureAttempts' => $t('Verbleibende Aufnahmeversuche: {value}'),
     'dialogCaptured' => $t('Browser-Dialog vor dem Schließen als Bild festgehalten.'),
     'dialogUnconfirmed' => $t('Browser-Dialog beobachtet; seine Bildaufnahme ist nicht bestätigt.'),
     'previewError' => $t('Dialogbild konnte nicht geladen werden. Erneut versuchen.'),
@@ -78,6 +94,16 @@ $novncMessages = [
     <figure class="novnc-last-frame" data-novnc-last-frame hidden><canvas></canvas><figcaption><?= $escape($novncMessages['lastFrame']) ?></figcaption></figure>
   </div>
   <p class="novnc-connection" data-novnc-connection aria-live="polite"></p>
+  <section class="novnc-capture" data-novnc-capture hidden aria-label="<?= $escape($t('Automatische Dialogaufnahme')) ?>">
+    <strong data-novnc-capture-state role="status" aria-live="polite"></strong>
+    <p data-novnc-capture-hint></p>
+    <p class="novnc-description" data-novnc-capture-attempts></p>
+    <div class="novnc-capture-actions">
+      <button type="button" data-novnc-action="dialog-arm" hidden><?= $escape($t('Nächsten Dialog aufnehmen')) ?></button>
+      <button type="button" class="novnc-primary" data-novnc-action="dialog-retry" hidden><?= $escape($t('Aufnahme erneut versuchen')) ?></button>
+      <button type="button" data-novnc-action="dialog-dismiss" hidden><?= $escape($t('Dialog schließen und fortfahren')) ?></button>
+    </div>
+  </section>
   <section class="novnc-dialog" data-novnc-dialog hidden>
     <strong><?= $escape($t('Zuletzt beobachteter Browser-Dialog')) ?></strong>
     <p data-novnc-dialog-message></p><p data-novnc-dialog-image></p>
@@ -97,4 +123,4 @@ $novncMessages = [
   <p class="novnc-description"><?= $escape($t('Eine Live-Ansicht oder gespeicherte Aufnahme ist keine automatische Bewertung. Wähle die Bewertungsgrundlage anschließend ausdrücklich im Review.')) ?></p>
   <noscript><p class="novnc-notice"><?= $escape($t('Die Live-Ansicht benötigt JavaScript. Ohne JavaScript bleiben gespeicherte Bilder im Review lesbar; Browser-Sessions können hier nicht gestartet oder übernommen werden.')) ?></p></noscript>
 </section>
-<script type="module" src="/js/studio-review-novnc.js"></script>
+<script type="module" src="/js/studio-review-novnc.js?v=<?= substr(hash_file('sha256', __DIR__.'/../../public/js/studio-review-novnc.js'), 0, 16) ?>"></script>

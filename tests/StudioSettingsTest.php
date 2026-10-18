@@ -97,7 +97,8 @@ final class StudioSettingsTest extends DatabaseTestCase
             self::assertSame(1, $xpath->query('//*[@id="about"]//a[not(ancestor::details) and @href="'.$href.'"]')->length);
         }
         self::assertStringContainsString('Proudly vibe-coded.', $xpath->evaluate('string(//*[@id="about"])'));
-        self::assertSame(0, $xpath->query('//form')->length);
+        self::assertSame(1, $xpath->query('//form[@method="post" and @action="/about/check-update" and @data-release-check-form]')->length);
+        self::assertSame(0, $xpath->query('//form[not(@data-release-check-form)]')->length);
         self::assertSame(AppInfo::DONATION_URL, $xpath->evaluate('string(//*[@id="support"]//a/@href)'));
         self::assertSame($before, $this->rows());
     }

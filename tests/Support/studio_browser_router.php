@@ -15,10 +15,38 @@ foreach ([
     'DATABASE_URL' => 'sqlite:///'. $root.'/database.sqlite',
     'EVIDENCE_STORAGE_DIR' => $root.'/artifacts',
     'PLAYWRIGHT_WORKER_URL' => 'http://127.0.0.1:1',
+    'PLAYWRIGHT_INTERACTIVE_URL' => 'http://interactive.test:3000',
+    'PLAYWRIGHT_GATEWAY_TOKEN' => 'isolated-studio-health-gateway-token',
     'RETEST_DEFAULT_TIMEOUT_MS' => '10000',
 ] as $key => $value) {
     putenv($key.'='.$value);
     $_SERVER[$key] = $_ENV[$key] = $value;
+}
+
+// This class exists only inside the isolated acceptance server. Every release
+// lookup is local and recorded so tests can prove About GET never probes GitHub.
+final class StudioReleaseAcceptanceClient
+{
+    public static function create(): Symfony\Component\HttpClient\MockHttpClient
+    {
+        return new Symfony\Component\HttpClient\MockHttpClient(static function (string $method, string $url): Symfony\Component\HttpClient\Response\MockResponse {
+            $root = (string) getenv('STUDIO_BROWSER_ROOT');
+            file_put_contents($root.'/release-requests', json_encode(['method' => $method, 'url' => $url], JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
+            $scenario = @file_get_contents($root.'/release-response') ?: 'available';
+            $tag = $scenario === 'current' ? 'v'.App\AppInfo::VERSION : 'v2.1.1';
+
+            return new Symfony\Component\HttpClient\Response\MockResponse(json_encode([
+                'tag_name' => $tag,
+                'draft' => false,
+                'prerelease' => false,
+                'name' => '<script>window.__releaseInjected=1</script>',
+                'html_url' => 'https://untrusted.example/ignored',
+            ], JSON_THROW_ON_ERROR), [
+                'http_code' => $scenario === 'offline' ? 503 : 200,
+                'response_headers' => ['content-type: application/json'],
+            ]);
+        });
+    }
 }
 
 $kernel = new class('dev', false) extends App\Kernel {
@@ -35,6 +63,14 @@ $kernel = new class('dev', false) extends App\Kernel {
             ->factory([App\Tests\Support\StudioHealthFixture::class, 'httpClient']);
         $container->services()->set(App\Service\BrowserHealthService::class)->autowire()
             ->arg('$httpClient', Symfony\Component\DependencyInjection\Loader\Configurator\service('studio.health_http_client'));
+        $container->services()->set(App\Service\InteractiveHealthService::class)->autowire()
+            ->arg('$httpClient', Symfony\Component\DependencyInjection\Loader\Configurator\service('studio.health_http_client'))
+            ->arg('$workerUrl', '%env(PLAYWRIGHT_INTERACTIVE_URL)%')
+            ->arg('$gatewayToken', '%env(PLAYWRIGHT_GATEWAY_TOKEN)%');
+        $container->services()->set('studio.release_http_client', Symfony\Component\HttpClient\MockHttpClient::class)
+            ->factory([StudioReleaseAcceptanceClient::class, 'create']);
+        $container->services()->set(App\Service\ReleaseUpdateService::class)->autowire()
+            ->arg('$client', Symfony\Component\DependencyInjection\Loader\Configurator\service('studio.release_http_client'));
     }
 };
 
@@ -46,6 +82,12 @@ if (PHP_SAPI === 'cli') {
     $kernel->boot();
     $manager = $kernel->getContainer()->get('doctrine')->getManager();
     (new Doctrine\ORM\Tools\SchemaTool($manager))->createSchema($manager->getMetadataFactory()->getAllMetadata());
+    require_once dirname(__DIR__, 2).'/migrations/Version20261017000000.php';
+    $migration = new DoctrineMigrations\Version20261017000000($manager->getConnection(), new Psr\Log\NullLogger());
+    $migration->up(new Doctrine\DBAL\Schema\Schema());
+    foreach ($migration->getSql() as $sql) {
+        $manager->getConnection()->executeStatement($sql->getStatement(), $sql->getParameters(), $sql->getTypes());
+    }
     echo 'Initialized '.$root."\n";
     exit;
 }
@@ -55,6 +97,45 @@ if (!is_file($root.'/database.sqlite')) {
 }
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if (in_array($path, ['/__studio_acceptance_release', '/__studio_acceptance_release_state'], true)) {
+    $cacheDirectory = $root.'/cache/release-update';
+    if ($path === '/__studio_acceptance_release') {
+        $scenario = $_POST['scenario'] ?? '';
+        $remote = $_POST['remote'] ?? 'available';
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST'
+            || !in_array($scenario, ['unknown', 'current', 'available', 'ahead', 'error', 'stale', 'offline-candidate'], true)
+            || !in_array($remote, ['available', 'current', 'offline'], true)) {
+            http_response_code(400);
+            exit;
+        }
+        (new Symfony\Component\Filesystem\Filesystem())->remove($cacheDirectory);
+        file_put_contents($root.'/release-response', $remote);
+        if ($scenario !== 'unknown') {
+            mkdir($cacheDirectory, 0700, true);
+            $hasCandidate = $scenario !== 'error';
+            $at = time() - ($scenario === 'stale' ? 2 * 86400 : 120);
+            file_put_contents($cacheDirectory.'/release.json', json_encode([
+                'schema' => 1,
+                'latestTag' => !$hasCandidate ? null : ($scenario === 'current' ? 'v'.App\AppInfo::VERSION : ($scenario === 'ahead' ? 'v2.0.0' : 'v2.1.1')),
+                'checkedAt' => $hasCandidate ? $at : null,
+                'attemptedAt' => $at,
+                'failed' => in_array($scenario, ['error', 'offline-candidate'], true),
+            ], JSON_THROW_ON_ERROR));
+        }
+    } elseif ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        exit;
+    }
+    $cache = $cacheDirectory.'/release.json';
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    echo json_encode([
+        'isolated' => true,
+        'requests' => is_file($root.'/release-requests') ? count(file($root.'/release-requests', FILE_IGNORE_NEW_LINES)) : 0,
+        'cacheHash' => is_file($cache) ? hash_file('sha256', $cache) : null,
+    ], JSON_THROW_ON_ERROR);
+    return;
+}
 if (in_array($path, ['/__studio_acceptance_diagnostics', '/__studio_acceptance_diagnostics_state'], true)) {
     $kernel->boot();
     $manager = $kernel->getContainer()->get('doctrine')->getManager();
@@ -68,7 +149,7 @@ if (in_array($path, ['/__studio_acceptance_diagnostics', '/__studio_acceptance_d
     } else {
         if ($_SERVER['REQUEST_METHOD'] !== 'GET') { http_response_code(405); exit; }
         $rows = [];
-        foreach (['finding', 'finding_assessment', 'finding_review_acknowledgement', 'finding_assessment_reset', 'screenshot_job', 'retest_run', 'evidence', 'setting'] as $table) {
+        foreach (['finding', 'finding_assessment', 'finding_review_acknowledgement', 'finding_assessment_reset', 'screenshot_job', 'retest_run', 'evidence', 'setting', 'interactive_browser_lease'] as $table) {
             $rows[$table] = $manager->getConnection()->fetchAllAssociative('SELECT * FROM '.$table.' ORDER BY rowid');
         }
         foreach ($storage->listPaths() as $file) $rows['files'][$file] = hash('sha256', $storage->read($file));
@@ -81,13 +162,18 @@ if (in_array($path, ['/__studio_acceptance_diagnostics', '/__studio_acceptance_d
 }
 if ($path === '/__studio_acceptance_health') {
     $scenario = $_POST['scenario'] ?? '';
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !in_array($scenario, ['unknown', 'healthy', 'partial', 'stale', 'browser-down'], true)) {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !in_array($scenario, ['unknown', 'healthy', 'partial', 'stale', 'browser-down', 'interactive-down', 'gateway-down', 'interactive-busy', 'interactive-expired'], true)) {
         http_response_code(400);
         exit;
     }
     $database = new PDO('sqlite:'.$root.'/database.sqlite');
     $database->beginTransaction();
     $database->exec("DELETE FROM setting WHERE id LIKE 'worker.heartbeat.%'");
+    $database->exec("UPDATE interactive_browser_lease SET state = 'available', expires_at = NULL");
+    if (in_array($scenario, ['interactive-busy', 'interactive-expired'], true)) {
+        $lease = $database->prepare("UPDATE interactive_browser_lease SET state = 'active', expires_at = ?");
+        $lease->execute([time() + ($scenario === 'interactive-busy' ? 1200 : -1)]);
+    }
     $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
     $insert = $database->prepare('INSERT INTO setting (id, value, updated_at) VALUES (?, ?, ?)');
     foreach (['recheck' => 'recheck-', 'screenshot' => 'shot-'] as $kind => $prefix) {

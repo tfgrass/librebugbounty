@@ -47,7 +47,7 @@ async function main() {
   const url = page.locator('#intake-form [name="url"]');
   const payload = page.locator('#intake-form [name="payload"]');
   const notes = page.locator('#intake-form [name="annotate"]');
-  const rows = page.locator('[data-intake-entry]');
+  const rows = page.locator('#intake-history-list [data-intake-entry]');
   const submit = page.locator('#intake-form button[type="submit"]');
 
   const counts = async () => {
@@ -56,6 +56,11 @@ async function main() {
     return result.counts;
   };
   const mark = (message) => { checks.push(message); console.log('PASS ' + message); };
+  const expectHistoryCount = async (target, count) => {
+    await target.waitForFunction((count) => document.querySelector('h2[data-intake-count]')?.textContent.trim() === `Letzte ${count}`, count);
+    assert.equal(await target.locator('#intake-history-list [data-intake-entry]').count(), count);
+    assert.equal(await target.locator('[data-intake-local-pending], [data-intake-local-list]').count(), 0, 'History must have no second local-review region');
+  };
   const submitUrl = async (value, expectedStatus = 201) => {
     await url.fill(value);
     const start = Date.now();
@@ -91,7 +96,7 @@ async function main() {
         input: rect(document.querySelector('#intake-form [name="url"]')),
         button: rect(document.querySelector('#intake-form button[type="submit"]')),
         list: rect(document.querySelector('#intake-history-list')),
-        rows: [...document.querySelectorAll('[data-intake-entry]')].slice(0, 5).map(rect),
+        rows: [...document.querySelectorAll('#intake-history-list [data-intake-entry]')].slice(0, 3).map(rect),
       };
     });
     assert.ok(geometry.documentWidth <= width, `${width}: document overflows horizontally`);
@@ -100,14 +105,14 @@ async function main() {
     assert.ok(geometry.input.x >= 0 && geometry.input.right <= width, `${width}: URL input extends to ${geometry.input.right}`);
     assert.ok(geometry.button.x >= 0 && geometry.button.right <= width, `${width}: submit extends to ${geometry.button.right}`);
     if (width >= 640) {
-      assert.equal(geometry.rows.length, 5);
+      assert.equal(geometry.rows.length, 3);
       for (const row of geometry.rows) {
         assert.ok(row.x >= 0 && row.right <= width, `${width}: row extends from ${row.x} to ${row.right}`);
         assert.ok(row.y >= geometry.list.y && row.bottom <= Math.min(geometry.list.bottom, height), `${width}: row ${row.y}..${row.bottom} exceeds visible list ${geometry.list.y}..${geometry.list.bottom}`);
       }
     }
     if (screenshot) await page.screenshot({ path: path.join(output, `studio-${width}x${height}.png`), fullPage: true });
-    mark(`${width}×${height}: input/action visible, no horizontal overflow${width >= 640 ? ', five visible rows' : ''}`);
+    mark(`${width}×${height}: input/action visible, no horizontal overflow${width >= 640 ? ', three visible rows below progress' : ''}`);
     return geometry;
   };
 
@@ -117,10 +122,14 @@ async function main() {
     assert.equal(result.status(), 200, 'The canonical intake must exist at /');
     await url.waitFor();
     await page.waitForFunction(() => document.activeElement === document.querySelector('#intake-form [name="url"]'));
+    await expectHistoryCount(page, 0);
     mark('The canonical intake exists at / and URL has initial keyboard focus');
 
     const migrationPage = await context.newPage();
     await migrationPage.route('**/api/findings/status?*', (route) => route.abort('failed'));
+    await migrationPage.route('**/api/intake/activity?*', (route) => route.fulfill({
+      status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Acceptance: activity unavailable' }),
+    }));
     await migrationPage.addInitScript(() => {
       const findingId = '00000000-0000-4000-8000-000000000777';
       sessionStorage.setItem('librebugbounty.intake.v1', JSON.stringify({
@@ -149,13 +158,18 @@ async function main() {
       }));
     });
     await migrationPage.goto(base + '/');
-    await migrationPage.locator('[data-intake-entry]').first().waitFor();
-    assert.equal(await migrationPage.locator('[data-intake-entry]').count(), 2);
+    await migrationPage.locator('[data-intake-activity-notice]').filter({ hasText: /\S/ }).waitFor();
+    await expectHistoryCount(migrationPage, 1);
+    assert.equal(await migrationPage.locator('#intake-history-list [data-save-state="confirmed"]').count(), 0, 'An offline fallback must not reintroduce confirmed legacy history');
+    await migrationPage.unroute('**/api/intake/activity?*');
+    await migrationPage.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await migrationPage.waitForFunction(() => document.querySelector('[data-intake-history-filter]')?.hidden === false);
+    await expectHistoryCount(migrationPage, 1);
     const migrationText = await migrationPage.locator('[data-intake]').innerText();
-    for (const expected of ['Die Eingabe wurde nicht gespeichert.', 'Screenshot fehlgeschlagen', 'Für diesen Screenshot-Auftrag wurde kein Bild gespeichert.']) {
+    for (const expected of ['Die Eingabe wurde nicht gespeichert.', 'http://127.0.0.1/failed']) {
       assert.ok(migrationText.includes(expected), `Migrated German history must contain: ${expected}`);
     }
-    for (const stale of ['The form has expired', 'Screenshot failed', 'No image was stored for this screenshot job.']) {
+    for (const stale of ['The form has expired', 'Screenshot failed', 'No image was stored for this screenshot job.', 'http://127.0.0.1/status']) {
       assert.ok(!migrationText.includes(stale), `Migrated German history must not retain: ${stale}`);
     }
     assert.deepEqual(await migrationPage.evaluate(() => {
@@ -172,19 +186,20 @@ async function main() {
     assert.equal(migrated.entries[1].status.screenshot.errorKey, 'Für diesen Screenshot-Auftrag wurde kein Bild gespeichert.');
     await migrationPage.close();
     await page.bringToFront();
-    mark('Keyless English v1 history renders in German while drafts and user content remain intact');
+    mark('Legacy failure is recoverable in the only history list; confirmed legacy history stays out of the current session while translated storage and draft remain intact');
 
     const urls = Array.from({ length: 5 }, (_, index) => `http://127.0.0.1/studio-local-${index + 1}${index === 4 ? '/' + 'a'.repeat(700) : ''}`);
-    for (const value of urls) {
+    for (const [index, value] of urls.entries()) {
       timings.push(await submitUrl(value));
       assert.equal(await url.inputValue(), '');
       assert.equal(await submit.isEnabled(), true);
       assert.equal(await url.evaluate((node) => node === document.activeElement), true);
+      if (index === 2) await expectHistoryCount(page, 3);
     }
-    assert.equal(await rows.count(), 5);
+    await expectHistoryCount(page, 5);
     assert.deepEqual(await counts(), { finding: 5, screenshot_job: 5, retest_run: 0, evidence: 0, queued: 5 });
     assert.equal(posts.length, 5);
-    mark('Five real API POSTs via Enter; 5 Findings + 5 queued Jobs + 0 RetestRuns + 0 Evidence');
+    mark('History title tracks the real 0/3/5 visible rows; five Enter POSTs create 5 Findings + 5 queued Jobs without RetestRuns or Evidence');
 
     for (const width of [960, 720, 640, 390]) await layout(width, width === 390 ? 844 : 900, [960, 640].includes(width));
     await page.setViewportSize({ width: 640, height: 900 });
@@ -304,15 +319,16 @@ async function main() {
     await url.waitFor();
     assert.deepEqual(await draftValues(), studioDraft);
     assert.equal(await rows.count(), historyCount);
-    mark('Reload retains the full draft and tab-local history');
+    mark('Reload retains the full tab-local draft and session history');
 
     const fresh = await context.newPage();
     await fresh.goto(base + '/');
-    assert.equal(await fresh.locator('[data-intake-entry]').count(), 0);
+    await fresh.waitForFunction(() => document.querySelector('[data-intake-stat-count]').textContent === '5');
+    assert.equal(await fresh.locator('#intake-history-list [data-intake-entry]').count(), 5);
     assert.equal(await fresh.locator('#intake-form [name="url"]').inputValue(), '');
     await fresh.close();
     await page.bringToFront();
-    mark('A new independent tab starts with empty history and URL');
+    mark('A new independent tab shares the five stored session cases and starts with an empty URL draft');
 
     assert.equal(await page.locator('a[href^="/legacy"]').count(), 0);
     await submitUrl(urls[0], 200);
